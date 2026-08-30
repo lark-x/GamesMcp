@@ -2918,7 +2918,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           releaseNote: input.releaseNote,
           lifecycleStatus: "preparing",
           isCurrent: false,
-          indexStatus: "ready",
+          indexStatus: "pending",
           normalizedRecords: build.normalizedRecords,
           manifestId: build.manifestId,
           activationBuildId: build.id,
@@ -4603,13 +4603,16 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           undefined,
           409,
         );
+      await tx.execute(
+        sql`select id from platform.games where id = ${target.gameId}::uuid for update`,
+      );
       await tx
         .update(datasetRevisions)
         .set({ isCurrent: false })
         .where(eq(datasetRevisions.gameId, target.gameId));
       const [updated] = await tx
         .update(datasetRevisions)
-        .set({ isCurrent: true, indexStatus: "pending" })
+        .set({ isCurrent: true })
         .where(eq(datasetRevisions.id, target.id))
         .returning();
       if (!updated)
@@ -4625,11 +4628,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         targetId: target.id,
         reason,
         metadata: { gameId: target.gameId },
-      });
-      await tx.insert(jobs).values({
-        type: "rebuild_search",
-        idempotencyKey: `rebuild_search:rollback:${target.id}:${Date.now()}`,
-        payload: { gameId: target.gameId, revisionId: target.id },
       });
       return {
         id: updated.id,
