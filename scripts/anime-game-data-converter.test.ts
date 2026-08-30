@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
 import type { NormalizedRecord } from "@gip/domain";
 import { validateNormalizedRecords } from "@gip/domain";
 import { convertAnimeGameData } from "./anime-game-data-converter.js";
 
-const fixtureDir = new URL("../data/fixtures/anime-game-data", import.meta.url).pathname;
+// URL.pathname starts with `/D:/...` on Windows.  Convert the fixture URL to
+// the native filesystem path so the converter receives the same kind of path
+// that the CLI obtains from DATA_DIR/ANIME_GAME_DATA_DIR.
+const fixtureDir = fileURLToPath(new URL("../data/fixtures/anime-game-data", import.meta.url));
 
 describe("AnimeGameData converter", () => {
   it("uses the confirmed association chains and accounts for every fixture row", async () => {

@@ -52,6 +52,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Workspace packages expose their compiled dist entrypoints.  Build
+      # them before the database integration script imports repository code.
+      - run: pnpm build
       - run: pnpm test:db
         env:
           GIP_DB_TEST_URL: postgres://gip:gip@127.0.0.1:5432/gip

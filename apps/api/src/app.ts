@@ -670,8 +670,12 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extension =
         body.mimeType === "image/png" ? "png" : body.mimeType === "image/jpeg" ? "jpg" : "webp";
-      const relativePath = join("verification", itemId ?? "unknown", `${sha256}.${extension}`);
-      const absolutePath = join(config.dataDir, relativePath);
+      const relativeSegments = ["verification", itemId ?? "unknown", `${sha256}.${extension}`];
+      // Persist provenance paths with POSIX separators so records and API
+      // responses are portable across macOS, Linux, and Windows.  Use the
+      // native path join only for filesystem access.
+      const relativePath = relativeSegments.join("/");
+      const absolutePath = join(config.dataDir, ...relativeSegments);
       await mkdir(join(config.dataDir, "verification", itemId ?? "unknown"), { recursive: true });
       let createdFile = false;
       try {
