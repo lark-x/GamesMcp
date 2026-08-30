@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -454,9 +453,9 @@ describe("API", () => {
         checkedLocale: "zh-CN",
       },
     });
-    expect(run.statusCode).toBe(200);
-    expect(response.statusCode).toBe(200);
-    expect(update).toMatchObject({ itemId, status: "exact_match", channel: "game_client" });
+    expect(run.statusCode).toBe(410);
+    expect(response.statusCode).toBe(410);
+    expect(update).toBeUndefined();
     await app.close();
   });
 
@@ -756,14 +755,9 @@ describe("API", () => {
       url: `/api/admin/verification/items/${itemId}/screenshots`,
       payload: { mimeType: "image/png", dataBase64: png },
     });
-    expect(response.statusCode).toBe(200);
-    expect(screenshot).toMatchObject({ itemId, mimeType: "image/png" });
-    const body = Buffer.from(png, "base64");
-    const expectedHash = createHash("sha256").update(body).digest("hex");
-    expect(response.json().sha256).toBe(expectedHash);
-    const saved = await readFile(join(dataDir, response.json().relativePath));
-    expect(saved.equals(body)).toBe(true);
-    expect(response.json().relativePath).toBe(`verification/${itemId}/${expectedHash}.png`);
+    expect(response.statusCode).toBe(410);
+    expect(screenshot).toBeUndefined();
+    expect(response.json().error.code).toBe("legacy_verification_retired");
     await app.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -781,17 +775,12 @@ describe("API", () => {
     );
     const png =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-    const body = Buffer.from(png, "base64");
-    const expectedHash = createHash("sha256").update(body).digest("hex");
     const response = await app.inject({
       method: "POST",
       url: `/api/admin/verification/items/${itemId}/screenshots`,
       payload: { mimeType: "image/png", dataBase64: png },
     });
-    expect(response.statusCode).toBe(500);
-    await expect(
-      readFile(join(dataDir, "verification", itemId, `${expectedHash}.png`)),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(response.statusCode).toBe(410);
     await app.close();
     await rm(dataDir, { recursive: true, force: true });
   });

@@ -168,7 +168,12 @@ async function processOne(): Promise<boolean> {
   } catch (error) {
     if (job.type === "activate_revision") {
       const revisionId = (job.payload as { revisionId?: unknown }).revisionId;
-      if (typeof revisionId === "string") await repository.setRevisionIndexStatus?.(revisionId, "failed", error instanceof Error ? error.message : "Activation failed");
+      if (typeof revisionId === "string")
+        await repository.setRevisionIndexStatus?.(
+          revisionId,
+          "failed",
+          error instanceof Error ? error.message : "Activation failed",
+        );
     }
     await repository.completeJob(
       String(job.id),

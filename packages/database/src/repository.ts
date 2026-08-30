@@ -2414,10 +2414,136 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     expectedBaseHash?: string;
     expectedIncomingHash?: string;
   }): Promise<CandidatePatch> {
+    const allowedActions = new Set([
+      "keep_main",
+      "use_incoming",
+      "manual",
+      "not_duplicate",
+      "confirm_delete",
+      "exclude_record",
+    ]);
+    if (!allowedActions.has(input.action))
+      throw new DomainError(
+        "invalid_patch_action",
+        "Patch action is not supported",
+        undefined,
+        400,
+      );
+    if (input.action === "manual" && (!input.fieldPath || input.manualValue === undefined))
+      throw new DomainError(
+        "patch_manual_value_required",
+        "Manual patches require both fieldPath and manualValue",
+        undefined,
+        400,
+      );
     if (input.expectedBaseHash && !/^[a-f0-9]{64}$/.test(input.expectedBaseHash))
       throw new DomainError("invalid_patch_hash", "expectedBaseHash must be sha256");
     if (input.expectedIncomingHash && !/^[a-f0-9]{64}$/.test(input.expectedIncomingHash))
       throw new DomainError("invalid_patch_hash", "expectedIncomingHash must be sha256");
+    const candidate = await this.getReleaseCandidate(input.candidateId);
+    if (!candidate)
+      throw new DomainError(
+        "candidate_not_found",
+        "Release candidate was not found",
+        undefined,
+        404,
+      );
+    if (["promoted", "withdrawn", "abandoned"].includes(candidate.status))
+      throw new DomainError(
+        "invalid_candidate_state",
+        `Candidate cannot be patched from state ${candidate.status}`,
+        undefined,
+        409,
+      );
+    const build = candidate.currentBuildId
+      ? await this.getReleaseCandidateBuild(candidate.currentBuildId)
+      : null;
+    if (!build)
+      throw new DomainError(
+        "candidate_build_missing",
+        "Build the candidate before recording a patch",
+        undefined,
+        409,
+      );
+    const incoming = build.normalizedRecords.find(
+      (record) => record.sourceKey === input.canonicalKey,
+    );
+    if (!incoming && !["confirm_delete", "exclude_record"].includes(input.action))
+      throw new DomainError(
+        "patch_target_missing",
+        `Patch target is missing from the current Build: ${input.canonicalKey}`,
+        undefined,
+        409,
+      );
+    if (input.expectedIncomingHash) {
+      const actual = incoming
+        ? createHash("sha256").update(canonicalRecordBytes(incoming)).digest("hex")
+        : null;
+      if (actual !== input.expectedIncomingHash)
+        throw new DomainError(
+          "patch_precondition_failed",
+          "The current Build changed before this patch was recorded",
+          { expectedIncomingHash: input.expectedIncomingHash, actualIncomingHash: actual },
+          409,
+        );
+    }
+    if (input.expectedBaseHash) {
+      const baseRevision = candidate.baseRevisionId
+        ? await this.getRevision(candidate.baseRevisionId, candidate.gameId)
+        : null;
+      const baseRecord = baseRevision
+        ? (await this.getRevisionRecords(baseRevision)).find(
+            (record) => record.sourceKey === input.canonicalKey,
+          )
+        : undefined;
+      const actual = baseRecord
+        ? createHash("sha256").update(canonicalRecordBytes(baseRecord)).digest("hex")
+        : null;
+      if (actual !== input.expectedBaseHash)
+        throw new DomainError(
+          "patch_precondition_failed",
+          "The formal base changed before this patch was recorded",
+          { expectedBaseHash: input.expectedBaseHash, actualBaseHash: actual },
+          409,
+        );
+    }
+    if (input.issueId) {
+      const issue = await this.getReviewIssue(input.issueId);
+      if (!issue)
+        throw new DomainError("issue_not_found", "Review issue was not found", undefined, 404);
+      if (issue.candidateId !== input.candidateId)
+        throw new DomainError(
+          "patch_issue_candidate_mismatch",
+          "Review issue belongs to another candidate",
+          undefined,
+          409,
+        );
+      if (
+        issue.canonicalKey !== input.canonicalKey ||
+        (issue.fieldPath ?? null) !== (input.fieldPath ?? null)
+      )
+        throw new DomainError(
+          "patch_issue_scope_mismatch",
+          "Patch key or field does not match the review issue",
+          undefined,
+          409,
+        );
+      if (issue.detectedBuildId && issue.detectedBuildId !== build.id)
+        throw new DomainError(
+          "patch_issue_build_stale",
+          "Review issue was reported against an older Build",
+          { detectedBuildId: issue.detectedBuildId, currentBuildId: build.id },
+          409,
+        );
+      const uploadedEvidence = await this.listReviewEvidence(issue.id);
+      if (!uploadedEvidence.length)
+        throw new DomainError(
+          "review_evidence_required",
+          "Upload an in-game screenshot before recording this review decision",
+          undefined,
+          409,
+        );
+    }
     const [row] = await this.db
       .insert(candidatePatches)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2439,8 +2565,39 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       .insert(reviewEvidence)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values(input as any)
+      .onConflictDoNothing({ target: [reviewEvidence.issueId, reviewEvidence.sha256] })
       .returning();
-    return row as ReviewEvidence;
+    if (row) return row as ReviewEvidence;
+    const [existing] = await this.db
+      .select()
+      .from(reviewEvidence)
+      .where(
+        and(eq(reviewEvidence.issueId, input.issueId), eq(reviewEvidence.sha256, input.sha256)),
+      )
+      .limit(1);
+    if (!existing)
+      throw new DomainError(
+        "review_evidence_create_failed",
+        "Review evidence could not be recorded",
+        undefined,
+        500,
+      );
+    return existing as ReviewEvidence;
+  }
+  async getReviewEvidence(evidenceId: string): Promise<ReviewEvidence | null> {
+    const [row] = await this.db
+      .select()
+      .from(reviewEvidence)
+      .where(eq(reviewEvidence.id, evidenceId))
+      .limit(1);
+    return (row as ReviewEvidence | undefined) ?? null;
+  }
+  async deleteReviewEvidence(evidenceId: string): Promise<ReviewEvidence | null> {
+    const [row] = await this.db
+      .delete(reviewEvidence)
+      .where(eq(reviewEvidence.id, evidenceId))
+      .returning();
+    return (row as ReviewEvidence | undefined) ?? null;
   }
   async listReleaseCandidateChecks(candidateId: string): Promise<ReleaseCandidateCheck[]> {
     return (await this.db
@@ -2517,9 +2674,9 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       const baseHash = base
         ? createHash("sha256").update(canonicalRecordBytes(base)).digest("hex")
         : null;
-      const incomingHash = createHash("sha256")
-        .update(canonicalRecordBytes(incoming))
-        .digest("hex");
+      const incomingHash = incoming
+        ? createHash("sha256").update(canonicalRecordBytes(incoming)).digest("hex")
+        : null;
       if (
         (patch.expectedBaseHash && patch.expectedBaseHash !== baseHash) ||
         (patch.expectedIncomingHash && patch.expectedIncomingHash !== incomingHash)
@@ -2534,7 +2691,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         patched.delete(patch.canonicalKey);
       else if (patch.action === "keep_main" && base) patched.set(patch.canonicalKey, base);
       else if (patch.action === "manual")
-        patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
+        if (incoming)
+          patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
     }
     normalizedRecords = [...patched.values()];
     const contentChecksum = releaseCandidateChecksum(normalizedRecords);
@@ -3059,35 +3217,374 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
   ): Promise<void> {
     await this.db
       .update(datasetRevisions)
-      .set({ indexStatus: status, activationError: error ? { error } : null })
+      .set({
+        indexStatus: status,
+        lifecycleStatus: status === "failed" ? "failed" : undefined,
+        activationError: error ? { error } : null,
+      })
       .where(eq(datasetRevisions.id, revisionId));
   }
 
-  /** Materialize the immutable build payload into the revision-scoped read model. */
+  /**
+   * Build the revision-scoped read model from the immutable Candidate Build.
+   *
+   * This deliberately does not call publishImport: activation must be a pure
+   * function of the Build payload and its captured provenance.  Re-running the
+   * job first clears only this preparing revision's rows, making worker retries
+   * idempotent without changing the currently published revision.
+   */
   async materializeRevision(revisionId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
-      const [revision] = await tx.select().from(datasetRevisions).where(eq(datasetRevisions.id, revisionId)).limit(1);
-      if (!revision || !revision.normalizedRecords) throw new DomainError("revision_materialization_missing", "Revision payload is missing");
+      await tx.execute(
+        sql`select id from knowledge.dataset_revisions where id = ${revisionId}::uuid for update`,
+      );
+      const [revision] = await tx
+        .select()
+        .from(datasetRevisions)
+        .where(eq(datasetRevisions.id, revisionId))
+        .limit(1);
+      if (!revision?.normalizedRecords)
+        throw new DomainError(
+          "revision_materialization_missing",
+          "Preparing revision payload is missing",
+        );
+      if (revision.lifecycleStatus === "published" && revision.indexStatus === "ready") return;
+      if (revision.lifecycleStatus !== "preparing")
+        throw new DomainError(
+          "revision_materialization_invalid_state",
+          `Revision ${revisionId} is not preparing`,
+          { lifecycleStatus: revision.lifecycleStatus },
+          409,
+        );
+
       const records = revision.normalizedRecords;
-      const entitiesByKey = new Map<string, string>();
-      for (const record of records) for (const candidate of record.entities ?? []) {
-        const id = stableEntityId(revision.gameId, candidate.sourceKey); entitiesByKey.set(candidate.sourceKey, id);
-        await tx.insert(entities).values({ id, gameId: revision.gameId, sourceKey: candidate.sourceKey, type: candidate.type, canonicalName: candidate.name, normalizedName: normalize(candidate.name), summary: candidate.summary, properties: candidate.properties ?? {}, firstRevisionId: revisionId, lastRevisionId: revisionId, deleted: false }).onConflictDoUpdate({ target: [entities.gameId, entities.sourceKey], set: { type: candidate.type, canonicalName: candidate.name, normalizedName: normalize(candidate.name), summary: candidate.summary, properties: candidate.properties ?? {}, lastRevisionId: revisionId, deleted: false, updatedAt: new Date() } });
-        if (candidate.aliases?.length) await tx.insert(entityAliases).values(candidate.aliases.map((a) => ({ entityId: id, value: a.value, normalizedValue: normalize(a.value), language: a.language ?? "und", isPrimary: a.primary ?? false }))).onConflictDoNothing();
+      const provenance = asRecord(revision.provenance);
+      const recordedBatchIds = Array.isArray(provenance.batchIds)
+        ? provenance.batchIds.filter((value): value is string => typeof value === "string")
+        : [];
+      const batchIds = [...new Set([...recordedBatchIds, revision.sourceBatchId])];
+      const batchRows = batchIds.length
+        ? await tx.select().from(importBatches).where(inArray(importBatches.id, batchIds))
+        : [];
+      const batchesById = new Map(batchRows.map((row) => [row.id, row]));
+      const snapshotByRecord = new Map<string, string>();
+      const sourceByRecord = new Map<string, string>();
+      for (const batchId of batchIds) {
+        const batch = batchesById.get(batchId);
+        if (!batch?.sourceSnapshotId || !batch.stagedRecords)
+          throw new DomainError(
+            "revision_provenance_incomplete",
+            "Candidate Build references an import without staged snapshot data",
+            { batchId },
+          );
+        if (batch.gameId !== revision.gameId)
+          throw new DomainError(
+            "revision_provenance_game_mismatch",
+            "Candidate Build import belongs to another game",
+            { batchId },
+          );
+        for (const record of batch.stagedRecords) {
+          snapshotByRecord.set(record.sourceKey, batch.sourceSnapshotId);
+          sourceByRecord.set(record.sourceKey, batch.sourceId);
+        }
       }
-      const docs = new Map<string, { id: string; segments: { id: string; body: string }[] }>();
+
+      const [candidate] = revision.activationCandidateId
+        ? await tx
+            .select()
+            .from(releaseCandidates)
+            .where(eq(releaseCandidates.id, revision.activationCandidateId))
+            .limit(1)
+        : [];
+      if (candidate?.baseRevisionId) {
+        const baseDocuments = await tx
+          .select({
+            sourceKey: documents.sourceKey,
+            sourceSnapshotId: documents.sourceSnapshotId,
+            sourceId: sourceSnapshots.sourceId,
+          })
+          .from(documents)
+          .innerJoin(sourceSnapshots, eq(documents.sourceSnapshotId, sourceSnapshots.id))
+          .where(eq(documents.revisionId, candidate.baseRevisionId));
+        for (const document of baseDocuments) {
+          if (!snapshotByRecord.has(document.sourceKey))
+            snapshotByRecord.set(document.sourceKey, document.sourceSnapshotId);
+          if (!sourceByRecord.has(document.sourceKey))
+            sourceByRecord.set(document.sourceKey, document.sourceId);
+        }
+      }
+
+      // A failed activation can be retried safely: remove only rows owned by
+      // this preparing revision.  Claim deletion cascades to claim_entities and
+      // evidence; document deletion cascades to segments and mentions.
+      await tx.delete(embeddings).where(eq(embeddings.revisionId, revisionId));
+      await tx.delete(claims).where(eq(claims.revisionId, revisionId));
+      await tx.delete(relationships).where(eq(relationships.revisionId, revisionId));
+      await tx.delete(documents).where(eq(documents.revisionId, revisionId));
+
+      const entityIdBySourceKey = new Map<string, string>();
+      const entityRecordBySourceKey = new Map<string, string>();
+      const allCandidates = records.flatMap((record) =>
+        (record.entities ?? []).map((candidateValue) => {
+          entityRecordBySourceKey.set(candidateValue.sourceKey, record.sourceKey);
+          return candidateValue;
+        }),
+      );
+      for (const candidateValue of allCandidates) {
+        const id = stableEntityId(revision.gameId, candidateValue.sourceKey);
+        entityIdBySourceKey.set(candidateValue.sourceKey, id);
+        await tx
+          .insert(entities)
+          .values({
+            id,
+            gameId: revision.gameId,
+            sourceKey: candidateValue.sourceKey,
+            type: candidateValue.type,
+            canonicalName: candidateValue.name,
+            normalizedName: normalize(candidateValue.name),
+            summary: candidateValue.summary,
+            properties: candidateValue.properties ?? {},
+            firstRevisionId: revisionId,
+            lastRevisionId: revisionId,
+            deleted: false,
+          })
+          .onConflictDoUpdate({
+            target: [entities.gameId, entities.sourceKey],
+            set: {
+              type: candidateValue.type,
+              canonicalName: candidateValue.name,
+              normalizedName: normalize(candidateValue.name),
+              summary: candidateValue.summary,
+              properties: candidateValue.properties ?? {},
+              lastRevisionId: revisionId,
+              deleted: false,
+              updatedAt: new Date(),
+            },
+          });
+      }
+      const entityIds = [...entityIdBySourceKey.values()];
+      if (entityIds.length)
+        await tx.delete(entityAliases).where(inArray(entityAliases.entityId, entityIds));
+      for (const candidateValue of allCandidates) {
+        const entityId = entityIdBySourceKey.get(candidateValue.sourceKey);
+        if (!entityId || !candidateValue.aliases?.length) continue;
+        const recordKey = entityRecordBySourceKey.get(candidateValue.sourceKey);
+        await tx.insert(entityAliases).values(
+          candidateValue.aliases.map((alias) => ({
+            entityId,
+            value: alias.value,
+            normalizedValue: normalize(alias.value),
+            language: alias.language ?? "und",
+            sourceId: recordKey ? sourceByRecord.get(recordKey) : undefined,
+            isPrimary: alias.primary ?? false,
+          })),
+        );
+      }
+
+      const documentBySourceKey = new Map<
+        string,
+        { id: string; segments: Array<{ id: string; body: string }> }
+      >();
       for (const record of records) {
-        if (record.recordType === "entity" || record.entityType || (!record.title && !record.body)) continue;
-        const id = stableUuid(`${revision.gameId}:document:${record.sourceKey}:${revisionId}`), body = record.body ?? record.title ?? "";
-        await tx.insert(documents).values({ id, gameId: revision.gameId, sourceKey: record.sourceKey, type: record.documentType ?? "lore", title: record.title ?? record.sourceKey, normalizedTitle: normalize(record.title ?? record.sourceKey), gameVersion: record.gameVersion, sourceSnapshotId: null, body, metadata: record.metadata, revisionId, deleted: false }).onConflictDoNothing();
-        const refs: { id: string; body: string }[] = [];
-        for (const [ordinal, part] of splitIntoSegments(body).entries()) { if (!part) continue; const sid = stableUuid(`${id}:segment:${ordinal}:${record.contentHash}`); await tx.insert(documentSegments).values({ id: sid, documentId: id, revisionId, ordinal, headingPath: part.headingPath, body: part.body, startOffset: part.start, endOffset: part.end, tokenEstimate: Math.ceil(part.body.length / 4), contentHash: createHash("sha256").update(part.body).digest("hex"), searchText: part.body }).onConflictDoNothing(); refs.push({ id: sid, body: part.body }); }
-        docs.set(record.sourceKey, { id, segments: refs });
+        if (record.recordType === "entity" || record.entityType) continue;
+        if (!record.title && !record.body) continue;
+        const sourceSnapshotId = snapshotByRecord.get(record.sourceKey);
+        if (!sourceSnapshotId)
+          throw new DomainError(
+            "revision_document_provenance_missing",
+            `No immutable source snapshot was found for ${record.sourceKey}`,
+            { sourceKey: record.sourceKey },
+          );
+        const body = record.body ?? record.title ?? "";
+        const documentId = stableUuid(
+          `${revision.gameId}:document:${record.sourceKey}:${revisionId}`,
+        );
+        await tx.insert(documents).values({
+          id: documentId,
+          gameId: revision.gameId,
+          sourceKey: record.sourceKey,
+          type: record.documentType ?? "lore",
+          title: record.title ?? record.sourceKey,
+          normalizedTitle: normalize(record.title ?? record.sourceKey),
+          gameVersion: record.gameVersion,
+          sourceSnapshotId,
+          body,
+          metadata: record.metadata,
+          revisionId,
+          deleted: false,
+        });
+        const segmentRefs: Array<{ id: string; body: string }> = [];
+        for (const [ordinal, segment] of splitIntoSegments(body).entries()) {
+          const segmentId = stableUuid(`${documentId}:segment:${ordinal}:${record.contentHash}`);
+          await tx.insert(documentSegments).values({
+            id: segmentId,
+            documentId,
+            revisionId,
+            ordinal,
+            headingPath: segment.headingPath,
+            body: segment.body,
+            startOffset: segment.start,
+            endOffset: segment.end,
+            tokenEstimate: Math.ceil(segment.body.length / 4),
+            contentHash: createHash("sha256").update(segment.body).digest("hex"),
+            searchText: segment.body,
+          });
+          segmentRefs.push({ id: segmentId, body: segment.body });
+          for (const candidateValue of allCandidates) {
+            const names = [
+              candidateValue.name,
+              ...(candidateValue.aliases ?? []).map((alias) => alias.value),
+            ];
+            const matched = names
+              .map((name) => ({ name, offset: segment.body.indexOf(name) }))
+              .find((value) => value.offset >= 0);
+            if (!matched) continue;
+            await tx.insert(entityMentions).values({
+              entityId: entityIdBySourceKey.get(candidateValue.sourceKey)!,
+              segmentId,
+              rawText: matched.name,
+              startOffset: matched.offset,
+              endOffset: matched.offset + matched.name.length,
+              matchMethod: matched.name === candidateValue.name ? "canonical_name" : "alias",
+              confidence: 1,
+            });
+          }
+        }
+        documentBySourceKey.set(record.sourceKey, { id: documentId, segments: segmentRefs });
       }
+
       for (const record of records) {
-        for (const rel of record.relationships ?? []) { const subjectId = entitiesByKey.get(rel.subjectSourceKey), objectId = entitiesByKey.get(rel.objectSourceKey); if (!subjectId || !objectId) throw new DomainError("invalid_entity_reference", `Relationship references an unknown entity in ${record.sourceKey}`); await tx.insert(relationships).values({ gameId: revision.gameId, subjectId, predicate: rel.predicate, objectId, sourceKey: record.sourceKey, revisionId, status: "active", validFrom: rel.validFrom, validTo: rel.validTo, confidence: rel.confidence }).onConflictDoNothing(); }
-        for (const claim of record.claims ?? []) { if ((claim.status === "confirmed" || claim.status === "implied") && !claim.evidence?.length) throw new DomainError("claim_evidence_required", `Claim has no evidence: ${claim.statement}`); const [row] = await tx.insert(claims).values({ gameId: revision.gameId, sourceKey: claim.sourceKey, recordSourceKey: record.sourceKey, normalizedStatement: claim.statement, status: claim.status, confidence: claim.confidence, createdBy: claim.createdBy ?? "import", revisionId }).returning(); if (!row) continue; for (const key of claim.entitySourceKeys ?? []) { const eid = entitiesByKey.get(key); if (eid) await tx.insert(claimEntities).values({ claimId: row.id, entityId: eid }).onConflictDoNothing(); } for (const ev of claim.evidence ?? []) { const target = docs.get(ev.documentSourceKey) ?? docs.get(record.sourceKey); if (!target?.segments[0]) throw new DomainError("evidence_document_missing", `Evidence document is missing: ${ev.documentSourceKey}`); const seg = target.segments.find((s) => !ev.quote || s.body.includes(ev.quote)) ?? target.segments[0], start = ev.quote ? seg.body.indexOf(ev.quote) : 0, quote = ev.quote ?? seg.body.slice(0, 500); await tx.insert(evidence).values({ claimId: row.id, documentId: target.id, segmentId: seg.id, quoteStart: Math.max(0, start), quoteEnd: Math.max(0, start) + quote.length, quote, strength: ev.strength, note: ev.note, valid: true }); } }
+        for (const relation of record.relationships ?? []) {
+          const subjectId = entityIdBySourceKey.get(relation.subjectSourceKey);
+          const objectId = entityIdBySourceKey.get(relation.objectSourceKey);
+          if (!subjectId || !objectId)
+            throw new DomainError(
+              "invalid_entity_reference",
+              `Relationship references an unknown entity in ${record.sourceKey}`,
+            );
+          await tx.insert(relationships).values({
+            gameId: revision.gameId,
+            subjectId,
+            predicate: relation.predicate,
+            objectId,
+            sourceKey: record.sourceKey,
+            sourceId: sourceByRecord.get(record.sourceKey),
+            revisionId,
+            status: "active",
+            validFrom: relation.validFrom,
+            validTo: relation.validTo,
+            confidence: relation.confidence,
+          });
+        }
+        for (const claim of record.claims ?? []) {
+          if (
+            (claim.status === "confirmed" || claim.status === "implied") &&
+            !claim.evidence?.length
+          )
+            throw new DomainError(
+              "claim_evidence_required",
+              `Claim has no evidence: ${claim.statement}`,
+            );
+          const [claimRow] = await tx
+            .insert(claims)
+            .values({
+              gameId: revision.gameId,
+              sourceKey: claim.sourceKey,
+              recordSourceKey: record.sourceKey,
+              normalizedStatement: claim.statement,
+              status: claim.status,
+              confidence: claim.confidence,
+              createdBy: claim.createdBy ?? "import",
+              revisionId,
+            })
+            .returning();
+          if (!claimRow) continue;
+          for (const sourceKey of claim.entitySourceKeys ?? []) {
+            const entityId = entityIdBySourceKey.get(sourceKey);
+            if (entityId)
+              await tx
+                .insert(claimEntities)
+                .values({ claimId: claimRow.id, entityId })
+                .onConflictDoNothing();
+          }
+          for (const claimEvidence of claim.evidence ?? []) {
+            const target =
+              documentBySourceKey.get(claimEvidence.documentSourceKey) ??
+              documentBySourceKey.get(record.sourceKey);
+            if (!target?.segments[0])
+              throw new DomainError(
+                "evidence_document_missing",
+                `Evidence document is missing: ${claimEvidence.documentSourceKey}`,
+              );
+            const located = claimEvidence.quote
+              ? target.segments
+                  .map((segment) => ({
+                    segment,
+                    start: segment.body.indexOf(claimEvidence.quote!),
+                  }))
+                  .find((candidateValue) => candidateValue.start >= 0)
+              : { segment: target.segments[0], start: 0 };
+            if (!located)
+              throw new DomainError(
+                "evidence_quote_missing",
+                `Evidence quote was not found in ${claimEvidence.documentSourceKey}`,
+              );
+            const quote = claimEvidence.quote ?? located.segment.body.slice(0, 500);
+            await tx.insert(evidence).values({
+              claimId: claimRow.id,
+              documentId: target.id,
+              segmentId: located.segment.id,
+              quoteStart: located.start,
+              quoteEnd: located.start + quote.length,
+              quote,
+              strength: claimEvidence.strength,
+              note: claimEvidence.note,
+              valid: true,
+            });
+          }
+        }
       }
+
+      const expectedDocuments = records.filter(
+        (record) =>
+          record.recordType !== "entity" &&
+          !record.entityType &&
+          Boolean(record.title || record.body),
+      ).length;
+      const expectedRelationships = records.reduce(
+        (total, record) => total + (record.relationships?.length ?? 0),
+        0,
+      );
+      const expectedClaims = records.reduce(
+        (total, record) => total + (record.claims?.length ?? 0),
+        0,
+      );
+      const [counts] = await tx
+        .select({
+          documents: sql<number>`(select count(*)::int from knowledge.documents where revision_id = ${revisionId}::uuid)`,
+          relationships: sql<number>`(select count(*)::int from knowledge.relationships where revision_id = ${revisionId}::uuid)`,
+          claims: sql<number>`(select count(*)::int from knowledge.claims where revision_id = ${revisionId}::uuid)`,
+        })
+        .from(datasetRevisions)
+        .where(eq(datasetRevisions.id, revisionId));
+      if (
+        !counts ||
+        counts.documents !== expectedDocuments ||
+        counts.relationships !== expectedRelationships ||
+        counts.claims !== expectedClaims
+      )
+        throw new DomainError(
+          "revision_materialization_incomplete",
+          "Revision read model counts do not match the immutable Build",
+          {
+            expected: {
+              documents: expectedDocuments,
+              relationships: expectedRelationships,
+              claims: expectedClaims,
+            },
+            actual: counts,
+          },
+        );
     });
   }
 
@@ -4611,6 +5108,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       publishedAt: row.publishedAt,
       isCurrent: row.isCurrent,
       indexStatus: row.indexStatus as DatasetRevision["indexStatus"],
+      manifestId: row.manifestId,
+      sourceId: row.sourceId,
+      gameVersion: row.gameVersion,
+      locale: row.locale,
+      archivedReason: row.archivedReason,
+      archivedAt: row.archivedAt,
     }));
   }
 
@@ -5009,6 +5512,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       isCurrent: row.isCurrent,
       indexStatus: row.indexStatus as DatasetRevision["indexStatus"],
       lifecycleStatus: row.lifecycleStatus as DatasetRevision["lifecycleStatus"],
+      manifestId: row.manifestId,
+      sourceId: row.sourceId,
+      gameVersion: row.gameVersion,
+      locale: row.locale,
+      archivedReason: row.archivedReason,
+      archivedAt: row.archivedAt,
     };
   }
 
