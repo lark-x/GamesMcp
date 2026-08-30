@@ -27,6 +27,7 @@
     "eval:qa": "node --import tsx scripts/evaluate-qa.ts",
     "benchmark:search": "node --import tsx scripts/benchmark-search.ts",
     "data:convert:anime": "node --import tsx scripts/convert-anime-game-data.ts",
+    "data:validate:genshin-db": "node --import tsx scripts/validate-genshin-db-import.ts",
     "data:import:anime": "node --import tsx scripts/import-anime-game-data.ts",
     "data:verify:anime": "node --import tsx scripts/verify-anime-game-data.ts",
     "data:status:anime": "node --import tsx scripts/report-acquisition-status.ts",

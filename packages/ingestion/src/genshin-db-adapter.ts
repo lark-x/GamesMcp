@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 export const UPSTREAM_URL = "https://github.com/theBowja/genshin-db";
@@ -82,7 +82,9 @@ function convert(
       props[key] = value;
   }
   const payload = {
-    sourceKey: `genshin-db/${category}/${id}`,
+    // Filenames carry variant suffixes (for example -01) that are meaningful in
+    // the upstream snapshot; names alone are not unique across those files.
+    sourceKey: `genshin-db/${category}/${basename(item.file, ".json")}`,
     title: name,
     entityType:
       category === "characters"
