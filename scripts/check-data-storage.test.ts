@@ -14,10 +14,13 @@ import {
   type VolumeInspection,
 } from "./check-data-storage.ts";
 
-const config = resolveStorageConfig({
-  STORAGE_MIN_EXTERNAL_GIB: "0.5",
-  STORAGE_MIN_SYSTEM_DATA_GIB: "0.25",
-});
+const config = resolveStorageConfig(
+  {
+    STORAGE_MIN_EXTERNAL_GIB: "0.5",
+    STORAGE_MIN_SYSTEM_DATA_GIB: "0.25",
+  },
+  "darwin",
+);
 assert.equal(config.externalVolumePath, DEFAULT_EXTERNAL_VOLUME_PATH);
 assert.equal(config.dataRoot, DEFAULT_DATA_ROOT);
 assert.equal(config.systemDataVolumePath, DEFAULT_SYSTEM_DATA_VOLUME_PATH);
@@ -27,11 +30,13 @@ assert.equal(config.systemDataMinFreeBytes, 0.25 * GIB);
 const mount = parseMountOutput(
   "/dev/disk7s1 on /Volumes/Lark (apfs, local, nodev, nosuid, journaled)\n",
   "/Volumes/Lark",
+  "darwin",
 );
 const df = parseDfOutput(
   "Filesystem 1024-blocks Used Available Capacity Mounted on\n" +
     "/dev/disk7s1 100000000 1 60000000 1% /Volumes/Lark\n",
   "/Volumes/Lark",
+  "darwin",
 );
 assert.deepEqual(mount, {
   mountPoint: "/Volumes/Lark",
@@ -41,7 +46,7 @@ assert.deepEqual(mount, {
 assert.equal(df?.mountPoint, "/Volumes/Lark");
 assert.equal(df?.availableBytes, 60_000_000 * 1024);
 
-const unmountedConfig = resolveStorageConfig({ STORAGE_MIN_EXTERNAL_GIB: "0" });
+const unmountedConfig = resolveStorageConfig({ STORAGE_MIN_EXTERNAL_GIB: "0" }, "darwin");
 const unmountedInspection: VolumeInspection = {
   path: unmountedConfig.externalVolumePath,
   mounted: false,

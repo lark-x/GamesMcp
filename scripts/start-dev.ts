@@ -35,14 +35,24 @@ console.log(
 );
 console.log("  Worker：将与 API 一起启动");
 
+const pnpmArgs = [
+  "--parallel",
+  "--filter",
+  "@gip/api",
+  "--filter",
+  "@gip/web",
+  "--filter",
+  "@gip/worker",
+  "dev",
+];
 const child = spawn(
-  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-  ["--parallel", "--filter", "@gip/api", "--filter", "@gip/web", "--filter", "@gip/worker", "dev"],
+  process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "pnpm",
+  process.platform === "win32" ? ["/d", "/s", "/c", "pnpm", ...pnpmArgs] : pnpmArgs,
   {
     cwd: process.cwd(),
     env,
     stdio: "inherit",
-    shell: process.platform === "win32",
+    shell: false,
   },
 );
 child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
