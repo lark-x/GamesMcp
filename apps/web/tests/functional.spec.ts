@@ -102,12 +102,22 @@ test("导入提交显示自动 Candidate 说明", async ({ page }) => {
 test("问题页上传证据并创建 Patch", async ({ page }) => {
   await mockApi(page);
   let patchBody = "";
+  let evidenceBody = "";
+  await page.route("**/review-issues/i1/evidence", async (route) => {
+    evidenceBody = route.request().postData() ?? "";
+    await route.fulfill({ json: {} });
+  });
   await page.route("**/patches", async (route) => {
     patchBody = route.request().postData() ?? "";
     await route.fulfill({ json: {} });
   });
   await page.goto("/#admin/issues");
   await page.getByLabel("说明 k1").fill("verified");
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "evidence.png", mimeType: "image/png", buffer: Buffer.from("png") });
+  await page.getByRole("button", { name: "上传证据" }).click();
+  await expect.poll(() => evidenceBody).toContain("dataBase64");
   await page.getByRole("button", { name: "创建 Patch 并生成 Build N+1" }).click();
   await expect.poll(() => patchBody).toContain("issueId");
   await expect(page.getByText(/已创建 Patch/)).toBeVisible();

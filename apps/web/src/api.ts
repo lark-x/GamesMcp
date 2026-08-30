@@ -92,7 +92,7 @@ export const api = {
     itemId: string,
     input: { mimeType: "image/png" | "image/jpeg" | "image/webp"; dataBase64: string },
   ) =>
-    request(`/api/admin/verification/items/${itemId}/screenshots`, {
+    request(`/api/admin/review-issues/${itemId}/evidence`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
