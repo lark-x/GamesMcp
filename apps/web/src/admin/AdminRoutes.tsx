@@ -14,7 +14,11 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [revisions, setRevisions] = useState<Array<Record<string, unknown>>>([]);
-  const [source, setSource] = useState(""); const [gameId, setGameId] = useState(""); const [sourceId, setSourceId] = useState(""); const [message, setMessage] = useState(""); const [issueAction, setIssueAction] = useState<Record<string,string>>({});
+  const [source, setSource] = useState("");
+  const [gameId, setGameId] = useState("");
+  const [sourceId, setSourceId] = useState("");
+  const [message, setMessage] = useState("");
+  const [issueAction, setIssueAction] = useState<Record<string, string>>({});
   useEffect(() => {
     fetch("/api/admin/release-candidates")
       .then((r) => r.json())
@@ -65,18 +69,42 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
         <section className="admin-page">
           <h2>导入</h2>
           <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                try { const created=await api.createImport({ gameId, sourceId, path: source }); setMessage(`导入任务已创建：${created.id}`); setSource(""); } catch(err) { setMessage(`提交失败：${(err as Error).message}`); }
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const created = await api.createImport({ gameId, sourceId, path: source });
+                setMessage(`导入任务已创建：${created.id}`);
+                setSource("");
+              } catch (err) {
+                setMessage(`提交失败：${(err as Error).message}`);
+              }
             }}
           >
             <label>
-              Game ID <input required value={gameId} onChange={e=>setGameId(e.target.value)} placeholder="游戏 UUID" />
-              Source ID <input required value={sourceId} onChange={e=>setSourceId(e.target.value)} placeholder="来源 UUID" />
-              来源路径 <input required value={source} onChange={e=>setSource(e.target.value)} placeholder="本地路径或 URL" />
+              Game ID{" "}
+              <input
+                required
+                value={gameId}
+                onChange={(e) => setGameId(e.target.value)}
+                placeholder="游戏 UUID"
+              />
+              Source ID{" "}
+              <input
+                required
+                value={sourceId}
+                onChange={(e) => setSourceId(e.target.value)}
+                placeholder="来源 UUID"
+              />
+              来源路径{" "}
+              <input
+                required
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder="本地路径或 URL"
+              />
             </label>
-          <button type="submit">创建导入任务</button>
-          {message && <p role="status">{message}</p>}
+            <button type="submit">创建导入任务</button>
+            {message && <p role="status">{message}</p>}
           </form>
           <p>导入完成后 Worker 会自动聚合 Candidate 并生成 Build。</p>
         </section>
@@ -117,9 +145,38 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                 <p>
                   {i.summary} · {i.status}
                 </p>
-                <select aria-label={`处理动作 ${i.canonicalKey}`} value={issueAction[i.id] ?? "keep_main"} onChange={e=>setIssueAction(a=>({...a,[i.id]:e.target.value}))}><option value="keep_main">保留主版本</option><option value="use_incoming">使用导入</option><option value="manual">人工修改</option><option value="not_duplicate">非重复</option><option value="confirm_delete">确认删除</option><option value="exclude_record">排除记录</option></select>
-                <input aria-label={`说明 ${i.canonicalKey}`} placeholder="处理说明（必填）" onChange={e=>setIssueAction(a=>({...a,[`${i.id}:note`]:e.target.value}))}/>
-                <button onClick={async()=>{const note=issueAction[`${i.id}:note`]; if(!note){setMessage("请填写处理说明");return;} await api.resolve(i.id,issueAction[i.id]??"keep_main",note); setIssues(all=>all.filter(x=>x.id!==i.id));}}>确认处理并生成新 Build</button>
+                <select
+                  aria-label={`处理动作 ${i.canonicalKey}`}
+                  value={issueAction[i.id] ?? "keep_main"}
+                  onChange={(e) => setIssueAction((a) => ({ ...a, [i.id]: e.target.value }))}
+                >
+                  <option value="keep_main">保留主版本</option>
+                  <option value="use_incoming">使用导入</option>
+                  <option value="manual">人工修改</option>
+                  <option value="not_duplicate">非重复</option>
+                  <option value="confirm_delete">确认删除</option>
+                  <option value="exclude_record">排除记录</option>
+                </select>
+                <input
+                  aria-label={`说明 ${i.canonicalKey}`}
+                  placeholder="处理说明（必填）"
+                  onChange={(e) =>
+                    setIssueAction((a) => ({ ...a, [`${i.id}:note`]: e.target.value }))
+                  }
+                />
+                <button
+                  onClick={async () => {
+                    const note = issueAction[`${i.id}:note`];
+                    if (!note) {
+                      setMessage("请填写处理说明");
+                      return;
+                    }
+                    await api.resolve(i.id, issueAction[i.id] ?? "keep_main", note);
+                    setIssues((all) => all.filter((x) => x.id !== i.id));
+                  }}
+                >
+                  确认处理并生成新 Build
+                </button>
               </article>
             ))
           ) : (

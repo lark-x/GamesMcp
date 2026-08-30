@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api, Candidate as ApiCandidate } from "../api.js";
 type RecordRow = {
   sourceKey: string;
   displayKind: "entity" | "document";
@@ -24,6 +25,7 @@ export function PreviewBrowser({
   initialBuildId?: string;
 }) {
   const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [allCandidates, setAllCandidates] = useState<ApiCandidate[]>([]);
   const [buildId, setBuildId] = useState(initialBuildId ?? "");
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [selected, setSelected] = useState<RecordRow | null>(null);
@@ -31,28 +33,41 @@ export function PreviewBrowser({
   const [kind, setKind] = useState<"all" | "entity" | "document">("all");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const size = 50;
   useEffect(() => {
-    setLoading(true); setError(""); fetch(`/api/admin/release-candidates/${candidateId}`)
+    api
+      .candidates()
+      .then((v) => setAllCandidates(v.candidates ?? []))
+      .catch(() => undefined);
+    setLoading(true);
+    setError("");
+    fetch(`/api/admin/release-candidates/${candidateId}`)
       .then((r) => r.json())
       .then((v) => {
         const c = v.candidate ?? v;
         setCandidate(c);
         setBuildId(initialBuildId ?? c.currentBuildId ?? c.builds?.[0]?.id ?? "");
-      }).catch(e=>setError(e.message)).finally(()=>setLoading(false));
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [candidateId, initialBuildId]);
   useEffect(() => {
     if (!buildId) return;
     const params = new URLSearchParams({ limit: String(size), offset: String(page * size), kind });
     if (query) params.set("q", query);
-    setLoading(true); setError(""); fetch(`/api/admin/previews/${buildId}/records?${params}`)
+    setLoading(true);
+    setError("");
+    fetch(`/api/admin/previews/${buildId}/records?${params}`)
       .then((r) => r.json())
       .then((v) => {
         setRows(v.records ?? []);
         setTotal(v.total ?? 0);
         setSelected(v.records?.[0] ?? null);
-      }).catch(e=>setError(e.message)).finally(()=>setLoading(false));
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [buildId, kind, page, query]);
   const updateUrl = (next: string) => {
     setBuildId(next);
@@ -90,8 +105,17 @@ export function PreviewBrowser({
       <section className="preview-version-bar">
         <label>
           Candidate{" "}
-          <select value={candidateId} onChange={e=>{window.location.hash=`preview/${e.target.value}`;}}>
-            <option value={candidateId}>{candidate?.name ?? candidateId}</option>
+          <select
+            value={candidateId}
+            onChange={(e) => {
+              window.location.hash = `preview/${e.target.value}`;
+            }}
+          >
+            {allCandidates.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.status}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -133,7 +157,10 @@ export function PreviewBrowser({
           <h2>
             资料列表 <small>{total} 条</small>
           </h2>
-          {loading && <p role="status">加载中…</p>}{error && <p role="alert">加载失败：{error}</p>}{!loading && !error && !rows.length && <p>暂无匹配记录。</p>}{rows.map((r) => (
+          {loading && <p role="status">加载中…</p>}
+          {error && <p role="alert">加载失败：{error}</p>}
+          {!loading && !error && !rows.length && <p>暂无匹配记录。</p>}
+          {rows.map((r) => (
             <button className="preview-row" key={r.sourceKey} onClick={() => setSelected(r)}>
               <strong>{r.title}</strong>
               <small>
@@ -159,7 +186,7 @@ export function PreviewBrowser({
           {selected ? (
             <>
               <h2>{selected.title}</h2>
-              <p>{selected.body}</p>
+              <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.body}</p>
               <details>
                 <summary>来源与技术信息</summary>
                 <p>
@@ -168,6 +195,8 @@ export function PreviewBrowser({
                   hash: {selected.contentHash}
                   <br />
                   parser: {selected.parserVersion}
+                  <br />
+                  metadata: {JSON.stringify(selected.metadata)}
                 </p>
               </details>
               <button onClick={() => void report()}>报告问题</button>
