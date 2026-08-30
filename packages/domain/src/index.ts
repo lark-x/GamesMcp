@@ -660,6 +660,8 @@ export interface KnowledgeRepository {
   }): Promise<CandidatePatch>;
   listReviewEvidence?(issueId: Id): Promise<ReviewEvidence[]>;
   addReviewEvidence?(input: Omit<ReviewEvidence, "id" | "createdAt">): Promise<ReviewEvidence>;
+  getReviewEvidence?(evidenceId: Id): Promise<ReviewEvidence | null>;
+  deleteReviewEvidence?(evidenceId: Id): Promise<ReviewEvidence | null>;
   listReleaseCandidateChecks?(candidateId: Id): Promise<ReleaseCandidateCheck[]>;
   ensureAcquisitionReview?(batchId: Id): Promise<void>;
   getVerificationRun?(batchId: Id): Promise<VerificationRun | null>;

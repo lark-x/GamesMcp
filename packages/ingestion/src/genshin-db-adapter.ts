@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 export const UPSTREAM_URL = "https://github.com/theBowja/genshin-db";
 export const LOCKED_COMMIT = "8b15995fa220c88a4d0d7ffe1e21b041d0b32588";
-export const ADAPTER_VERSION = "genshin-db-short-facts-v1";
+export const ADAPTER_VERSION = "genshin-db-short-facts-v2";
 const exec = promisify(execFile);
 const categories = ["characters", "weapons", "artifacts", "materials", "enemies"] as const;
 type Category = (typeof categories)[number];
@@ -16,6 +16,7 @@ export type NormalizedRecord = {
   recordType: "entity";
   title: string;
   entityType: string;
+  properties: Json;
   metadata: Json;
   contentHash: string;
   parserVersion: string;
@@ -65,7 +66,7 @@ function convert(
   const id = first(item.row, ["id", "key", "name"]) ?? "missing";
   const name = first(item.row, ["name", "title", "key"]);
   if (!name || id === "missing") throw new Error(`required_key_missing: ${item.file}`);
-  const props: Json = {};
+  const properties: Json = {};
   for (const key of [
     "rarity",
     "element",
@@ -79,7 +80,7 @@ function convert(
   ]) {
     const value = item.row[key];
     if (typeof value === "string" || typeof value === "number" || Array.isArray(value))
-      props[key] = value;
+      properties[key] = value;
   }
   const payload = {
     // Filenames carry variant suffixes (for example -01) that are meaningful in
@@ -94,7 +95,7 @@ function convert(
           : category === "materials" || category === "weapons" || category === "artifacts"
             ? "item"
             : "concept",
-    props,
+    properties,
   };
   return {
     ...payload,
