@@ -287,7 +287,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
 async function requirePublicRevision(repository: KnowledgeRepository, gameId: string) {
   const revision = (await repository.listRevisions(gameId)).find(
     (item) =>
-      item.isCurrent && item.lifecycleStatus === "published" && item.indexStatus === "ready",
+      item.isCurrent &&
+      item.lifecycleStatus === "published" &&
+      item.indexStatus === "ready" &&
+      Boolean(item.manifestId),
   );
   if (!revision)
     throw new DomainError(

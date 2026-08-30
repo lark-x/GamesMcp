@@ -37,7 +37,7 @@ export function VersionSwitcher({
           setValue(v);
           if (v.startsWith("candidate:")) {
             const [, c, b] = v.split(":");
-            onPreview(c, b);
+            if (c) onPreview(c, b);
           } else if (v === "current") {
             window.location.hash = "";
           } else if (v.startsWith("revision:")) {

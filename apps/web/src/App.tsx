@@ -11,7 +11,7 @@ export function App() {
     return () => window.removeEventListener("hashchange", update);
   }, []);
   const preview = route.match(/^preview\/([^/]+)(?:\/([^/]+))?/);
-  if (preview) return <PreviewBrowser candidateId={preview[1]} initialBuildId={preview[2]} />;
+  if (preview) return <PreviewBrowser candidateId={preview[1]!} initialBuildId={preview[2]} />;
   if (route.startsWith("admin")) return <AdminRoutes initialRoute={route} />;
   return (
     <main className="app-shell public-shell">

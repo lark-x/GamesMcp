@@ -615,6 +615,13 @@ export interface KnowledgeRepository {
     releaseNote?: string;
     idempotencyKey: string;
   }): Promise<DatasetRevision>;
+  finalizeActivation?(input: {
+    revisionId: Id;
+    candidateId: Id;
+    buildId: Id;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: Id | null;
+  }): Promise<DatasetRevision>;
   listReviewIssues?(candidateId: Id): Promise<ReviewIssue[]>;
   reportReviewIssue?(input: {
     candidateId: Id;

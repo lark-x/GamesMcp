@@ -2899,30 +2899,143 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           inArray(releaseCandidates.status, ["preview_ready", "ready_to_promote"]),
         ),
       );
-    // publishImport retains the previous current revision until its own
-    // transaction commits, so a failed promotion cannot create an MCP gap.
-    let revision: DatasetRevision;
-    try {
-      revision = await this.publishImport(candidate.importBatchIds.at(-1)!, input.releaseNote, {
-        skipManualVerification: true,
-        recordsOverride: build.normalizedRecords,
+    const revision = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select id from platform.games where id = ${candidate.gameId}::uuid for update`,
+      );
+      const latest = await tx
+        .select()
+        .from(datasetRevisions)
+        .where(eq(datasetRevisions.gameId, candidate.gameId))
+        .orderBy(desc(datasetRevisions.revisionNumber))
+        .limit(1);
+      const [preparing] = await tx
+        .insert(datasetRevisions)
+        .values({
+          gameId: candidate.gameId,
+          revisionNumber: (latest[0]?.revisionNumber ?? 0) + 1,
+          sourceBatchId: candidate.importBatchIds[0]!,
+          releaseNote: input.releaseNote,
+          lifecycleStatus: "preparing",
+          isCurrent: false,
+          indexStatus: "ready",
+          normalizedRecords: build.normalizedRecords,
+          manifestId: build.manifestId,
+          activationBuildId: build.id,
+          activationCandidateId: candidate.id,
+          provenance: {
+            candidateId: candidate.id,
+            buildId: build.id,
+            batchIds: candidate.importBatchIds,
+          },
+        })
+        .returning();
+      if (!preparing)
+        throw new DomainError(
+          "revision_create_failed",
+          "Preparing revision could not be created",
+          undefined,
+          500,
+        );
+      await tx.insert(auditLog).values({
+        action: "revision_preparing",
+        targetType: "dataset_revision",
+        targetId: preparing.id,
+        reason: input.releaseNote ?? "Candidate promotion",
+        metadata: { candidateId: candidate.id, buildId: build.id },
       });
-    } catch (error) {
-      await this.db
+      return preparing;
+    });
+    return this.finalizeActivation({
+      revisionId: revision.id,
+      candidateId: candidate.id,
+      buildId: build.id,
+      contentChecksum: input.contentChecksum,
+      expectedCurrentRevisionId: input.expectedCurrentRevisionId,
+    });
+  }
+
+  async finalizeActivation(input: {
+    revisionId: string;
+    candidateId: string;
+    buildId: string;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: string | null;
+  }): Promise<DatasetRevision> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select id from platform.games where id = (select game_id from knowledge.dataset_revisions where id = ${input.revisionId}::uuid) for update`,
+      );
+      const [revision] = await tx
+        .select()
+        .from(datasetRevisions)
+        .where(eq(datasetRevisions.id, input.revisionId))
+        .limit(1);
+      const [candidate] = await tx
+        .select()
+        .from(releaseCandidates)
+        .where(eq(releaseCandidates.id, input.candidateId))
+        .limit(1);
+      const [build] = await tx
+        .select()
+        .from(releaseCandidateBuilds)
+        .where(eq(releaseCandidateBuilds.id, input.buildId))
+        .limit(1);
+      if (
+        !revision ||
+        !candidate ||
+        !build ||
+        revision.lifecycleStatus !== "preparing" ||
+        build.contentChecksum !== input.contentChecksum ||
+        build.manifestId !== revision.manifestId ||
+        build.indexStatus !== "ready"
+      )
+        throw new DomainError(
+          "activation_not_ready",
+          "Preparing revision failed activation checks",
+          undefined,
+          409,
+        );
+      const [current] = await tx
+        .select()
+        .from(datasetRevisions)
+        .where(
+          and(eq(datasetRevisions.gameId, revision.gameId), eq(datasetRevisions.isCurrent, true)),
+        )
+        .limit(1);
+      if (
+        input.expectedCurrentRevisionId !== undefined &&
+        (current?.id ?? null) !== input.expectedCurrentRevisionId
+      )
+        throw new DomainError(
+          "current_revision_changed",
+          "The formal revision changed before activation",
+          undefined,
+          409,
+        );
+      if (current)
+        await tx
+          .update(datasetRevisions)
+          .set({ isCurrent: false })
+          .where(eq(datasetRevisions.id, current.id));
+      const [active] = await tx
+        .update(datasetRevisions)
+        .set({ lifecycleStatus: "published", isCurrent: true, activatedAt: new Date() })
+        .where(eq(datasetRevisions.id, revision.id))
+        .returning();
+      await tx
         .update(releaseCandidates)
-        .set({ status: "failed", updatedAt: new Date() })
+        .set({ status: "promoted", promotedRevisionId: revision.id, updatedAt: new Date() })
         .where(eq(releaseCandidates.id, candidate.id));
-      throw error;
-    }
-    await this.db
-      .update(releaseCandidates)
-      .set({
-        status: "promoted",
-        promotedRevisionId: revision.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(releaseCandidates.id, candidate.id));
-    return revision;
+      await tx.insert(auditLog).values({
+        action: "revision_activated",
+        targetType: "dataset_revision",
+        targetId: revision.id,
+        reason: "Candidate Build activation",
+        metadata: { candidateId: candidate.id, buildId: build.id },
+      });
+      return this.mapDatasetRevision(active!);
+    });
   }
 
   async publishImport(
