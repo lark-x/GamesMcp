@@ -262,7 +262,8 @@ describe("MCP server", () => {
       await server.connect(st);
       await client.connect(ct);
       const result = await client.readResource({ uri: `revision://${gameId}/current` });
-      expect(resultJson(result)).toBe(hidden ? null : expect.anything());
+      if (hidden) expect(resultJson(result)).toBeNull();
+      else expect(resultJson(result)).toBeTruthy();
       await client.close();
       await server.close();
     },
