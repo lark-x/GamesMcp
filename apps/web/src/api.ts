@@ -69,6 +69,10 @@ export const api = {
     }),
   readiness: (id: string) =>
     request<Record<string, unknown>>(`/api/admin/release-candidates/${id}/readiness`),
+  promote: (candidateId: string, input: Record<string, unknown>) =>
+    request(`/api/admin/release-candidates/${candidateId}/promote`, { method: "POST", body: JSON.stringify(input) }),
+  createPatch: (candidateId: string, input: Record<string, unknown>) =>
+    request(`/api/admin/release-candidates/${candidateId}/patches`, { method: "POST", body: JSON.stringify(input) }),
   issues: () => request<{ issues: Issue[] }>("/api/admin/review-issues"),
   issue: (id: string) => request<{ issue: Issue }>(`/api/admin/review-issues/${id}`),
   patches: (candidateId: string) =>
