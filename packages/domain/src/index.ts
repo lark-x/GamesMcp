@@ -131,7 +131,7 @@ export type DatasetRevision = {
   revisionNumber: number;
   sourceBatchId: Id;
   releaseNote?: string | null;
-  lifecycleStatus: "preview" | "published" | "retired";
+  lifecycleStatus: "preparing" | "preview" | "published" | "retired" | "failed";
   publishedAt: Date;
   isCurrent: boolean;
   indexStatus: "pending" | "ready" | "stale" | "failed";
