@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { strict as assert } from "node:assert";
 import { createDatabase, createPool } from "../packages/database/src/client.ts";
