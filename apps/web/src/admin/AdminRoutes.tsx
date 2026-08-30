@@ -8,7 +8,14 @@ type Candidate = {
   currentBuildId?: string;
   builds?: Array<{ id: string; buildNumber: number; status: string; recordCount: number }>;
 };
-type Issue = { id: string; candidateId?: string; canonicalKey: string; kind: string; status: string; summary: string };
+type Issue = {
+  id: string;
+  candidateId?: string;
+  canonicalKey: string;
+  kind: string;
+  status: string;
+  summary: string;
+};
 export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   const [page, setPage] = useState(initialRoute.split("/")[1]?.split("?")[0] || "intake");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -39,7 +46,10 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   useEffect(() => {
     if (page !== "intake") return;
     const timer = window.setInterval(() => {
-      api.imports().then((v) => setMessage(`最近导入任务：${v.imports?.[0] ? "状态已刷新" : "暂无任务"}`)).catch(() => undefined);
+      api
+        .imports()
+        .then((v) => setMessage(`最近导入任务：${v.imports?.[0] ? "状态已刷新" : "暂无任务"}`))
+        .catch(() => undefined);
     }, 5000);
     return () => window.clearInterval(timer);
   }, [page]);
@@ -128,7 +138,16 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                 {c.name} · {c.status}
               </h3>
               <button onClick={() => setSelectedCandidate(c.id)}>选择此 Candidate</button>{" "}
-              <button onClick={() => api.promote(c.id, { buildId: c.currentBuildId, idempotencyKey: `promote-${c.id}` }).then(() => setMessage("已提交晋级")).catch((e) => setMessage(`晋级失败：${e.message}`))}>晋级正式版本</button>
+              <button
+                onClick={() =>
+                  api
+                    .promote(c.id, { buildId: c.currentBuildId, idempotencyKey: `promote-${c.id}` })
+                    .then(() => setMessage("已提交晋级"))
+                    .catch((e) => setMessage(`晋级失败：${e.message}`))
+                }
+              >
+                晋级正式版本
+              </button>
               {c.builds?.map((b) => (
                 <p key={b.id}>
                   Build {b.buildNumber} · {b.status} · {b.recordCount} 条{" "}
@@ -189,14 +208,48 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                 >
                   确认处理并生成新 Build
                 </button>
-                <label>真实截图证据 <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setEvidence(e.target.files?.[0] ?? null)} /></label>
-                <button disabled={!evidence} onClick={async () => {
-                  if (!evidence) return;
-                  const data = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1] ?? ""); reader.readAsDataURL(evidence); });
-                  await api.uploadEvidence(i.id, { mimeType: evidence.type as "image/png", dataBase64: data });
-                  setMessage("证据已上传");
-                }}>上传证据</button>
-                <button disabled={!i.candidateId} onClick={() => i.candidateId && api.createPatch(i.candidateId, { issueId: i.id, kind: "manual", note: issueAction[`${i.id}:note`] ?? "" }).then(() => setMessage("已创建 Patch，下一次 Build 将自动生成")).catch((e) => setMessage(`创建 Patch 失败：${e.message}`))}>创建 Patch 并生成 Build N+1</button>
+                <label>
+                  真实截图证据{" "}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => setEvidence(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <button
+                  disabled={!evidence}
+                  onClick={async () => {
+                    if (!evidence) return;
+                    const data = await new Promise<string>((resolve) => {
+                      const reader = new FileReader();
+                      reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+                      reader.readAsDataURL(evidence);
+                    });
+                    await api.uploadEvidence(i.id, {
+                      mimeType: evidence.type as "image/png",
+                      dataBase64: data,
+                    });
+                    setMessage("证据已上传");
+                  }}
+                >
+                  上传证据
+                </button>
+                <button
+                  disabled={!i.candidateId}
+                  onClick={() =>
+                    i.candidateId &&
+                    api
+                      .createPatch(i.candidateId, {
+                        issueId: i.id,
+                        kind: "manual",
+                        note: issueAction[`${i.id}:note`] ?? "",
+                      })
+                      .then(() => setMessage("已创建 Patch，下一次 Build 将自动生成"))
+                      .catch((e) => setMessage(`创建 Patch 失败：${e.message}`))
+                  }
+                >
+                  创建 Patch 并生成 Build N+1
+                </button>
               </article>
             ))
           ) : (
@@ -213,8 +266,23 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
               <p>
                 {String(r.releaseNote ?? "")} · Manifest {String(r.manifestId ?? "—")}
               </p>
-              <input aria-label={`回滚原因 ${String(r.id ?? i)}`} placeholder="回滚原因（必填）" value={reason} onChange={(e) => setReason(e.target.value)} />
-              <button disabled={!reason.trim()} onClick={() => api.rollback(String(r.id), reason).then(() => setMessage("已提交带原因回滚")).catch((e) => setMessage(`回滚失败：${e.message}`))}>带原因回滚</button>
+              <input
+                aria-label={`回滚原因 ${String(r.id ?? i)}`}
+                placeholder="回滚原因（必填）"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <button
+                disabled={!reason.trim()}
+                onClick={() =>
+                  api
+                    .rollback(String(r.id), reason)
+                    .then(() => setMessage("已提交带原因回滚"))
+                    .catch((e) => setMessage(`回滚失败：${e.message}`))
+                }
+              >
+                带原因回滚
+              </button>
             </article>
           ))}
         </section>

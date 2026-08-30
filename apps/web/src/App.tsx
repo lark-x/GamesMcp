@@ -23,7 +23,13 @@ import type {
 } from "@gip/domain";
 import { AdminRoutes } from "./admin/AdminRoutes.js";
 type VerificationStatus = string;
-type VerificationItem = { id: string; status?: string; canonicalKey?: string; screenshots?: VerificationScreenshot[]; [key: string]: unknown };
+type VerificationItem = {
+  id: string;
+  status?: string;
+  canonicalKey?: string;
+  screenshots?: VerificationScreenshot[];
+  [key: string]: unknown;
+};
 type VerificationRun = { status: string; items: VerificationItem[]; [key: string]: unknown };
 type VerificationScreenshotView = VerificationScreenshot & { id: string; url?: string };
 
@@ -138,7 +144,6 @@ type ReleaseGateItem = {
   state: ReleaseGateState;
   action?: { label: string; view: "review" | "verify" | "release" };
 };
-
 
 type PreviewRoute = {
   candidateId: string;
@@ -1400,8 +1405,16 @@ async function loadPreviewRecords(
   limit: number,
 ): Promise<{ records: PreviewRecord[]; total: number }> {
   const [entities, documents] = await Promise.all([
-    api<unknown>(`/api/admin/previews/${buildId}/entities?limit=${limit}&offset=${offset}`, {}, adminToken),
-    api<unknown>(`/api/admin/previews/${buildId}/documents?limit=${limit}&offset=${offset}`, {}, adminToken),
+    api<unknown>(
+      `/api/admin/previews/${buildId}/entities?limit=${limit}&offset=${offset}`,
+      {},
+      adminToken,
+    ),
+    api<unknown>(
+      `/api/admin/previews/${buildId}/documents?limit=${limit}&offset=${offset}`,
+      {},
+      adminToken,
+    ),
   ]);
   const entityRows = previewRecordsFromPayload(entities, "entity");
   const documentRows = previewRecordsFromPayload(documents, "document");
@@ -1707,9 +1720,27 @@ function PreviewBrowser({
             )}
           </div>
           <nav className="preview-pagination" aria-label="预发布资料分页">
-            <button type="button" className="secondary-button" disabled={page === 0 || loading} onClick={() => setPage((value) => Math.max(0, value - 1))}>上一页</button>
-            <span>{total ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} / ${total}` : "0 / 0"}</span>
-            <button type="button" className="secondary-button" disabled={loading || (page + 1) * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={page === 0 || loading}
+              onClick={() => setPage((value) => Math.max(0, value - 1))}
+            >
+              上一页
+            </button>
+            <span>
+              {total
+                ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} / ${total}`
+                : "0 / 0"}
+            </span>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={loading || (page + 1) * pageSize >= total}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              下一页
+            </button>
           </nav>
         </aside>
 
@@ -2769,36 +2800,73 @@ function AdminPanel({ gameId }: { gameId: string }) {
             </div>
           </div>
           <div className="issue-filter-row" aria-label="问题类型过滤">
-            {[["all", "全部"], ["missing", "缺失"], ["conflict", "冲突"], ["format", "格式"], ["version", "版本"], ["locale", "语言"], ["source", "来源"], ["media", "媒体"], ["other", "其他"]].map(([value, label]) => (
-              <button key={value} className={issueFilter === value ? "is-active" : "secondary-button"} onClick={() => setIssueFilter(value)}>{label}</button>
+            {[
+              ["all", "全部"],
+              ["missing", "缺失"],
+              ["conflict", "冲突"],
+              ["format", "格式"],
+              ["version", "版本"],
+              ["locale", "语言"],
+              ["source", "来源"],
+              ["media", "媒体"],
+              ["other", "其他"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                className={issueFilter === value ? "is-active" : "secondary-button"}
+                onClick={() => setIssueFilter(value)}
+              >
+                {label}
+              </button>
             ))}
           </div>
           {!reviewIssues.length ? (
             <p className="empty-state">无待处理问题，可直接晋级</p>
           ) : (
             <div className="issue-list">
-              {reviewIssues.filter((issue) => issueFilter === "all" || `${issue.title ?? ""} ${issue.detail ?? ""}`.toLowerCase().includes(issueFilter)).map((issue) => (
-                <article className="issue-card" key={issue.id}>
-                  <div>
-                    <strong>{issue.title ?? issue.canonicalKey ?? "未命名问题"}</strong>
-                    <small>{issue.detail ?? issue.canonicalKey ?? ""}</small>
-                  </div>
-                  <button
-                    onClick={() =>
-                      void api(
-                        `/api/admin/review-issues/${issue.id}/resolve`,
-                        { method: "POST", body: JSON.stringify({}) },
-                        adminToken,
-                      ).then(() =>
-                        setReviewIssues((items) => items.filter((item) => item.id !== issue.id)),
-                      )
-                    }
-                  >
-                    解决问题
-                  </button>
-                  <button className="secondary-button" onClick={() => void api(`/api/admin/review-issues/${issue.id}/reopen`, { method: "POST", body: JSON.stringify({}) }, adminToken).then(() => setStatus("问题已重新打开")).catch(() => setStatus("重新打开失败"))}>重新打开</button>
-                </article>
-              ))}
+              {reviewIssues
+                .filter(
+                  (issue) =>
+                    issueFilter === "all" ||
+                    `${issue.title ?? ""} ${issue.detail ?? ""}`
+                      .toLowerCase()
+                      .includes(issueFilter),
+                )
+                .map((issue) => (
+                  <article className="issue-card" key={issue.id}>
+                    <div>
+                      <strong>{issue.title ?? issue.canonicalKey ?? "未命名问题"}</strong>
+                      <small>{issue.detail ?? issue.canonicalKey ?? ""}</small>
+                    </div>
+                    <button
+                      onClick={() =>
+                        void api(
+                          `/api/admin/review-issues/${issue.id}/resolve`,
+                          { method: "POST", body: JSON.stringify({}) },
+                          adminToken,
+                        ).then(() =>
+                          setReviewIssues((items) => items.filter((item) => item.id !== issue.id)),
+                        )
+                      }
+                    >
+                      解决问题
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        void api(
+                          `/api/admin/review-issues/${issue.id}/reopen`,
+                          { method: "POST", body: JSON.stringify({}) },
+                          adminToken,
+                        )
+                          .then(() => setStatus("问题已重新打开"))
+                          .catch(() => setStatus("重新打开失败"))
+                      }
+                    >
+                      重新打开
+                    </button>
+                  </article>
+                ))}
             </div>
           )}
         </section>
