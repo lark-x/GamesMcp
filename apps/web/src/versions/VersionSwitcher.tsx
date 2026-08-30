@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Candidate, Revision } from "../api.js";
+import { api, Revision } from "../api.js";
 export function VersionSwitcher({
   onPreview,
 }: {
