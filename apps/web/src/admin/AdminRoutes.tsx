@@ -26,7 +26,6 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   const [sourceId, setSourceId] = useState("");
   const [message, setMessage] = useState("");
   const [issueAction, setIssueAction] = useState<Record<string, string>>({});
-  const [selectedCandidate, setSelectedCandidate] = useState("");
   const [evidence, setEvidence] = useState<File | null>(null);
   const [reason, setReason] = useState("");
   useEffect(() => {
@@ -137,7 +136,7 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
               <h3>
                 {c.name} · {c.status}
               </h3>
-              <button onClick={() => setSelectedCandidate(c.id)}>选择此 Candidate</button>{" "}
+
               <button
                 onClick={() =>
                   api
