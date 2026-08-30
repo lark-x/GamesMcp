@@ -4463,10 +4463,14 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           undefined,
           404,
         );
-      if (target.lifecycleStatus !== "published")
+      if (
+        target.lifecycleStatus !== "published" ||
+        target.indexStatus !== "ready" ||
+        !target.manifestId
+      )
         throw new DomainError(
-          "revision_not_published",
-          "Only a published Dataset Revision can be activated by rollback",
+          "revision_not_ready",
+          "Only a published, indexed revision with a manifest can be activated by rollback",
           undefined,
           409,
         );

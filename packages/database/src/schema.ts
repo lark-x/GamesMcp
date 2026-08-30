@@ -312,7 +312,7 @@ export const datasetRevisions = knowledge.table(
     index("dataset_revisions_lifecycle_index").on(table.gameId, table.lifecycleStatus),
     check(
       "dataset_revisions_lifecycle_valid",
-      sql`${table.lifecycleStatus} IN ('preview', 'published', 'retired')`,
+      sql`${table.lifecycleStatus} IN ('preparing', 'preview', 'published', 'retired', 'failed')`,
     ),
     check(
       "dataset_revisions_current_must_be_published",

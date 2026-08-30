@@ -803,6 +803,68 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     const { candidateId } = parseIdParams(request);
     return { patches: await repository.listCandidatePatches(candidateId ?? "") };
   });
+  app.post("/api/admin/release-candidates/:candidateId/patches", async (request) => {
+    if (!repository.createCandidatePatch)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { candidateId } = parseIdParams(request);
+    const body = z
+      .object({
+        issueId: z.string().uuid().optional(),
+        canonicalKey: z.string().min(1),
+        fieldPath: z.string().optional(),
+        action: z.enum([
+          "keep_main",
+          "use_incoming",
+          "manual",
+          "not_duplicate",
+          "confirm_delete",
+          "exclude_record",
+        ]),
+        manualValue: z.unknown().optional(),
+        expectedBaseHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+        expectedIncomingHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
+      .parse(request.body);
+    if (body.action === "manual" && !body.fieldPath)
+      throw new DomainError(
+        "patch_field_required",
+        "manual patches require fieldPath",
+        undefined,
+        400,
+      );
+    return repository.createCandidatePatch({ candidateId: candidateId ?? "", ...body });
+  });
+  app.get("/api/admin/review-issues/:issueId/evidence", async (request) => {
+    if (!repository.listReviewEvidence)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    return { evidence: await repository.listReviewEvidence(issueId ?? "") };
+  });
+  app.post("/api/admin/review-issues/:issueId/evidence", async (request) => {
+    if (!repository.addReviewEvidence)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    const body = z
+      .object({
+        relativePath: z
+          .string()
+          .regex(/^verification\/[a-f0-9-]+\/[a-f0-9]{64}\.(png|jpe?g|webp)$/i),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        bytes: z.number().int().positive(),
+        mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+        checkedGameVersion: z.string().min(1),
+        checkedLocale: z.string().min(1),
+        note: z.string().default(""),
+      })
+      .parse(request.body);
+    return repository.addReviewEvidence({ issueId: issueId ?? "", ...body });
+  });
   app.get("/api/admin/release-candidates/:candidateId/checks", async (request) => {
     if (!repository.listReleaseCandidateChecks)
       throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
