@@ -575,6 +575,168 @@ describe("API", () => {
     await app.close();
   });
 
+  it("exposes the release-candidate build and promotion contract", async () => {
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const buildId = "00000000-0000-0000-0000-000000000041";
+    const batchId = "00000000-0000-0000-0000-000000000042";
+    const checksum = "a".repeat(64);
+    const now = new Date("2026-08-30T00:00:00Z");
+    const candidate = {
+      id: candidateId,
+      gameId,
+      name: "RC 7.0",
+      baseRevisionId: revisionId,
+      importBatchIds: [batchId],
+      status: "preview_ready" as const,
+      currentBuildId: buildId,
+      promotedRevisionId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    let promotionInput: Record<string, unknown> | undefined;
+    const app = appWith({
+      createReleaseCandidate: async (input) => ({ ...candidate, ...input, status: "draft" }),
+      listReleaseCandidates: async () => [candidate],
+      getReleaseCandidate: async () => ({ ...candidate, builds: [] }),
+      buildReleaseCandidate: async () => ({
+        id: buildId,
+        candidateId,
+        buildNumber: 1,
+        status: "ready",
+        contentChecksum: checksum,
+        recordCount: 12,
+        createdAt: now,
+      }),
+      getReleaseCandidateReadiness: async () => ({
+        candidateId,
+        buildId,
+        contentChecksum: checksum,
+        ready: true,
+        blockingReasons: [],
+      }),
+      promoteReleaseCandidate: async (input) => {
+        promotionInput = input;
+        return {
+          id: revisionId,
+          gameId,
+          revisionNumber: 2,
+          sourceBatchId: batchId,
+          releaseNote: input.releaseNote,
+          publishedAt: now,
+          isCurrent: true,
+          indexStatus: "pending",
+          lifecycleStatus: "published",
+        };
+      },
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/release-candidates",
+      payload: { gameId, name: "RC 7.0", importBatchIds: [batchId] },
+    });
+    const built = await app.inject({
+      method: "POST",
+      url: `/api/admin/release-candidates/${candidateId}/builds`,
+    });
+    const readiness = await app.inject({
+      method: "GET",
+      url: `/api/admin/release-candidates/${candidateId}/readiness`,
+    });
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/admin/release-candidates/${candidateId}/promote`,
+      payload: {
+        buildId,
+        contentChecksum: checksum,
+        expectedCurrentRevisionId: revisionId,
+        releaseNote: "release 7.0",
+        idempotencyKey: "promote-rc-7.0-build-1",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(built.statusCode).toBe(201);
+    expect(readiness.json().ready).toBe(true);
+    expect(promoted.statusCode).toBe(200);
+    expect(promotionInput).toMatchObject({ candidateId, buildId, contentChecksum: checksum });
+    await app.close();
+  });
+
+  it("validates candidate checksums before invoking promotion", async () => {
+    let called = false;
+    const app = appWith({
+      promoteReleaseCandidate: async () => {
+        called = true;
+        throw new Error("must not be called");
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/release-candidates/00000000-0000-0000-0000-000000000040/promote",
+      payload: {
+        buildId: "00000000-0000-0000-0000-000000000041",
+        contentChecksum: "not-a-checksum",
+        idempotencyKey: "promote-invalid",
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(called).toBe(false);
+    await app.close();
+  });
+
+  it("serves isolated preview entities and documents for a candidate build", async () => {
+    const buildId = "00000000-0000-0000-0000-000000000041";
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const app = appWith({
+      getReleaseCandidateBuild: async () => ({
+        id: buildId,
+        candidateId,
+        buildNumber: 1,
+        status: "ready",
+        contentChecksum: "a".repeat(64),
+        recordCount: 2,
+        createdAt: new Date("2026-08-30T00:00:00Z"),
+        gameId,
+        normalizedRecords: [
+          {
+            sourceKey: "entities/traveler",
+            recordType: "entity",
+            entityType: "character",
+            title: "旅行者",
+            body: "从世界之外来到提瓦特的旅行者。",
+            metadata: { element: "variable" },
+            contentHash: "hash-traveler",
+            parserVersion: "1.0.0",
+          },
+          {
+            sourceKey: "lore/first-steps",
+            recordType: "document",
+            documentType: "lore",
+            title: "踏入提瓦特",
+            body: "旅行者在提瓦特寻找失散的血亲。",
+            metadata: {},
+            contentHash: "hash-lore",
+            parserVersion: "1.0.0",
+          },
+        ],
+      }),
+    });
+    const entityRes = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/entities`,
+    });
+    const docRes = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/documents`,
+    });
+    expect(entityRes.statusCode).toBe(200);
+    expect(entityRes.json().entities).toHaveLength(1);
+    expect(entityRes.json().entities[0].name).toBe("旅行者");
+    expect(docRes.statusCode).toBe(200);
+    expect(docRes.json().documents).toHaveLength(1);
+    expect(docRes.json().documents[0].title).toBe("踏入提瓦特");
+    await app.close();
+  });
+
   it("stores and hashes PNG screenshot evidence under the data directory", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "gip-api-verification-"));
     const itemId = "00000000-0000-0000-0000-000000000028";

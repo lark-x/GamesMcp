@@ -13,11 +13,7 @@ if (!databaseUrl)
     "GIP_DB_TEST_URL is required and must point at a disposable PostgreSQL + pgvector database",
   );
 
-const migrationPaths = [
-  new URL("../packages/database/src/migrations/0000_initial.sql", import.meta.url),
-  new URL("../packages/database/src/migrations/0001_acquisition_verification.sql", import.meta.url),
-  new URL("../packages/database/src/migrations/0002_conflict_selection.sql", import.meta.url),
-];
+const { applyMigrations } = await import("../packages/database/src/migration-runner.ts");
 
 const upstreamCommit = "backup-gate-fixture-commit";
 const gameVersion = "7.0.0";
@@ -142,10 +138,7 @@ async function main(): Promise<void> {
   const db = createDatabase(pool);
   const dataDir = await mkdtemp(resolve(process.cwd(), ".backup-gate-test-"));
   try {
-    for (const migrationPath of migrationPaths) {
-      const migration = await readFile(migrationPath, "utf8");
-      await pool.query(migration);
-    }
+    await applyMigrations(pool);
     await pool.query("TRUNCATE platform.games, platform.jobs, platform.audit_log CASCADE");
 
     const [game] = await db

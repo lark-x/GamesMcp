@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
 import { createDatabase, createPool } from "../packages/database/src/client.ts";
 import { SqlKnowledgeRepository, stableEntityId } from "../packages/database/src/repository.ts";
 import { gameCapabilities, games, jobs } from "../packages/database/src/schema.ts";
 import type { NormalizedRecord } from "../packages/domain/src/index.ts";
+import { applyMigrations } from "../packages/database/src/migration-runner.ts";
 
 const databaseUrl = process.env.GIP_DB_TEST_URL;
 if (!databaseUrl) {
@@ -13,11 +13,6 @@ if (!databaseUrl) {
   );
 }
 
-const migrationPaths = [
-  new URL("../packages/database/src/migrations/0000_initial.sql", import.meta.url),
-  new URL("../packages/database/src/migrations/0001_acquisition_verification.sql", import.meta.url),
-  new URL("../packages/database/src/migrations/0002_conflict_selection.sql", import.meta.url),
-];
 
 function makeRecord(
   value: Omit<NormalizedRecord, "contentHash" | "parserVersion" | "metadata"> & {
@@ -72,11 +67,9 @@ async function main() {
   const db = createDatabase(pool);
   const repository = new SqlKnowledgeRepository(db);
   try {
-    for (const migrationPath of migrationPaths) {
-      const migration = await readFile(migrationPath, "utf8");
-      await pool.query(migration);
-      await pool.query(migration);
-    }
+    await applyMigrations(pool);
+    // A second invocation must be a no-op (and validates the journal).
+    await applyMigrations(pool);
     await pool.query("TRUNCATE platform.games, platform.jobs, platform.audit_log CASCADE");
     await repository.recordWorkerHeartbeat("db-test-heartbeat");
     assert.equal(await repository.workerHealth(), "up");

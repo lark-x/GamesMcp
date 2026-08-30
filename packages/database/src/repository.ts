@@ -39,7 +39,17 @@ import {
   type VerificationChannel,
   type VerificationItem,
   type VerificationRun,
+  type VerificationScreenshot,
   type VerificationStatus,
+  type PublishReadiness,
+  type ReleaseCandidate,
+  type ReleaseCandidateBuild,
+  type ReleaseCandidateDetail,
+  type ReleaseCandidateReadiness,
+  type ReviewIssue,
+  type CandidatePatch,
+  type ReviewEvidence,
+  type ReleaseCandidateCheck,
 } from "@gip/domain";
 import type { GameSummary } from "@gip/contracts";
 import type { Database } from "./client.js";
@@ -48,6 +58,9 @@ import {
   claimEntities,
   claims,
   conflictCases,
+  contentObjects,
+  datasetManifestEntries,
+  datasetManifests,
   datasetRevisions,
   documentSegments,
   documents,
@@ -61,6 +74,12 @@ import {
   importBatches,
   jobs,
   relationships,
+  releaseCandidateBuilds,
+  releaseCandidates,
+  reviewIssues,
+  candidatePatches,
+  reviewEvidence,
+  releaseCandidateChecks,
   sourceSnapshots,
   sourceObservations,
   sources,
@@ -98,6 +117,20 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function setField(value: NormalizedRecord, path: string | null | undefined, next: unknown) {
+  if (!path) return next as NormalizedRecord;
+  const clone = structuredClone(value) as Record<string, unknown>;
+  const parts = path.split(".").filter(Boolean);
+  let cursor: Record<string, unknown> = clone;
+  for (const part of parts.slice(0, -1)) {
+    const child = cursor[part];
+    cursor[part] = child && typeof child === "object" && !Array.isArray(child) ? child : {};
+    cursor = cursor[part] as Record<string, unknown>;
+  }
+  if (parts.length) cursor[parts.at(-1)!] = next;
+  return clone as NormalizedRecord;
 }
 
 function safeRelative(value: unknown): string | undefined {
@@ -256,74 +289,43 @@ function revisionLabel(revisionNumber: number): string {
   return `r${revisionNumber}`;
 }
 
-function deterministicRecordOrder(
-  seed: string,
-  category: string,
-  record: NormalizedRecord,
-): string {
+export function releaseCandidateChecksum(records: NormalizedRecord[]): string {
+  return createHash("sha256").update(JSON.stringify(records)).digest("hex");
+}
+
+function canonicalRecordBytes(record: NormalizedRecord): string {
+  return JSON.stringify(record);
+}
+
+function manifestRootHash(records: NormalizedRecord[]): string {
+  const lines = [...records]
+    .sort((left, right) => left.sourceKey.localeCompare(right.sourceKey))
+    .map(
+      (record) =>
+        `${record.sourceKey}\0${createHash("sha256").update(canonicalRecordBytes(record)).digest("hex")}\n`,
+    )
+    .join("");
+  return createHash("sha256").update(lines).digest("hex");
+}
+
+export function mergeReleaseCandidateRecords(
+  base: NormalizedRecord[],
+  batches: Array<{ records: NormalizedRecord[]; confirmedDeletionKeys: string[] }>,
+): NormalizedRecord[] {
+  const merged = new Map(base.map((record) => [record.sourceKey, record]));
+  for (const batch of batches) {
+    for (const sourceKey of batch.confirmedDeletionKeys) merged.delete(sourceKey);
+    for (const record of batch.records) merged.set(record.sourceKey, record);
+  }
+  return [...merged.values()].sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+}
+
+function deterministicRecordOrder(seed: string, category: string, record: NormalizedRecord): string {
   return createHash("sha256").update(`${seed}:${category}:${record.sourceKey}`).digest("hex");
 }
 
 function recordCanonicalKey(record: NormalizedRecord): string {
   return safeProvenance(record.metadata, record.sourceKey).canonicalKey ?? record.sourceKey;
-}
-
-export function stratifiedVerificationSample(
-  records: NormalizedRecord[],
-  seed: string,
-  category: string,
-  limit = 30,
-): NormalizedRecord[] {
-  if (limit <= 0 || records.length === 0) return [];
-  const compareDeterministically = (left: NormalizedRecord, right: NormalizedRecord) =>
-    deterministicRecordOrder(seed, category, left).localeCompare(
-      deterministicRecordOrder(seed, category, right),
-    );
-  const ordered = [...records].sort((left, right) => compareDeterministically(left, right));
-  if (ordered.length <= limit) return ordered;
-  const byLength = [...records].sort(
-    (left, right) =>
-      (left.body?.length ?? 0) - (right.body?.length ?? 0) || compareDeterministically(left, right),
-  );
-  const lengthStrata = new Map<number, NormalizedRecord[]>();
-  const riskStrata = new Map<string, NormalizedRecord[]>();
-  for (const [index, record] of byLength.entries()) {
-    const quartile = Math.min(3, Math.floor((index * 4) / byLength.length));
-    lengthStrata.set(quartile, [...(lengthStrata.get(quartile) ?? []), record]);
-    const riskFlags = record.metadata.verificationRiskFlags;
-    if (Array.isArray(riskFlags)) {
-      for (const flag of riskFlags) {
-        if (typeof flag !== "string" || !flag.trim()) continue;
-        riskStrata.set(flag, [...(riskStrata.get(flag) ?? []), record]);
-      }
-    }
-  }
-  const selected = new Map<string, NormalizedRecord>();
-  const add = (record: NormalizedRecord | undefined) => {
-    if (record && selected.size < limit && !selected.has(record.sourceKey))
-      selected.set(record.sourceKey, record);
-  };
-
-  // Reserve one slot for each length quartile before adding risk strata.
-  // This keeps the intended length coverage even when many risk flags exist.
-  for (let quartile = 0; quartile < 4; quartile++) {
-    const candidates = lengthStrata.get(quartile) ?? [];
-    candidates.sort(compareDeterministically);
-    add(candidates[0]);
-  }
-
-  // Risk flags are sorted so the choice remains stable across database/order
-  // changes. If there are more flags than remaining slots, the limit is an
-  // explicit upper bound; the remaining slots are filled from the full order.
-  for (const flag of [...riskStrata.keys()].sort()) {
-    const candidates = riskStrata.get(flag) ?? [];
-    candidates.sort(compareDeterministically);
-    add(candidates[0]);
-  }
-  for (const record of ordered) {
-    add(record);
-  }
-  return [...selected.values()].sort(compareDeterministically).slice(0, limit);
 }
 
 function verificationCategoryFromKey(
@@ -444,7 +446,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       const current = await this.db
         .select({ id: datasetRevisions.id, indexStatus: datasetRevisions.indexStatus })
         .from(datasetRevisions)
-        .where(eq(datasetRevisions.isCurrent, true))
+        .where(
+          and(
+            eq(datasetRevisions.isCurrent, true),
+            eq(datasetRevisions.lifecycleStatus, "published"),
+          ),
+        )
         .limit(1);
       return {
         database: "up" as const,
@@ -466,7 +473,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const revisions = await this.db
       .select()
       .from(datasetRevisions)
-      .where(eq(datasetRevisions.isCurrent, true));
+      .where(
+        and(
+          eq(datasetRevisions.isCurrent, true),
+          eq(datasetRevisions.lifecycleStatus, "published"),
+        ),
+      );
     const revisionMap = new Map(
       revisions.map((revision) => [revision.gameId, revisionNumberLabel(revision.revisionNumber)]),
     );
@@ -550,6 +562,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     }
     const current = await this.getCurrentRevision(gameId);
     if (current) {
+      const enforceSnapshotMembership =
+        current.lifecycleStatus === "preview" || current.normalizedRecords !== null;
       const candidates = new Map(
         (await this.getRevisionRecords(current)).flatMap((record) =>
           (record.entities ?? []).map((candidate) => [candidate.sourceKey, candidate]),
@@ -561,7 +575,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       return rows
         .flatMap((row) => {
           const candidate = row.sourceKey ? candidates.get(row.sourceKey) : undefined;
-          if (!candidate && row.deleted) return [];
+          if (!candidate && (enforceSnapshotMembership || row.deleted)) return [];
           const type = candidate?.type ?? (row.type as EntityType);
           const name = candidate?.name ?? row.canonicalName;
           const summary = candidate?.summary ?? row.summary;
@@ -613,8 +627,9 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const revisionCandidate = (await this.getRevisionRecords(revision))
       .flatMap((record) => record.entities ?? [])
       .find((candidate) => candidate.sourceKey === row.sourceKey);
-    if (revisionId && !revisionCandidate) return null;
-    if (!revisionCandidate && row.deleted) return null;
+    const enforceSnapshotMembership =
+      revision.lifecycleStatus === "preview" || revision.normalizedRecords !== null;
+    if (!revisionCandidate && (enforceSnapshotMembership || row.deleted)) return null;
     const aliases = await this.getAliases([row.id]);
     const entitySummary = revisionCandidate
       ? {
@@ -1090,6 +1105,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       inner join knowledge.source_snapshots ss on ss.id = d.source_snapshot_id
       where e.target_type = 'segment'
         and e.space_id = ${spaceId}
+        and e.revision_id = ${revision.id}
         and ds.revision_id = ${revision.id}
         and d.game_id = ${gameId}
         and d.deleted = false
@@ -1149,6 +1165,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       inner join knowledge.entities entity on entity.id = e.target_id
       where e.target_type = 'entity'
         and e.space_id = ${spaceId}
+        and e.revision_id = ${revision.id}
         and entity.game_id = ${gameId}
       order by e.vector <=> ${vectorLiteral}::vector
       limit ${Math.max(limit * 4, 40)}
@@ -1176,7 +1193,13 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         const row = entityMap.get(hit.entity_id);
         if (!row) return [];
         const candidate = row.sourceKey ? candidates.get(row.sourceKey) : undefined;
-        if (row.deleted && !candidate) return [];
+        if (
+          !candidate &&
+          (revision.lifecycleStatus === "preview" ||
+            revision.normalizedRecords !== null ||
+            row.deleted)
+        )
+          return [];
         const type = candidate?.type ?? (row.type as EntityType);
         if (request.entityTypes?.length && !request.entityTypes.includes(type)) return [];
         return [
@@ -1344,12 +1367,19 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return [
       ...entityRows.flatMap((row) => {
         const candidate = row.sourceKey ? revisionCandidates.get(row.sourceKey) : undefined;
-        if (row.deleted && !candidate) return [];
+        if (
+          !candidate &&
+          (revision.lifecycleStatus === "preview" ||
+            revision.normalizedRecords !== null ||
+            row.deleted)
+        )
+          return [];
         const name = candidate?.name ?? row.canonicalName;
         const summary = candidate?.summary ?? row.summary ?? "";
         const text = `${name}\n${summary}`;
         return [
           {
+            revisionId,
             targetType: "entity" as const,
             targetId: row.id,
             text,
@@ -1358,6 +1388,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         ];
       }),
       ...segmentRows.map((row) => ({
+        revisionId,
         targetType: "segment" as const,
         targetId: row.id,
         text: row.body,
@@ -1377,6 +1408,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       .insert(embeddings)
       .values(
         values.map((value) => ({
+          revisionId: value.revisionId,
           targetType: value.targetType,
           targetId: value.targetId,
           spaceId: value.spaceId,
@@ -1388,7 +1420,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         })),
       )
       .onConflictDoUpdate({
-        target: [embeddings.targetType, embeddings.targetId, embeddings.spaceId],
+        target: [
+          embeddings.revisionId,
+          embeddings.targetType,
+          embeddings.targetId,
+          embeddings.spaceId,
+        ],
         set: {
           model: sql`excluded.model`,
           modelVersion: sql`excluded.model_version`,
@@ -1456,7 +1493,75 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     // remain explicit errors, while the records that were parsed correctly
     // must not disappear from provenance or conflict comparisons.
     await this.registerAcquisitionReview(batch);
+    // Every completed import now gets an immediately inspectable preview.  The
+    // legacy review/publish gate remains available for historical API callers,
+    // but it is no longer the step that creates a preview for the operator.
+    await this.ensurePreviewForImport(batch);
     return batch;
+  }
+
+  private async ensurePreviewForImport(batch: ImportBatch): Promise<void> {
+    if (!batch.stagedRecords?.length) return;
+    const first = batch.stagedRecords[0];
+    const provenance = first ? safeProvenance(first.metadata, first.sourceKey) : undefined;
+    const targetGameVersion = first?.gameVersion ?? provenance?.upstreamVersionLabel ?? "unknown";
+    const existing = await this.db
+      .select()
+      .from(releaseCandidates)
+      .where(
+        and(
+          eq(releaseCandidates.gameId, batch.gameId),
+          eq(releaseCandidates.sourceId, batch.sourceId),
+          eq(releaseCandidates.targetGameVersion, targetGameVersion),
+        ),
+      )
+      .orderBy(desc(releaseCandidates.createdAt))
+      .limit(1);
+    let candidateId = existing[0]?.id;
+    if (
+      !candidateId ||
+      ["merged", "abandoned", "promoted", "withdrawn"].includes(existing[0]!.status)
+    ) {
+      const current = await this.getCurrentRevision(batch.gameId);
+      const slug = `${targetGameVersion}-${batch.id.slice(0, 8)}`.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const [created] = await this.db
+        .insert(releaseCandidates)
+        .values({
+          gameId: batch.gameId,
+          sourceId: batch.sourceId,
+          targetGameVersion,
+          name: `预发布 · ${slug}`,
+          baseRevisionId: current?.id,
+          importBatchIds: [batch.id],
+          status: "draft",
+        })
+        .returning({ id: releaseCandidates.id });
+      candidateId = created?.id;
+    } else if (!existing[0]!.importBatchIds.includes(batch.id)) {
+      await this.db
+        .update(releaseCandidates)
+        .set({
+          importBatchIds: [...existing[0]!.importBatchIds, batch.id],
+          updatedAt: new Date(),
+        })
+        .where(eq(releaseCandidates.id, candidateId));
+    }
+    if (!candidateId) return;
+    try {
+      await this.buildReleaseCandidate(candidateId);
+    } catch (error) {
+      await this.db
+        .update(releaseCandidates)
+        .set({ status: "failed", updatedAt: new Date() })
+        .where(eq(releaseCandidates.id, candidateId));
+      await this.db.insert(auditLog).values({
+        action: "preview_build_failed",
+        targetType: "release_candidate",
+        targetId: candidateId,
+        reason: error instanceof Error ? error.message : "Preview build failed",
+        metadata: { batchId: batch.id },
+      });
+    }
   }
 
   async markImportRunning(batchId: string): Promise<ImportBatch> {
@@ -1849,6 +1954,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const provenance = first ? safeProvenance(first.metadata, first.sourceKey) : undefined;
     const upstreamCommit = provenance?.upstreamCommit ?? snapshotCommit;
     if (!upstreamCommit) return;
+    // Verification is issue-driven: clean acquisition imports do not create a
+    // legacy run or a fixed-size sample.  Runs are retained for historical
+    // reads and for explicitly surfaced conflicts/errors only.
+    if (extraVerificationKeys.size === 0) return;
     const [insertedRun] = await this.db
       .insert(verificationRuns)
       .values({
@@ -1880,8 +1989,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       acquisitionRecords.map((record) => recordCanonicalKey(record)),
     );
     for (const [category, records] of categories) {
-      const selected = stratifiedVerificationSample(records, run.seed, category, 30);
-      const selectedKeys = new Set(selected.map((record) => recordCanonicalKey(record)));
+      const selected: NormalizedRecord[] = [];
+      const selectedKeys = new Set<string>();
       const recordsByCanonicalKey = new Map(
         records.map((record) => [recordCanonicalKey(record), record]),
       );
@@ -2058,7 +2167,736 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return this.mapImport(row);
   }
 
-  async publishImport(batchId: string, releaseNote?: string): Promise<DatasetRevision> {
+  async createReleaseCandidate(input: {
+    gameId: string;
+    name: string;
+    importBatchIds: string[];
+  }): Promise<ReleaseCandidate> {
+    const batchIds = [...new Set(input.importBatchIds)];
+    if (!batchIds.length)
+      throw new DomainError("candidate_batches_required", "At least one import batch is required");
+    const batches = await this.db
+      .select()
+      .from(importBatches)
+      .where(inArray(importBatches.id, batchIds));
+    if (batches.length !== batchIds.length)
+      throw new DomainError(
+        "candidate_batch_not_found",
+        "One or more import batches were not found",
+        undefined,
+        404,
+      );
+    if (batches.some((batch) => batch.gameId !== input.gameId))
+      throw new DomainError(
+        "candidate_game_mismatch",
+        "Every import batch must belong to the candidate game",
+      );
+    const current = await this.getCurrentRevision(input.gameId);
+    const [row] = await this.db
+      .insert(releaseCandidates)
+      .values({
+        gameId: input.gameId,
+        name: input.name.trim(),
+        baseRevisionId: current?.id,
+        importBatchIds: batchIds,
+        status: "draft",
+      })
+      .returning();
+    if (!row)
+      throw new DomainError(
+        "candidate_create_failed",
+        "Release candidate could not be created",
+        undefined,
+        500,
+      );
+    return this.mapReleaseCandidate(row);
+  }
+
+  async listReleaseCandidates(gameId?: string): Promise<ReleaseCandidate[]> {
+    const rows = await this.db
+      .select()
+      .from(releaseCandidates)
+      .where(gameId ? eq(releaseCandidates.gameId, gameId) : undefined)
+      .orderBy(desc(releaseCandidates.createdAt));
+    return rows.map((row) => this.mapReleaseCandidate(row));
+  }
+
+  async getReleaseCandidate(candidateId: string): Promise<ReleaseCandidateDetail | null> {
+    const rows = await this.db
+      .select()
+      .from(releaseCandidates)
+      .where(eq(releaseCandidates.id, candidateId))
+      .limit(1);
+    const candidate = rows[0];
+    if (!candidate) return null;
+    const builds = await this.db
+      .select()
+      .from(releaseCandidateBuilds)
+      .where(eq(releaseCandidateBuilds.candidateId, candidateId))
+      .orderBy(desc(releaseCandidateBuilds.buildNumber));
+    return {
+      ...this.mapReleaseCandidate(candidate),
+      builds: builds.map((build) => this.mapReleaseCandidateBuild(build)),
+    };
+  }
+
+  private async createPreviewManifest(
+    gameId: string,
+    records: NormalizedRecord[],
+    baseRevisionId?: string | null,
+  ): Promise<string> {
+    const entries = records.map((record) => ({
+      canonicalKey: record.sourceKey,
+      contentHash: createHash("sha256").update(canonicalRecordBytes(record)).digest("hex"),
+      record,
+    }));
+    await this.db
+      .insert(contentObjects)
+      .values(
+        entries.map((entry) => ({
+          contentHash: entry.contentHash,
+          recordType: entry.record.recordType,
+          schemaVersion: "normalized-record-v1",
+          payload: entry.record as unknown as Record<string, unknown>,
+          byteLength: Buffer.byteLength(canonicalRecordBytes(entry.record)),
+        })),
+      )
+      .onConflictDoNothing();
+    const [manifest] = await this.db
+      .insert(datasetManifests)
+      .values({
+        gameId,
+        kind: "preview",
+        baseRevisionId: baseRevisionId ?? null,
+        rootHash: manifestRootHash(records),
+        recordCount: records.length,
+      })
+      .returning({ id: datasetManifests.id });
+    if (!manifest)
+      throw new DomainError(
+        "manifest_create_failed",
+        "Preview manifest could not be created",
+        undefined,
+        500,
+      );
+    if (entries.length) {
+      await this.db.insert(datasetManifestEntries).values(
+        entries.map((entry) => ({
+          manifestId: manifest.id,
+          canonicalKey: entry.canonicalKey,
+          contentHash: entry.contentHash,
+        })),
+      );
+    }
+    return manifest.id;
+  }
+
+  async listReviewIssues(candidateId: string): Promise<ReviewIssue[]> {
+    const rows = await this.db
+      .select()
+      .from(reviewIssues)
+      .where(eq(reviewIssues.candidateId, candidateId))
+      .orderBy(desc(reviewIssues.createdAt));
+    return rows as ReviewIssue[];
+  }
+  async reportReviewIssue(input: {
+    candidateId: string;
+    buildId: string;
+    canonicalKey: string;
+    fieldPath?: string;
+    summary: string;
+    details?: Record<string, unknown>;
+  }): Promise<ReviewIssue> {
+    const build = await this.getReleaseCandidateBuild(input.buildId);
+    if (!build || build.candidateId !== input.candidateId)
+      throw new DomainError(
+        "candidate_build_mismatch",
+        "Reported issue must belong to the candidate build",
+        undefined,
+        400,
+      );
+    const fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify([
+          "reported",
+          input.canonicalKey,
+          input.fieldPath ?? "",
+          input.summary,
+          input.details ?? {},
+        ]),
+      )
+      .digest("hex");
+    const [row] = await this.db
+      .insert(reviewIssues)
+      .values({
+        gameId: build.gameId,
+        candidateId: input.candidateId,
+        detectedBuildId: input.buildId,
+        canonicalKey: input.canonicalKey,
+        fieldPath: input.fieldPath,
+        kind: "reported",
+        status: "open",
+        blocking: true,
+        fingerprint,
+        summary: input.summary,
+        details: input.details ?? {},
+      })
+      .onConflictDoNothing({ target: [reviewIssues.candidateId, reviewIssues.fingerprint] })
+      .returning();
+    if (row) return row as ReviewIssue;
+    const [existing] = await this.db
+      .select()
+      .from(reviewIssues)
+      .where(
+        and(
+          eq(reviewIssues.candidateId, input.candidateId),
+          eq(reviewIssues.fingerprint, fingerprint),
+        ),
+      )
+      .limit(1);
+    if (!existing)
+      throw new DomainError(
+        "issue_create_failed",
+        "Review issue could not be created",
+        undefined,
+        500,
+      );
+    return existing as ReviewIssue;
+  }
+  async getReviewIssue(id: string): Promise<ReviewIssue | null> {
+    const [row] = await this.db.select().from(reviewIssues).where(eq(reviewIssues.id, id)).limit(1);
+    return (row as ReviewIssue | undefined) ?? null;
+  }
+  async resolveReviewIssue(id: string, action?: string, note?: string): Promise<ReviewIssue> {
+    const [row] = await this.db
+      .update(reviewIssues)
+      .set({
+        status: "resolved",
+        resolutionAction: action,
+        resolutionNote: note,
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(reviewIssues.id, id))
+      .returning();
+    if (!row)
+      throw new DomainError("issue_not_found", "Review issue was not found", undefined, 404);
+    return row as ReviewIssue;
+  }
+  async reopenReviewIssue(id: string): Promise<ReviewIssue> {
+    const [row] = await this.db
+      .update(reviewIssues)
+      .set({ status: "reopened", resolvedAt: null, updatedAt: new Date() })
+      .where(eq(reviewIssues.id, id))
+      .returning();
+    if (!row)
+      throw new DomainError("issue_not_found", "Review issue was not found", undefined, 404);
+    return row as ReviewIssue;
+  }
+  async listCandidatePatches(candidateId: string): Promise<CandidatePatch[]> {
+    return (await this.db
+      .select()
+      .from(candidatePatches)
+      .where(eq(candidatePatches.candidateId, candidateId))
+      .orderBy(desc(candidatePatches.createdAt))) as CandidatePatch[];
+  }
+  async createCandidatePatch(input: {
+    candidateId: string;
+    issueId?: string;
+    canonicalKey: string;
+    fieldPath?: string;
+    action: string;
+    manualValue?: unknown;
+    expectedBaseHash?: string;
+    expectedIncomingHash?: string;
+  }): Promise<CandidatePatch> {
+    if (input.expectedBaseHash && !/^[a-f0-9]{64}$/.test(input.expectedBaseHash))
+      throw new DomainError("invalid_patch_hash", "expectedBaseHash must be sha256");
+    if (input.expectedIncomingHash && !/^[a-f0-9]{64}$/.test(input.expectedIncomingHash))
+      throw new DomainError("invalid_patch_hash", "expectedIncomingHash must be sha256");
+    const [row] = await this.db
+      .insert(candidatePatches)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .values(input as any)
+      .returning();
+    return row as CandidatePatch;
+  }
+  async listReviewEvidence(issueId: string): Promise<ReviewEvidence[]> {
+    return (await this.db
+      .select()
+      .from(reviewEvidence)
+      .where(eq(reviewEvidence.issueId, issueId))
+      .orderBy(desc(reviewEvidence.createdAt))) as ReviewEvidence[];
+  }
+  async addReviewEvidence(
+    input: Omit<ReviewEvidence, "id" | "createdAt">,
+  ): Promise<ReviewEvidence> {
+    const [row] = await this.db
+      .insert(reviewEvidence)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .values(input as any)
+      .returning();
+    return row as ReviewEvidence;
+  }
+  async listReleaseCandidateChecks(candidateId: string): Promise<ReleaseCandidateCheck[]> {
+    return (await this.db
+      .select()
+      .from(releaseCandidateChecks)
+      .where(eq(releaseCandidateChecks.candidateId, candidateId))
+      .orderBy(desc(releaseCandidateChecks.checkedAt))) as ReleaseCandidateCheck[];
+  }
+
+  async buildReleaseCandidate(candidateId: string): Promise<ReleaseCandidateBuild> {
+    const candidate = await this.getReleaseCandidate(candidateId);
+    if (!candidate)
+      throw new DomainError(
+        "candidate_not_found",
+        "Release candidate was not found",
+        undefined,
+        404,
+      );
+    if (["promoted", "withdrawn"].includes(candidate.status))
+      throw new DomainError(
+        "invalid_candidate_state",
+        `Release candidate cannot be built from state ${candidate.status}`,
+      );
+    const batches = await this.db
+      .select()
+      .from(importBatches)
+      .where(inArray(importBatches.id, candidate.importBatchIds));
+    if (batches.length !== candidate.importBatchIds.length)
+      throw new DomainError("candidate_batch_not_found", "A candidate import batch is missing");
+    for (const batch of batches) {
+      if (batch.gameId !== candidate.gameId)
+        throw new DomainError("candidate_game_mismatch", "Candidate batch game mismatch");
+      if (!batch.stagedRecords)
+        throw new DomainError("staged_data_missing", "Candidate batch has no staged records");
+    }
+    const baseRevision = candidate.baseRevisionId
+      ? await this.getRevision(candidate.baseRevisionId, candidate.gameId)
+      : undefined;
+    if (candidate.baseRevisionId && !baseRevision)
+      throw new DomainError("candidate_base_missing", "Candidate base revision was not found");
+    const baseRecords = baseRevision ? await this.getRevisionRecords(baseRevision) : [];
+    let normalizedRecords = mergeReleaseCandidateRecords(
+      baseRecords,
+      candidate.importBatchIds.map((batchId) => {
+        const batch = batches.find((item) => item.id === batchId)!;
+        return {
+          records: batch.stagedRecords ?? [],
+          confirmedDeletionKeys: batch.confirmedDeletionKeys,
+        };
+      }),
+    );
+    // Patches always produce a new immutable build.  Hash preconditions prevent
+    // silently applying a decision to a changed base/incoming record.
+    const priorPatches = await this.db
+      .select()
+      .from(candidatePatches)
+      .where(eq(candidatePatches.candidateId, candidateId))
+      .orderBy(asc(candidatePatches.createdAt));
+    const baseByKeyForPatch = new Map(baseRecords.map((record) => [record.sourceKey, record]));
+    const patched = new Map(normalizedRecords.map((record) => [record.sourceKey, record]));
+    for (const patch of priorPatches) {
+      const incoming = patched.get(patch.canonicalKey);
+      if (!incoming) continue;
+      const base = baseByKeyForPatch.get(patch.canonicalKey);
+      const baseHash = base ? createHash("sha256").update(canonicalRecordBytes(base)).digest("hex") : null;
+      const incomingHash = createHash("sha256").update(canonicalRecordBytes(incoming)).digest("hex");
+      if ((patch.expectedBaseHash && patch.expectedBaseHash !== baseHash) ||
+          (patch.expectedIncomingHash && patch.expectedIncomingHash !== incomingHash))
+        throw new DomainError("patch_precondition_failed", `Patch precondition failed for ${patch.canonicalKey}`, { patchId: patch.id }, 409);
+      if (["confirm_delete", "exclude_record"].includes(patch.action)) patched.delete(patch.canonicalKey);
+      else if (patch.action === "keep_main" && base) patched.set(patch.canonicalKey, base);
+      else if (patch.action === "manual") patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
+    }
+    normalizedRecords = [...patched.values()];
+    const contentChecksum = releaseCandidateChecksum(normalizedRecords);
+    const manifestId = await this.createPreviewManifest(
+      candidate.gameId,
+      normalizedRecords,
+      candidate.baseRevisionId,
+    );
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select id from knowledge.release_candidates where id = ${candidateId}::uuid for update`,
+      );
+      const prior = await tx
+        .select({ buildNumber: releaseCandidateBuilds.buildNumber })
+        .from(releaseCandidateBuilds)
+        .where(eq(releaseCandidateBuilds.candidateId, candidateId))
+        .orderBy(desc(releaseCandidateBuilds.buildNumber))
+        .limit(1);
+      const [build] = await tx
+        .insert(releaseCandidateBuilds)
+        .values({
+          candidateId,
+          buildNumber: (prior[0]?.buildNumber ?? 0) + 1,
+          status: "ready",
+          contentChecksum,
+          normalizedRecords,
+          manifestId,
+          baseRevisionId: candidate.baseRevisionId,
+          importBatchId: candidate.importBatchIds.at(-1),
+          buildKind: "import",
+          indexStatus: "ready",
+        })
+        .returning();
+      if (!build)
+        throw new DomainError(
+          "candidate_build_failed",
+          "Release candidate build could not be created",
+          undefined,
+          500,
+        );
+      if (priorPatches.length)
+        await tx
+          .update(candidatePatches)
+          .set({ appliedBuildId: build.id })
+          .where(inArray(candidatePatches.id, priorPatches.map((patch) => patch.id)));
+      const issueIds = priorPatches.flatMap((patch) => (patch.issueId ? [patch.issueId] : []));
+      if (issueIds.length)
+        await tx
+          .update(reviewIssues)
+          .set({ status: "resolved", resolvedAt: new Date(), updatedAt: new Date() })
+          .where(inArray(reviewIssues.id, issueIds));
+      const baseByKey = new Map(baseRecords.map((record) => [record.sourceKey, record]));
+      const incomingByKey = new Map<string, NormalizedRecord[]>();
+      for (const batch of batches)
+        for (const record of batch.stagedRecords ?? [])
+          incomingByKey.set(record.sourceKey, [
+            ...(incomingByKey.get(record.sourceKey) ?? []),
+            record,
+          ]);
+      const issueValues: Array<Record<string, unknown>> = [];
+      const addIssue = (
+        kind: string,
+        key: string,
+        summary: string,
+        details: Record<string, unknown>,
+        hashes: Record<string, unknown> = {},
+      ) => {
+        const fingerprint = createHash("sha256")
+          .update(JSON.stringify([kind, key, details.fieldPath ?? "", hashes]))
+          .digest("hex");
+        issueValues.push({
+          gameId: candidate.gameId,
+          candidateId,
+          detectedBuildId: build.id,
+          canonicalKey: key,
+          kind,
+          status: "open",
+          blocking: true,
+          fingerprint,
+          summary,
+          details,
+          ...hashes,
+        });
+      };
+      for (const batch of batches) {
+        for (const key of batch.diff?.deletionCandidates ?? [])
+          if (!(batch.confirmedDeletionKeys ?? []).includes(key))
+            addIssue("deletion", key, `Unconfirmed deletion: ${key}`, { batchId: batch.id });
+        for (const error of batch.errors ?? [])
+          addIssue(
+            "import_error",
+            String(error.code ?? "import"),
+            error.message ?? "Import error",
+            { batchId: batch.id, error },
+          );
+      }
+      for (const [key, records] of incomingByKey) {
+        const base = baseByKey.get(key);
+        const hashes = {
+          baseContentHash: base
+            ? createHash("sha256").update(canonicalRecordBytes(base)).digest("hex")
+            : null,
+          incomingContentHash: createHash("sha256")
+            .update(canonicalRecordBytes(records.at(-1)!))
+            .digest("hex"),
+        };
+        if (base && canonicalRecordBytes(base) !== canonicalRecordBytes(records.at(-1)!))
+          addIssue("overwrite", key, `Incoming record overwrites ${key}`, {}, hashes);
+        if (records.length > 1 && new Set(records.map(canonicalRecordBytes)).size > 1)
+          addIssue(
+            "field_conflict",
+            key,
+            `Conflicting incoming values for ${key}`,
+            { fieldPath: "record" },
+            hashes,
+          );
+        const metadata = asRecord(records.at(-1)!.metadata);
+        const baseMetadata = asRecord(base?.metadata);
+        if (
+          base &&
+          metadata.version !== undefined &&
+          baseMetadata.version !== undefined &&
+          metadata.version !== baseMetadata.version
+        )
+          addIssue("version_mismatch", key, `Version mismatch for ${key}`, {
+            base: baseMetadata.version,
+            incoming: metadata.version,
+          });
+        if (
+          base &&
+          metadata.locale !== undefined &&
+          baseMetadata.locale !== undefined &&
+          metadata.locale !== baseMetadata.locale
+        )
+          addIssue("locale_mismatch", key, `Locale mismatch for ${key}`, {
+            base: baseMetadata.locale,
+            incoming: metadata.locale,
+          });
+      }
+      const canonical = new Map<string, string[]>();
+      for (const record of normalizedRecords) {
+        const key = recordCanonicalKey(record);
+        canonical.set(key, [...(canonical.get(key) ?? []), record.sourceKey]);
+      }
+      for (const [key, sourceKeys] of canonical)
+        if (sourceKeys.length > 1)
+          addIssue("suspected_duplicate", key, `Multiple records share canonical key ${key}`, {
+            sourceKeys,
+          });
+      if (issueValues.length)
+        await tx
+          .insert(reviewIssues)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .values(issueValues as any)
+          .onConflictDoNothing({ target: [reviewIssues.candidateId, reviewIssues.fingerprint] });
+      await tx
+        .update(releaseCandidates)
+        .set({ currentBuildId: build.id, status: "preview_ready", updatedAt: new Date() })
+        .where(eq(releaseCandidates.id, candidateId));
+      return this.mapReleaseCandidateBuild(build);
+    });
+  }
+
+  async getReleaseCandidateBuild(buildId: string) {
+    const rows = await this.db
+      .select({ build: releaseCandidateBuilds, gameId: releaseCandidates.gameId })
+      .from(releaseCandidateBuilds)
+      .innerJoin(releaseCandidates, eq(releaseCandidates.id, releaseCandidateBuilds.candidateId))
+      .where(eq(releaseCandidateBuilds.id, buildId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      ...this.mapReleaseCandidateBuild(row.build),
+      gameId: row.gameId,
+      normalizedRecords: row.build.normalizedRecords,
+    };
+  }
+
+  async getReleaseCandidateReadiness(candidateId: string): Promise<ReleaseCandidateReadiness> {
+    const candidate = await this.getReleaseCandidate(candidateId);
+    if (!candidate)
+      throw new DomainError(
+        "candidate_not_found",
+        "Release candidate was not found",
+        undefined,
+        404,
+      );
+    const blockingReasons: ReleaseCandidateReadiness["blockingReasons"] = [];
+    const build = candidate.currentBuildId
+      ? await this.getReleaseCandidateBuild(candidate.currentBuildId)
+      : null;
+    if (!build)
+      blockingReasons.push({
+        code: "candidate_build_missing",
+        message: "Build the candidate first",
+      });
+    else if (build.contentChecksum !== releaseCandidateChecksum(build.normalizedRecords))
+      blockingReasons.push({
+        code: "candidate_checksum_invalid",
+        message: "The preview build checksum is invalid",
+      });
+    if (build?.manifestId) {
+      const [manifest] = await this.db
+        .select()
+        .from(datasetManifests)
+        .where(eq(datasetManifests.id, build.manifestId))
+        .limit(1);
+      if (
+        !manifest ||
+        manifest.rootHash !== manifestRootHash(build.normalizedRecords) ||
+        manifest.recordCount !== build.normalizedRecords.length
+      )
+        blockingReasons.push({
+          code: "manifest_invalid",
+          message: "Preview manifest does not match build contents",
+        });
+    } else if (build)
+      blockingReasons.push({ code: "manifest_missing", message: "Preview manifest is missing" });
+    const current = await this.getCurrentRevision(candidate.gameId);
+    if ((current?.id ?? null) !== (candidate.baseRevisionId ?? null))
+      blockingReasons.push({
+        code: "candidate_base_stale",
+        message: "The formal revision changed after this candidate was created",
+        details: { expected: candidate.baseRevisionId ?? null, actual: current?.id ?? null },
+      });
+    const batches = candidate.importBatchIds.length
+      ? await this.db
+          .select()
+          .from(importBatches)
+          .where(inArray(importBatches.id, candidate.importBatchIds))
+      : [];
+    for (const batch of batches) {
+      if (batch.errors.length)
+        blockingReasons.push({
+          code: "candidate_batch_has_errors",
+          message: `Import batch ${batch.id} has errors`,
+        });
+      if (!batch.sourceSnapshotId)
+        blockingReasons.push({
+          code: "source_snapshot_missing",
+          message: `Import batch ${batch.id} has no source snapshot`,
+        });
+      const deletions = batch.diff?.deletionCandidates ?? [];
+      if (deletions.some((key) => !batch.confirmedDeletionKeys.includes(key)))
+        blockingReasons.push({
+          code: "deletions_unconfirmed",
+          message: `Import batch ${batch.id} has unconfirmed deletions`,
+        });
+    }
+    // Candidate readiness is driven by the canonical issue/check queues.  A
+    // historical import status or verification sample is not a gate for new
+    // candidates.
+    const issues = await this.db
+      .select({ id: reviewIssues.id, summary: reviewIssues.summary })
+      .from(reviewIssues)
+      .where(
+        and(
+          eq(reviewIssues.candidateId, candidateId),
+          eq(reviewIssues.blocking, true),
+          inArray(reviewIssues.status, ["open", "reopened"]),
+        ),
+      );
+    for (const issue of issues)
+      blockingReasons.push({
+        code: "review_issue_open",
+        message: issue.summary,
+        details: { issueId: issue.id },
+      });
+    const checks = await this.db
+      .select()
+      .from(releaseCandidateChecks)
+      .where(eq(releaseCandidateChecks.candidateId, candidateId));
+    for (const check of checks.filter((item) => item.status !== "passed"))
+      blockingReasons.push({
+        code: "candidate_check_failed",
+        message: check.message ?? `Candidate check ${check.checkType} is not complete`,
+        details: { checkType: check.checkType, status: check.status },
+      });
+    const conflicts = await this.db
+      .select({ id: conflictCases.id })
+      .from(conflictCases)
+      .where(and(eq(conflictCases.gameId, candidate.gameId), eq(conflictCases.status, "open")))
+      .limit(1);
+    if (conflicts.length)
+      blockingReasons.push({
+        code: "open_conflicts",
+        message: "Open source conflicts must be resolved",
+      });
+    return {
+      candidateId,
+      buildId: build?.id,
+      contentChecksum: build?.contentChecksum,
+      ready: blockingReasons.length === 0,
+      blockingReasons,
+    };
+  }
+
+  async promoteReleaseCandidate(input: {
+    candidateId: string;
+    buildId: string;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: string | null;
+    releaseNote?: string;
+    idempotencyKey: string;
+  }): Promise<DatasetRevision> {
+    const candidate = await this.getReleaseCandidate(input.candidateId);
+    if (!candidate)
+      throw new DomainError(
+        "candidate_not_found",
+        "Release candidate was not found",
+        undefined,
+        404,
+      );
+    if (candidate.status === "promoted" && candidate.promotedRevisionId) {
+      const revision = await this.getRevision(candidate.promotedRevisionId, candidate.gameId);
+      if (revision) return this.mapDatasetRevision(revision);
+    }
+    const build = await this.getReleaseCandidateBuild(input.buildId);
+    if (!build || build.candidateId !== candidate.id || candidate.currentBuildId !== build.id)
+      throw new DomainError("candidate_build_mismatch", "Promote the current build only");
+    if (build.contentChecksum !== input.contentChecksum)
+      throw new DomainError("candidate_checksum_mismatch", "Preview build checksum does not match");
+    const current = await this.getCurrentRevision(candidate.gameId);
+    if (
+      input.expectedCurrentRevisionId !== undefined &&
+      (current?.id ?? null) !== input.expectedCurrentRevisionId
+    )
+      throw new DomainError(
+        "current_revision_changed",
+        "The formal revision changed before promotion",
+        undefined,
+        409,
+      );
+    const readiness = await this.getReleaseCandidateReadiness(candidate.id);
+    if (!readiness.ready)
+      throw new DomainError(
+        "candidate_not_ready",
+        "Release candidate is not ready to promote",
+        readiness.blockingReasons,
+      );
+    const existingKey = await this.db
+      .select({ id: releaseCandidates.id })
+      .from(releaseCandidates)
+      .where(eq(releaseCandidates.promotionIdempotencyKey, input.idempotencyKey))
+      .limit(1);
+    if (existingKey[0] && existingKey[0].id !== candidate.id)
+      throw new DomainError(
+        "idempotency_key_conflict",
+        "Promotion idempotency key was already used",
+        undefined,
+        409,
+      );
+    await this.db
+      .update(releaseCandidates)
+      .set({ promotionIdempotencyKey: input.idempotencyKey, status: "ready_to_promote", updatedAt: new Date() })
+      .where(and(eq(releaseCandidates.id, candidate.id), inArray(releaseCandidates.status, ["preview_ready", "ready_to_promote"])));
+    // publishImport retains the previous current revision until its own
+    // transaction commits, so a failed promotion cannot create an MCP gap.
+    let revision: DatasetRevision;
+    try {
+      revision = await this.publishImport(candidate.importBatchIds.at(-1)!, input.releaseNote, {
+        skipManualVerification: true,
+        recordsOverride: build.normalizedRecords,
+      });
+    } catch (error) {
+      await this.db.update(releaseCandidates).set({ status: "failed", updatedAt: new Date() }).where(eq(releaseCandidates.id, candidate.id));
+      throw error;
+    }
+    await this.db
+      .update(releaseCandidates)
+      .set({
+        status: "promoted",
+        promotedRevisionId: revision.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(releaseCandidates.id, candidate.id));
+    return revision;
+  }
+
+  async publishImport(
+    batchId: string,
+    releaseNote?: string,
+    options: {
+      skipManualVerification?: boolean;
+      recordsOverride?: NormalizedRecord[];
+    } = {},
+  ): Promise<DatasetRevision> {
     const existing = await this.getImport(batchId);
     if (!existing)
       throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
@@ -2067,11 +2905,11 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       throw new DomainError("staged_data_missing", "Staged records are missing");
     if (!existing.sourceSnapshotId)
       throw new DomainError("source_snapshot_missing", "Source snapshot is missing");
-    await this.ensureAcquisitionReview(batchId);
+    if (!options.skipManualVerification) await this.ensureAcquisitionReview(batchId);
     await this.ensureAnimeAcquisitionIntegrity(existing);
     await this.ensureReleaseBackup(existing);
     const sourceSnapshotId = existing.sourceSnapshotId;
-    const stagedRecords = existing.stagedRecords;
+    const stagedRecords = options.recordsOverride ?? existing.stagedRecords;
     const diff = existing.diff;
     if (
       diff &&
@@ -2098,6 +2936,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           revisionNumber: current.revisionNumber,
           sourceBatchId: current.sourceBatchId,
           releaseNote: current.releaseNote,
+          lifecycleStatus: current.lifecycleStatus as DatasetRevision["lifecycleStatus"],
           publishedAt: current.publishedAt,
           isCurrent: current.isCurrent,
           indexStatus: current.indexStatus as DatasetRevision["indexStatus"],
@@ -2118,7 +2957,11 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         .select()
         .from(datasetRevisions)
         .where(
-          and(eq(datasetRevisions.gameId, existing.gameId), eq(datasetRevisions.isCurrent, true)),
+          and(
+            eq(datasetRevisions.gameId, existing.gameId),
+            eq(datasetRevisions.isCurrent, true),
+            eq(datasetRevisions.lifecycleStatus, "published"),
+          ),
         )
         .limit(1);
       const previousRevision = activeRows[0];
@@ -2156,6 +2999,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           revisionNumber: nextNumber,
           sourceBatchId: batchId,
           releaseNote,
+          lifecycleStatus: "published",
           isCurrent: true,
           indexStatus: "pending",
           normalizedRecords,
@@ -2631,11 +3475,51 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         revisionNumber: revision.revisionNumber,
         sourceBatchId: revision.sourceBatchId,
         releaseNote: revision.releaseNote,
+        lifecycleStatus: revision.lifecycleStatus as DatasetRevision["lifecycleStatus"],
         publishedAt: revision.publishedAt,
         isCurrent: revision.isCurrent,
         indexStatus: revision.indexStatus as DatasetRevision["indexStatus"],
       };
     });
+  }
+
+  async getPublishReadiness(batchId: string): Promise<PublishReadiness> {
+    const batch = await this.getImport(batchId);
+    if (!batch)
+      throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
+    const blockingReasons: PublishReadiness["blockingReasons"] = [];
+    const checks: Array<() => Promise<void> | void> = [
+      () => assertPublishable(batch),
+      () => {
+        if (!batch.stagedRecords)
+          throw new DomainError("staged_data_missing", "Staged records are missing");
+      },
+      () => {
+        if (!batch.sourceSnapshotId)
+          throw new DomainError("source_snapshot_missing", "Source snapshot is missing");
+      },
+      () => this.ensureAcquisitionReview(batchId),
+      () => this.ensureAnimeAcquisitionIntegrity(batch),
+      () => this.ensureReleaseBackup(batch),
+    ];
+    for (const check of checks) {
+      try {
+        await check();
+      } catch (error) {
+        if (error instanceof DomainError)
+          blockingReasons.push({
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        else
+          blockingReasons.push({
+            code: "publish_gate_error",
+            message: "A publish gate could not be evaluated",
+          });
+      }
+    }
+    return { ready: blockingReasons.length === 0, blockingReasons };
   }
 
   private async readAcquisitionManifest(
@@ -3085,12 +3969,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const batch = await this.getImport(batchId);
     if (!batch)
       throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
-    const requiresReview = Boolean(
-      batch.stagedRecords?.some((record) => {
-        const provenance = asRecord(record.metadata.provenance);
-        return typeof (provenance.upstreamCommit ?? record.metadata.upstreamCommit) === "string";
-      }),
-    );
     const runs = await this.db
       .select()
       .from(verificationRuns)
@@ -3098,11 +3976,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       .limit(1);
     const run = runs[0];
     if (!run) {
-      if (requiresReview)
-        throw new DomainError(
-          "verification_run_missing",
-          "Acquisition data requires a verification run before publishing",
-        );
       return;
     }
     const items = await this.db
@@ -3125,19 +3998,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const missingScreenshots = items.filter(
       (item) => screenshotRequired.has(item.status) && !screenshotItems.has(item.id),
     );
-    const exactByCategory = new Map<string, number>();
-    for (const item of items) {
-      if (
-        item.status === "exact_match" &&
-        item.channel === "game_client" &&
-        item.checkedGameVersion === run.expectedGameVersion &&
-        item.checkedLocale === run.expectedLocale
-      ) {
-        exactByCategory.set(item.category, (exactByCategory.get(item.category) ?? 0) + 1);
-      }
-    }
-    const categories = [...new Set(items.map((item) => item.category))];
-    const insufficient = categories.filter((category) => (exactByCategory.get(category) ?? 0) < 10);
     const unresolvedItems = items.filter((item) => item.required && item.status === "not_checked");
     const mismatches = items.filter((item) => item.status === "mismatch");
     // Conflict cases are game-scoped review decisions.  Do not narrow this
@@ -3196,7 +4056,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           ];
     });
     if (
-      insufficient.length ||
       unresolvedItems.length ||
       mismatches.length ||
       missingScreenshots.length ||
@@ -3209,7 +4068,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         .set({ status: "blocked" })
         .where(eq(verificationRuns.id, run.id));
       throw new DomainError("verification_gate_failed", "Acquisition verification is incomplete", {
-        insufficientExactMatchCategories: insufficient,
         unchecked: unresolvedItems.length,
         mismatches: mismatches.length,
         missingScreenshots: missingScreenshots.length,
@@ -3393,6 +4251,34 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     await this.db.insert(verificationScreenshots).values(input).onConflictDoNothing();
   }
 
+  async listVerificationScreenshots(itemId: string): Promise<VerificationScreenshot[]> {
+    const rows = await this.db
+      .select()
+      .from(verificationScreenshots)
+      .where(eq(verificationScreenshots.itemId, itemId))
+      .orderBy(asc(verificationScreenshots.createdAt));
+    return rows.map((row) => ({ ...row }));
+  }
+
+  async getVerificationScreenshot(screenshotId: string): Promise<VerificationScreenshot | null> {
+    const rows = await this.db
+      .select()
+      .from(verificationScreenshots)
+      .where(eq(verificationScreenshots.id, screenshotId))
+      .limit(1);
+    return rows[0] ? { ...rows[0] } : null;
+  }
+
+  async deleteVerificationScreenshot(screenshotId: string): Promise<VerificationScreenshot> {
+    const rows = await this.db
+      .delete(verificationScreenshots)
+      .where(eq(verificationScreenshots.id, screenshotId))
+      .returning();
+    if (!rows[0])
+      throw new DomainError("screenshot_not_found", "Screenshot was not found", undefined, 404);
+    return { ...rows[0] };
+  }
+
   async listConflicts(gameId: string, status?: "open" | "resolved"): Promise<ConflictCase[]> {
     const rows = await this.db
       .select()
@@ -3519,6 +4405,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       revisionNumber: row.revisionNumber,
       sourceBatchId: row.sourceBatchId,
       releaseNote: row.releaseNote,
+      lifecycleStatus: row.lifecycleStatus as DatasetRevision["lifecycleStatus"],
       publishedAt: row.publishedAt,
       isCurrent: row.isCurrent,
       indexStatus: row.indexStatus as DatasetRevision["indexStatus"],
@@ -3539,6 +4426,13 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           "Dataset revision was not found",
           undefined,
           404,
+        );
+      if (target.lifecycleStatus !== "published")
+        throw new DomainError(
+          "revision_not_published",
+          "Only a published Dataset Revision can be activated by rollback",
+          undefined,
+          409,
         );
       await tx
         .update(datasetRevisions)
@@ -3574,6 +4468,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         revisionNumber: updated.revisionNumber,
         sourceBatchId: updated.sourceBatchId,
         releaseNote: updated.releaseNote,
+        lifecycleStatus: updated.lifecycleStatus as DatasetRevision["lifecycleStatus"],
         publishedAt: updated.publishedAt,
         isCurrent: updated.isCurrent,
         indexStatus: updated.indexStatus as DatasetRevision["indexStatus"],
@@ -3720,7 +4615,13 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const rows = await this.db
       .select()
       .from(datasetRevisions)
-      .where(and(eq(datasetRevisions.gameId, gameId), eq(datasetRevisions.isCurrent, true)))
+      .where(
+        and(
+          eq(datasetRevisions.gameId, gameId),
+          eq(datasetRevisions.isCurrent, true),
+          eq(datasetRevisions.lifecycleStatus, "published"),
+        ),
+      )
       .limit(1);
     return rows[0];
   }
@@ -3746,7 +4647,13 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const rows = await this.db
       .select()
       .from(datasetRevisions)
-      .where(and(eq(datasetRevisions.gameId, gameId), eq(datasetRevisions.indexStatus, "ready")))
+      .where(
+        and(
+          eq(datasetRevisions.gameId, gameId),
+          eq(datasetRevisions.lifecycleStatus, "published"),
+          eq(datasetRevisions.indexStatus, "ready"),
+        ),
+      )
       .orderBy(desc(datasetRevisions.revisionNumber))
       .limit(1);
     return rows[0];
@@ -3884,6 +4791,49 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       confirmedDeletionKeys: row.confirmedDeletionKeys,
       createdAt: row.createdAt,
       completedAt: row.completedAt,
+    };
+  }
+
+  private mapDatasetRevision(row: typeof datasetRevisions.$inferSelect): DatasetRevision {
+    return {
+      id: row.id,
+      gameId: row.gameId,
+      revisionNumber: row.revisionNumber,
+      sourceBatchId: row.sourceBatchId,
+      releaseNote: row.releaseNote,
+      publishedAt: row.publishedAt,
+      isCurrent: row.isCurrent,
+      indexStatus: row.indexStatus as DatasetRevision["indexStatus"],
+      lifecycleStatus: row.lifecycleStatus as DatasetRevision["lifecycleStatus"],
+    };
+  }
+
+  private mapReleaseCandidate(row: typeof releaseCandidates.$inferSelect): ReleaseCandidate {
+    return {
+      id: row.id,
+      gameId: row.gameId,
+      name: row.name,
+      baseRevisionId: row.baseRevisionId,
+      importBatchIds: row.importBatchIds,
+      status: row.status as ReleaseCandidate["status"],
+      currentBuildId: row.currentBuildId,
+      promotedRevisionId: row.promotedRevisionId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapReleaseCandidateBuild(
+    row: typeof releaseCandidateBuilds.$inferSelect,
+  ): ReleaseCandidateBuild {
+    return {
+      id: row.id,
+      candidateId: row.candidateId,
+      buildNumber: row.buildNumber,
+      status: row.status as ReleaseCandidateBuild["status"],
+      contentChecksum: row.contentChecksum,
+      recordCount: row.normalizedRecords.length,
+      createdAt: row.createdAt,
     };
   }
 

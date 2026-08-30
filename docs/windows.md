@@ -48,7 +48,7 @@ D:\GamesMcp\data\upstream\   # AnimeGameData checkout
 
 ## 游戏内核验
 
-Windows 上的游戏客户端只承担人工核验。数据集目标是 `7.0.0 + zh-CN`；如果客户端是其他版本，记录为 `version_mismatch`，不能计入 `exact_match`。异常、版本不符或因未解锁无法查看的条目需要截图并上传到核验台。
+Windows 上的游戏客户端只承担人工核验。数据集目标是 `7.0.0 + zh-CN`；如果客户端是其他版本，记录为 `version_mismatch`，不能计入客户端一致性门禁。异常、版本不符或因未解锁无法查看的条目需要截图并上传到核验台。
 
 ## 常见问题
 

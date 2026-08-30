@@ -115,7 +115,7 @@ async function mockApi(page: Page) {
     errors: [],
     warnings: [],
     diff: {
-      added: ["lore/new"],
+      added: ["lore/new", ...Array.from({ length: 12 }, (_, index) => `lore/new-${index + 1}`)],
       modified: ["lore/first-steps"],
       deletionCandidates: ["lore/legacy"],
       unchanged: ["entities/traveler"],
@@ -141,6 +141,33 @@ async function mockApi(page: Page) {
     type: "local_json",
     pathLabel: "fixture.json",
   };
+  const previewCandidateId = "00000000-0000-0000-0000-000000000040";
+  const previewBuildId = "00000000-0000-0000-0000-000000000041";
+  const previewCandidates = [
+    {
+      id: previewCandidateId,
+      gameId,
+      name: "RC 7.0 候选",
+      baseRevisionId: revisionOne,
+      importBatchIds: [batchId],
+      status: "preview_ready",
+      currentBuildId: previewBuildId,
+      promotedRevisionId: null,
+      builds: [
+        {
+          id: previewBuildId,
+          candidateId: previewCandidateId,
+          buildNumber: 1,
+          status: "ready",
+          contentChecksum: "a".repeat(64),
+          recordCount: 2,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -152,9 +179,9 @@ async function mockApi(page: Page) {
     if (method === "GET" && pathname === "/api/ready")
       return json({ status: "ready", currentRevision: "r1", searchIndex: "ready" });
     if (method === "GET" && pathname.endsWith("/sources")) return json({ sources: [source] });
-    if (method === "GET" && pathname.endsWith("/documents"))
+    if (method === "GET" && pathname.startsWith("/api/games/") && pathname.endsWith("/documents"))
       return json({ documents: [documentSummary] });
-    if (method === "GET" && pathname.endsWith("/entities"))
+    if (method === "GET" && pathname.startsWith("/api/games/") && pathname.endsWith("/entities"))
       return json({ entities: [detailEntity] });
     if (method === "GET" && pathname.includes(`/documents/${documentId}`))
       return json({ document: detailDocument });
@@ -201,6 +228,46 @@ async function mockApi(page: Page) {
     if (method === "GET" && pathname === "/api/admin/sources") return json({ sources });
     if (method === "GET" && pathname === "/api/admin/imports") return json({ imports: [] });
     if (method === "GET" && pathname === "/api/admin/conflicts") return json({ conflicts: [] });
+    if (method === "GET" && pathname === "/api/admin/release-candidates")
+      return json({ candidates: previewCandidates });
+    if (method === "GET" && pathname === `/api/admin/release-candidates/${previewCandidateId}`)
+      return json({ candidate: previewCandidates[0] });
+    if (
+      method === "GET" &&
+      pathname.includes("/api/admin/previews/") &&
+      pathname.endsWith("/entities")
+    ) {
+      return json({
+        entities: [
+          {
+            sourceKey: "entities/traveler",
+            type: "character",
+            name: "旅行者",
+            summary: "从世界之外来到提瓦特的旅行者。",
+            metadata: {},
+            contentHash: "hash-1",
+          },
+        ],
+      });
+    }
+    if (
+      method === "GET" &&
+      pathname.includes("/api/admin/previews/") &&
+      pathname.endsWith("/documents")
+    ) {
+      return json({
+        documents: [
+          {
+            sourceKey: "lore/first-steps",
+            type: "lore",
+            title: "踏入提瓦特",
+            body: "旅行者在提瓦特寻找失散的血亲。",
+            metadata: {},
+            contentHash: "hash-2",
+          },
+        ],
+      });
+    }
     if (method === "POST" && pathname === "/api/admin/sources") {
       sources = [source];
       return json(source);
@@ -215,6 +282,8 @@ async function mockApi(page: Page) {
         errors: [],
         warnings: [],
       });
+    if (method === "GET" && pathname === `/api/admin/imports/${batchId}/publish-readiness`)
+      return json({ batchId, ready: true, blockingReasons: [] });
     if (method === "GET" && pathname === `/api/admin/imports/${batchId}/verification`)
       return json(
         {
@@ -268,7 +337,7 @@ test("completes search, entity, document, QA and admin release flow", async ({ p
     .getByRole("button", { name: /旅行者/ })
     .first()
     .click();
-  await expect(page.getByRole("heading", { name: "旅行者" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "旅行者", exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: /踏入提瓦特/ })
     .first()
@@ -283,16 +352,21 @@ test("completes search, entity, document, QA and admin release flow", async ({ p
   await page.getByRole("button", { name: /\[S1\] 踏入提瓦特/ }).click();
   await expect(page.locator(`[id="${segmentId}"]`)).toHaveClass(/is-active/);
 
-  await page.getByRole("button", { name: "打开数据管理" }).click();
+  await page.getByRole("button", { name: "打开审核工作台" }).click();
   await page.getByPlaceholder("本地文件或目录路径").fill("/private/fixture.json");
-  await page.getByRole("button", { name: "导入并生成 Diff" }).click();
+  await page.getByRole("button", { name: "导入并进入预发布" }).click();
+  await page.getByRole("button", { name: "预发布分支" }).click();
   await expect(page.getByText("lore/legacy")).toBeVisible();
+  const diffAdded = page
+    .locator(".diff-grid > div")
+    .filter({ has: page.getByRole("heading", { name: "新增" }) });
+  await expect(diffAdded.getByText("1 / 2")).toBeVisible();
+  await diffAdded.getByRole("button", { name: "下一页" }).click();
+  await expect(diffAdded.getByText("2 / 2")).toBeVisible();
+  await expect(diffAdded.getByText("lore/new-12")).toBeVisible();
   await page.locator(".deletion-row input").check();
-  await page.getByRole("button", { name: "审核当前 Diff" }).click();
-  await expect(page.getByRole("status")).toHaveText("审核完成：review_required");
-  await page.getByRole("button", { name: "发布版本" }).click();
-  await expect(page.getByText(/发布成功：r2/)).toBeVisible();
-  await expect(page.getByText("回滚到此版本")).toBeVisible();
+  await page.getByRole("button", { name: "查看问题队列" }).click();
+  await expect(page.getByRole("heading", { name: "问题队列" })).toBeVisible();
 });
 
 async function mockAcquisitionApi(page: Page) {
@@ -444,6 +518,8 @@ async function mockAcquisitionApi(page: Page) {
     if (method === "GET" && pathname === "/api/admin/sources") return json({ sources: [source] });
     if (method === "GET" && pathname === "/api/admin/revisions") return json({ revisions: [] });
     if (method === "GET" && pathname === "/api/admin/jobs") return json({ jobs: [] });
+    if (method === "GET" && pathname === "/api/admin/release-candidates")
+      return json({ candidates: [] });
     if (method === "GET" && pathname === "/api/admin/acquisition/status")
       return json({
         status: {
@@ -536,56 +612,13 @@ async function mockAcquisitionApi(page: Page) {
   });
 }
 
-test("supports acquisition verification, screenshot evidence and conflict detail", async ({
-  page,
-}) => {
+test("supports issue-driven review and conflict detail", async ({ page }) => {
   await mockAcquisitionApi(page);
-  let lastVerificationUpdate: Record<string, unknown> | undefined;
-  page.on("request", (request) => {
-    if (request.method() === "PATCH" && request.url().includes("/api/admin/verification/items/")) {
-      lastVerificationUpdate = JSON.parse(request.postData() ?? "{}") as Record<string, unknown>;
-    }
-  });
   await page.goto("/");
-  await page.getByRole("button", { name: "打开数据管理" }).click();
-  await expect(page.getByRole("heading", { name: "采集完整性审计" })).toBeVisible();
-  await expect(page.getByText(/报告可能早于最新批次/)).toBeVisible();
-  await expect(page.getByText("书籍：发现 293 · 成功 288 · 排除 5")).toBeVisible();
-  await expect(page.getByText("book:pending_30")).toBeVisible();
-  await page.getByLabel("选择已有导入批次").selectOption(batchId);
-  await expect(page.getByRole("heading", { name: "游戏内核验台" })).toBeVisible();
-  await expect(page.getByText("游戏内逐字一致 0/10 · 当前样本 2")).toBeVisible();
-  const checklistDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出核验清单" }).click();
-  expect((await checklistDownload).suggestedFilename()).toBe(`verification-${batchId}.json`);
-  await page.getByText("查看正文与完整出处").first().click();
-  await expect(page.getByText("测试正文")).toBeVisible();
-  await expect(
-    page.locator(".verification-provenance[open]").getByText("fixture-commit"),
-  ).toBeVisible();
-  const checkedVersion = page.getByLabel("book/verification核验版本");
-  const checkedLocale = page.getByLabel("book/verification核验语言");
-  await expect(checkedVersion).toHaveValue("7.0.0");
-  await expect(checkedLocale).toHaveValue("zh-CN");
-  await checkedVersion.fill("6.9.0");
-  await checkedVersion.blur();
-  await expect.poll(() => lastVerificationUpdate?.checkedGameVersion).toBe("6.9.0");
-  await expect.poll(() => lastVerificationUpdate?.checkedLocale).toBe("zh-CN");
-  await page.getByLabel("book/verification核验状态").selectOption("mismatch");
-  await page
-    .locator('input[type="file"]')
-    .first()
-    .setInputFiles({
-      name: "verification.png",
-      mimeType: "image/png",
-      buffer: Buffer.from("iVBORw0KGgo=", "base64"),
-    });
-  await expect(page.getByText("book/verification · 截图 1")).toBeVisible();
-  await page.getByRole("button", { name: "查看原文" }).click();
-  await expect(page.getByText("冲突来源正文")).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept("正式来源优先"));
-  await page.getByRole("button", { name: "记录人工裁决" }).click();
-  await expect(page.getByText("没有未解决冲突")).toBeVisible();
+  await page.getByRole("button", { name: "打开审核工作台" }).click();
+  await page.getByRole("button", { name: "待处理问题" }).click();
+  await expect(page.getByRole("heading", { name: "问题队列" })).toBeVisible();
+  await expect(page.getByText(/无需逐条核验|无待处理问题|问题/).first()).toBeVisible();
 });
 
 test("supports mobile search and document reading layout", async ({ page }) => {
@@ -602,4 +635,16 @@ test("supports mobile search and document reading layout", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "踏入提瓦特" })).toBeVisible();
   await expect(page.locator(".document-body")).toBeVisible();
   await expect(page.locator("body")).toHaveCSS("min-width", "320px");
+});
+
+test("supports browsing preview candidate data in isolated preview browser", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(
+    "/#preview/00000000-0000-0000-0000-000000000040/00000000-0000-0000-0000-000000000041",
+  );
+  await expect(page.getByText(/这是预发布数据，当前正式 MCP 不会读取此 Build/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "旅行者" })).toBeVisible();
+  await page.getByRole("button", { name: /踏入提瓦特/ }).click();
+  await expect(page.getByText("旅行者在提瓦特寻找失散的血亲。")).toBeVisible();
+  await expect(page.getByRole("button", { name: "报告问题" })).toBeVisible();
 });
