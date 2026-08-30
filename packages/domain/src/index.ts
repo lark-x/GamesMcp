@@ -590,6 +590,7 @@ export interface KnowledgeRepository {
     releaseNote?: string,
     options?: { skipManualVerification?: boolean },
   ): Promise<DatasetRevision>;
+  materializeRevision?(revisionId: Id): Promise<void>;
   getPublishReadiness?(batchId: Id): Promise<PublishReadiness>;
   createReleaseCandidate?(input: {
     gameId: Id;

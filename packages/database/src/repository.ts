@@ -3063,6 +3063,34 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       .where(eq(datasetRevisions.id, revisionId));
   }
 
+  /** Materialize the immutable build payload into the revision-scoped read model. */
+  async materializeRevision(revisionId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [revision] = await tx.select().from(datasetRevisions).where(eq(datasetRevisions.id, revisionId)).limit(1);
+      if (!revision || !revision.normalizedRecords) throw new DomainError("revision_materialization_missing", "Revision payload is missing");
+      const records = revision.normalizedRecords;
+      const entitiesByKey = new Map<string, string>();
+      for (const record of records) for (const candidate of record.entities ?? []) {
+        const id = stableEntityId(revision.gameId, candidate.sourceKey); entitiesByKey.set(candidate.sourceKey, id);
+        await tx.insert(entities).values({ id, gameId: revision.gameId, sourceKey: candidate.sourceKey, type: candidate.type, canonicalName: candidate.name, normalizedName: normalize(candidate.name), summary: candidate.summary, properties: candidate.properties ?? {}, firstRevisionId: revisionId, lastRevisionId: revisionId, deleted: false }).onConflictDoUpdate({ target: [entities.gameId, entities.sourceKey], set: { type: candidate.type, canonicalName: candidate.name, normalizedName: normalize(candidate.name), summary: candidate.summary, properties: candidate.properties ?? {}, lastRevisionId: revisionId, deleted: false, updatedAt: new Date() } });
+        if (candidate.aliases?.length) await tx.insert(entityAliases).values(candidate.aliases.map((a) => ({ entityId: id, value: a.value, normalizedValue: normalize(a.value), language: a.language ?? "und", isPrimary: a.primary ?? false }))).onConflictDoNothing();
+      }
+      const docs = new Map<string, { id: string; segments: { id: string; body: string }[] }>();
+      for (const record of records) {
+        if (record.recordType === "entity" || record.entityType || (!record.title && !record.body)) continue;
+        const id = stableUuid(`${revision.gameId}:document:${record.sourceKey}:${revisionId}`), body = record.body ?? record.title ?? "";
+        await tx.insert(documents).values({ id, gameId: revision.gameId, sourceKey: record.sourceKey, type: record.documentType ?? "lore", title: record.title ?? record.sourceKey, normalizedTitle: normalize(record.title ?? record.sourceKey), gameVersion: record.gameVersion, sourceSnapshotId: null, body, metadata: record.metadata, revisionId, deleted: false }).onConflictDoNothing();
+        const refs: { id: string; body: string }[] = [];
+        for (const [ordinal, part] of splitIntoSegments(body).entries()) { if (!part) continue; const sid = stableUuid(`${id}:segment:${ordinal}:${record.contentHash}`); await tx.insert(documentSegments).values({ id: sid, documentId: id, revisionId, ordinal, headingPath: part.headingPath, body: part.body, startOffset: part.start, endOffset: part.end, tokenEstimate: Math.ceil(part.body.length / 4), contentHash: createHash("sha256").update(part.body).digest("hex"), searchText: part.body }).onConflictDoNothing(); refs.push({ id: sid, body: part.body }); }
+        docs.set(record.sourceKey, { id, segments: refs });
+      }
+      for (const record of records) {
+        for (const rel of record.relationships ?? []) { const subjectId = entitiesByKey.get(rel.subjectSourceKey), objectId = entitiesByKey.get(rel.objectSourceKey); if (!subjectId || !objectId) throw new DomainError("invalid_entity_reference", `Relationship references an unknown entity in ${record.sourceKey}`); await tx.insert(relationships).values({ gameId: revision.gameId, subjectId, predicate: rel.predicate, objectId, sourceKey: record.sourceKey, revisionId, status: "active", validFrom: rel.validFrom, validTo: rel.validTo, confidence: rel.confidence }).onConflictDoNothing(); }
+        for (const claim of record.claims ?? []) { if ((claim.status === "confirmed" || claim.status === "implied") && !claim.evidence?.length) throw new DomainError("claim_evidence_required", `Claim has no evidence: ${claim.statement}`); const [row] = await tx.insert(claims).values({ gameId: revision.gameId, sourceKey: claim.sourceKey, recordSourceKey: record.sourceKey, normalizedStatement: claim.statement, status: claim.status, confidence: claim.confidence, createdBy: claim.createdBy ?? "import", revisionId }).returning(); if (!row) continue; for (const key of claim.entitySourceKeys ?? []) { const eid = entitiesByKey.get(key); if (eid) await tx.insert(claimEntities).values({ claimId: row.id, entityId: eid }).onConflictDoNothing(); } for (const ev of claim.evidence ?? []) { const target = docs.get(ev.documentSourceKey) ?? docs.get(record.sourceKey); if (!target?.segments[0]) throw new DomainError("evidence_document_missing", `Evidence document is missing: ${ev.documentSourceKey}`); const seg = target.segments.find((s) => !ev.quote || s.body.includes(ev.quote)) ?? target.segments[0], start = ev.quote ? seg.body.indexOf(ev.quote) : 0, quote = ev.quote ?? seg.body.slice(0, 500); await tx.insert(evidence).values({ claimId: row.id, documentId: target.id, segmentId: seg.id, quoteStart: Math.max(0, start), quoteEnd: Math.max(0, start) + quote.length, quote, strength: ev.strength, note: ev.note, valid: true }); } }
+      }
+    });
+  }
+
   async publishImport(
     batchId: string,
     releaseNote?: string,

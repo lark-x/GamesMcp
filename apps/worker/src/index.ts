@@ -110,6 +110,7 @@ async function processOne(): Promise<boolean> {
         typeof payload.contentChecksum !== "string"
       )
         throw new Error("Activation payload is invalid");
+      await repository.materializeRevision?.(payload.revisionId);
       await repository.setRevisionIndexStatus?.(payload.revisionId, "ready");
       await repository.finalizeActivation?.({
         revisionId: payload.revisionId,
@@ -165,6 +166,10 @@ async function processOne(): Promise<boolean> {
       await repository.completeJob(String(job.id), "failed", `Unsupported job type: ${job.type}`);
     }
   } catch (error) {
+    if (job.type === "activate_revision") {
+      const revisionId = (job.payload as { revisionId?: unknown }).revisionId;
+      if (typeof revisionId === "string") await repository.setRevisionIndexStatus?.(revisionId, "failed", error instanceof Error ? error.message : "Activation failed");
+    }
     await repository.completeJob(
       String(job.id),
       "failed",
