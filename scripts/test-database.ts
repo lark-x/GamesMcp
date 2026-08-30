@@ -13,7 +13,6 @@ if (!databaseUrl) {
   );
 }
 
-
 function makeRecord(
   value: Omit<NormalizedRecord, "contentHash" | "parserVersion" | "metadata"> & {
     metadata?: Record<string, unknown>;

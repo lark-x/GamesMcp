@@ -320,7 +320,11 @@ export function mergeReleaseCandidateRecords(
   return [...merged.values()].sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
 }
 
-function deterministicRecordOrder(seed: string, category: string, record: NormalizedRecord): string {
+function deterministicRecordOrder(
+  seed: string,
+  category: string,
+  record: NormalizedRecord,
+): string {
   return createHash("sha256").update(`${seed}:${category}:${record.sourceKey}`).digest("hex");
 }
 
@@ -2501,14 +2505,27 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       const incoming = patched.get(patch.canonicalKey);
       if (!incoming) continue;
       const base = baseByKeyForPatch.get(patch.canonicalKey);
-      const baseHash = base ? createHash("sha256").update(canonicalRecordBytes(base)).digest("hex") : null;
-      const incomingHash = createHash("sha256").update(canonicalRecordBytes(incoming)).digest("hex");
-      if ((patch.expectedBaseHash && patch.expectedBaseHash !== baseHash) ||
-          (patch.expectedIncomingHash && patch.expectedIncomingHash !== incomingHash))
-        throw new DomainError("patch_precondition_failed", `Patch precondition failed for ${patch.canonicalKey}`, { patchId: patch.id }, 409);
-      if (["confirm_delete", "exclude_record"].includes(patch.action)) patched.delete(patch.canonicalKey);
+      const baseHash = base
+        ? createHash("sha256").update(canonicalRecordBytes(base)).digest("hex")
+        : null;
+      const incomingHash = createHash("sha256")
+        .update(canonicalRecordBytes(incoming))
+        .digest("hex");
+      if (
+        (patch.expectedBaseHash && patch.expectedBaseHash !== baseHash) ||
+        (patch.expectedIncomingHash && patch.expectedIncomingHash !== incomingHash)
+      )
+        throw new DomainError(
+          "patch_precondition_failed",
+          `Patch precondition failed for ${patch.canonicalKey}`,
+          { patchId: patch.id },
+          409,
+        );
+      if (["confirm_delete", "exclude_record"].includes(patch.action))
+        patched.delete(patch.canonicalKey);
       else if (patch.action === "keep_main" && base) patched.set(patch.canonicalKey, base);
-      else if (patch.action === "manual") patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
+      else if (patch.action === "manual")
+        patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
     }
     normalizedRecords = [...patched.values()];
     const contentChecksum = releaseCandidateChecksum(normalizedRecords);
@@ -2553,7 +2570,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         await tx
           .update(candidatePatches)
           .set({ appliedBuildId: build.id })
-          .where(inArray(candidatePatches.id, priorPatches.map((patch) => patch.id)));
+          .where(
+            inArray(
+              candidatePatches.id,
+              priorPatches.map((patch) => patch.id),
+            ),
+          );
       const issueIds = priorPatches.flatMap((patch) => (patch.issueId ? [patch.issueId] : []));
       if (issueIds.length)
         await tx
@@ -2866,8 +2888,17 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       );
     await this.db
       .update(releaseCandidates)
-      .set({ promotionIdempotencyKey: input.idempotencyKey, status: "ready_to_promote", updatedAt: new Date() })
-      .where(and(eq(releaseCandidates.id, candidate.id), inArray(releaseCandidates.status, ["preview_ready", "ready_to_promote"])));
+      .set({
+        promotionIdempotencyKey: input.idempotencyKey,
+        status: "ready_to_promote",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(releaseCandidates.id, candidate.id),
+          inArray(releaseCandidates.status, ["preview_ready", "ready_to_promote"]),
+        ),
+      );
     // publishImport retains the previous current revision until its own
     // transaction commits, so a failed promotion cannot create an MCP gap.
     let revision: DatasetRevision;
@@ -2877,7 +2908,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         recordsOverride: build.normalizedRecords,
       });
     } catch (error) {
-      await this.db.update(releaseCandidates).set({ status: "failed", updatedAt: new Date() }).where(eq(releaseCandidates.id, candidate.id));
+      await this.db
+        .update(releaseCandidates)
+        .set({ status: "failed", updatedAt: new Date() })
+        .where(eq(releaseCandidates.id, candidate.id));
       throw error;
     }
     await this.db
