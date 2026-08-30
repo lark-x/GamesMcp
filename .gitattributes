@@ -1,0 +1,4 @@
+# Keep checked-out text files in LF form on every development platform.  This
+# prevents Windows line-ending conversion from making Prettier report every
+# file as unformatted in CI.
+* text=auto eol=lf
