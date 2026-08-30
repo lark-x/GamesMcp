@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-export function VersionSwitcher({ onPreview }: { onPreview: (id: string) => void }) {
+import { api, Candidate, Revision } from "../api.js";
+export function VersionSwitcher({ onPreview }: { onPreview: (candidateId: string, buildId?: string) => void }) {
   const [candidates, setCandidates] = useState<
     Array<{
       id: string;
@@ -7,41 +8,30 @@ export function VersionSwitcher({ onPreview }: { onPreview: (id: string) => void
       status: string;
       builds?: Array<{ id: string; buildNumber: number }>;
     }>
-  >([]);
+  >([]); const [revisions, setRevisions] = useState<Revision[]>([]); const [value, setValue] = useState("current");
   useEffect(() => {
-    fetch("/api/admin/release-candidates")
-      .then((r) => (r.ok ? r.json() : { candidates: [] }))
-      .then(async (v) =>
-        setCandidates(
-          await Promise.all(
-            (v.candidates ?? []).map(async (c: { id: string }) => {
-              const d = await fetch(`/api/admin/release-candidates/${c.id}`);
-              const value = await d.json();
-              return value.candidate ?? value;
-            }),
-          ),
-        ),
-      )
+    Promise.all([api.candidates(), api.revisions()])
+      .then(async ([v, r]) => { setRevisions(r.revisions ?? []); setCandidates(await Promise.all((v.candidates ?? []).map(c => api.candidate(c.id).then(x => x.candidate)))); })
       .catch(() => undefined);
   }, []);
   return (
     <label className="version-switcher">
       版本{" "}
       <select
-        defaultValue="current"
-        onChange={(e) => e.target.value !== "current" && onPreview(e.target.value)}
+        value={value}
+        onChange={(e) => { const v=e.target.value; setValue(v); if(v.startsWith("candidate:")){const [,c,b]=v.split(":"); onPreview(c,b);} }}
       >
         <option value="current">正式 · Current</option>
         <optgroup label="历史正式版本">
-          <option disabled>由正式版本历史查看</option>
+          {revisions.map(r=><option key={r.id} value={`revision:${r.id}`}>{r.version ?? r.id} · {r.status ?? "published"}</option>)}
         </optgroup>
         <optgroup label="预发布 Candidate / Build">
           {candidates.flatMap((c) => [
-            <option key={c.id} value={c.id}>
+            <option key={c.id} value={`candidate:${c.id}`}>
               Candidate · {c.name} · {c.status}
             </option>,
             ...(c.builds ?? []).map((b) => (
-              <option key={b.id} value={c.id}>
+                <option key={b.id} value={`candidate:${c.id}:${b.id}`}>
                 {c.name} · Build {b.buildNumber}
               </option>
             )),

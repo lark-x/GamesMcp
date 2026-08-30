@@ -1,0 +1,20 @@
+export type Build = { id: string; buildNumber: number; status: string; recordCount: number };
+export type Candidate = { id: string; name: string; status: string; currentBuildId?: string | null; builds?: Build[] };
+export type Issue = { id: string; candidateId?: string; buildId?: string; canonicalKey: string; kind: string; status: string; summary: string; base?: unknown; main?: unknown; incoming?: unknown; preview?: unknown; source?: unknown; contentHash?: string };
+export type Revision = { id: string; version?: string; status?: string; releaseNote?: string; manifestId?: string; indexId?: string };
+async function request<T>(path: string, init?: RequestInit): Promise<T> { const r = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json() as Promise<T>; }
+export const api = {
+  sources: () => request<{ sources: unknown[] }>("/api/admin/sources"),
+  imports: () => request<{ imports: unknown[] }>("/api/admin/imports"),
+  createImport: (source: string) => request<{ batchId: string }>("/api/admin/imports", { method: "POST", body: JSON.stringify({ source }) }),
+  importStatus: (id: string) => request<Record<string, unknown>>(`/api/admin/imports/${id}`),
+  candidates: () => request<{ candidates: Candidate[] }>("/api/admin/release-candidates"),
+  candidate: (id: string) => request<{ candidate: Candidate }>(`/api/admin/release-candidates/${id}`),
+  build: (id: string) => request<Record<string, unknown>>(`/api/admin/release-candidates/${id}/builds`, { method: "POST", body: "{}" }),
+  readiness: (id: string) => request<Record<string, unknown>>(`/api/admin/release-candidates/${id}/readiness`),
+  issues: () => request<{ issues: Issue[] }>("/api/admin/review-issues"),
+  issue: (id: string) => request<{ issue: Issue }>(`/api/admin/review-issues/${id}`),
+  resolve: (id: string, action: string, explanation: string) => request(`/api/admin/review-issues/${id}/resolve`, { method: "POST", body: JSON.stringify({ action, explanation }) }),
+  revisions: () => request<{ revisions: Revision[] }>("/api/admin/revisions"),
+  rollback: (id: string) => request(`/api/admin/revisions/${id}/rollback`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+};
