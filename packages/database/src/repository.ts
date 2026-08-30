@@ -2503,7 +2503,16 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const patched = new Map(normalizedRecords.map((record) => [record.sourceKey, record]));
     for (const patch of priorPatches) {
       const incoming = patched.get(patch.canonicalKey);
-      if (!incoming) continue;
+      // A recorded decision must always apply to the build it was created for.
+      // Silently ignoring a missing key makes review decisions disappear and
+      // can produce an apparently valid but materially different build.
+      if (!incoming && !["confirm_delete", "exclude_record"].includes(patch.action))
+        throw new DomainError(
+          "patch_target_missing",
+          `Patch target is missing from the candidate build: ${patch.canonicalKey}`,
+          { patchId: patch.id, canonicalKey: patch.canonicalKey },
+          409,
+        );
       const base = baseByKeyForPatch.get(patch.canonicalKey);
       const baseHash = base
         ? createHash("sha256").update(canonicalRecordBytes(base)).digest("hex")
