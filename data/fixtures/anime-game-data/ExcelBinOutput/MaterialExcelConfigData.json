@@ -1,0 +1,16 @@
+[
+  {
+    "id": 20001,
+    "nameTextMapHash": 1006,
+    "descTextMapHash": 1008,
+    "specialDescTextMapHash": 1009,
+    "itemType": "ITEM_MATERIAL",
+    "materialType": "MATERIAL_TEST",
+    "rankLevel": 2,
+    "icon": "UI_ItemIcon_Test"
+  },
+  {
+    "id": 20002,
+    "nameTextMapHash": 1006
+  }
+]

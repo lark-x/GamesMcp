@@ -1,0 +1,768 @@
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
+import cors from "@fastify/cors";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import { z } from "zod";
+import { loadConfig, type RuntimeConfig } from "@gip/config";
+import {
+  documentIdSchema,
+  documentTypeSchema,
+  entityIdSchema,
+  entityTypeSchema,
+  gameIdSchema,
+  revisionIdSchema,
+  relationshipPredicateSchema,
+  qaRequestSchema,
+  reviewRequestSchema,
+  resolveConflictSchema,
+  rollbackRequestSchema,
+  searchRequestSchema,
+  screenshotUploadSchema,
+  publishRequestSchema,
+  updateVerificationItemSchema,
+} from "@gip/contracts";
+import {
+  DomainError,
+  KnowledgeService,
+  type KnowledgeRepository,
+  type ImportBatch,
+  type Source,
+} from "@gip/domain";
+import {
+  PARSER_VERSION,
+  adapterFor,
+  computeDiff,
+  normalizeSnapshot,
+  validateImport,
+  type SourceType,
+} from "@gip/ingestion";
+import { EvidenceQaService } from "@gip/qa";
+import { OpenAICompatibleEmbeddingProvider, RetrievalService } from "@gip/retrieval";
+
+export type AppDependencies = {
+  repository: KnowledgeRepository;
+  config?: RuntimeConfig;
+};
+
+function parseIdParams(request: FastifyRequest): {
+  gameId: string;
+  entityId?: string;
+  documentId?: string;
+  batchId?: string;
+  revisionId?: string;
+  itemId?: string;
+  conflictId?: string;
+} {
+  const params = request.params as {
+    gameId?: unknown;
+    entityId?: unknown;
+    documentId?: unknown;
+    batchId?: unknown;
+    revisionId?: unknown;
+    itemId?: unknown;
+    conflictId?: unknown;
+  };
+  return {
+    gameId: params.gameId === undefined ? "" : gameIdSchema.parse(params.gameId),
+    entityId: params.entityId === undefined ? undefined : entityIdSchema.parse(params.entityId),
+    documentId:
+      params.documentId === undefined ? undefined : documentIdSchema.parse(params.documentId),
+    batchId: params.batchId === undefined ? undefined : z.string().uuid().parse(params.batchId),
+    revisionId:
+      params.revisionId === undefined ? undefined : revisionIdSchema.parse(params.revisionId),
+    itemId: params.itemId === undefined ? undefined : z.string().uuid().parse(params.itemId),
+    conflictId:
+      params.conflictId === undefined ? undefined : z.string().uuid().parse(params.conflictId),
+  };
+}
+
+function parseQuery(request: FastifyRequest): Record<string, unknown> {
+  return request.query as Record<string, unknown>;
+}
+
+function safeBatch(batch: ImportBatch) {
+  return {
+    id: batch.id,
+    gameId: batch.gameId,
+    sourceId: batch.sourceId,
+    sourceSnapshotId: batch.sourceSnapshotId,
+    status: batch.status,
+    parserVersion: batch.parserVersion,
+    successCount: batch.successCount,
+    failureCount: batch.failureCount,
+    errors: batch.errors,
+    warnings: batch.warnings,
+    diff: batch.diff,
+    reviewNote: batch.reviewNote,
+    createdAt: batch.createdAt,
+    completedAt: batch.completedAt,
+  };
+}
+
+function safeSource(source: Source) {
+  return {
+    id: source.id,
+    gameId: source.gameId,
+    name: source.name,
+    type: source.type,
+    pathLabel: safePathLabel(source.pathLabel),
+    licenseNote: source.licenseNote,
+    enabled: source.enabled,
+    parserType: source.parserType,
+  };
+}
+
+function safePathLabel(value: string): string {
+  return basename(value.replaceAll("\\", "/"));
+}
+
+function safeReportPath(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.replaceAll("\\", "/");
+  if (
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:\//.test(normalized) ||
+    normalized.split("/").some((part) => part === "..")
+  )
+    return undefined;
+  return normalized;
+}
+
+function safeAcquisitionStatus(value: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...value };
+  const conversion = value.conversion;
+  if (conversion && typeof conversion === "object" && !Array.isArray(conversion)) {
+    const conversionRecord = conversion as Record<string, unknown>;
+    result.conversion = {
+      ...conversionRecord,
+      manifestPath: safeReportPath(conversionRecord.manifestPath),
+    };
+  }
+  const latestBackup = value.latestBackup;
+  if (latestBackup && typeof latestBackup === "object" && !Array.isArray(latestBackup)) {
+    const backupRecord = latestBackup as Record<string, unknown>;
+    result.latestBackup = {
+      ...backupRecord,
+      dumpPath: safeReportPath(backupRecord.dumpPath),
+    };
+  }
+  return result;
+}
+
+function parsePositive(value: unknown, fallback: number, maximum: number): number {
+  const number = Number(value ?? fallback);
+  return Number.isInteger(number) && number > 0 ? Math.min(number, maximum) : fallback;
+}
+
+export function createApp({ repository, config = loadConfig() }: AppDependencies): FastifyInstance {
+  const app = Fastify({
+    bodyLimit: 1_000_000,
+    logger: { redact: ["req.headers.authorization", "*.apiKey", "*.prompt"] },
+  });
+  const domain = new KnowledgeService(repository);
+  const embeddingProvider =
+    config.embedding.modelId && config.embedding.modelVersion && config.llm.baseUrl
+      ? new OpenAICompatibleEmbeddingProvider({
+          baseUrl: config.llm.baseUrl,
+          apiKey: config.llm.apiKey,
+          model: config.embedding.modelId,
+          modelVersion: config.embedding.modelVersion,
+          dimension: config.embedding.dimension,
+          timeoutMs: config.llm.timeoutMs,
+        })
+      : undefined;
+  const retrieval = new RetrievalService(repository, embeddingProvider);
+  const qa = new EvidenceQaService(repository, config);
+  const rateBuckets = new Map<string, { windowStartedAt: number; count: number }>();
+
+  app.register(cors, { origin: config.corsOrigins });
+
+  app.addHook("onRequest", async (request, reply) => {
+    request.headers["x-request-id"] ??= randomUUID();
+    if (config.nodeEnv === "production" && request.url.startsWith("/api/admin")) {
+      const authorization = request.headers.authorization;
+      if (!config.adminToken || authorization !== `Bearer ${config.adminToken}`) {
+        throw new DomainError(
+          "admin_auth_required",
+          "Administrator authentication is required",
+          undefined,
+          401,
+        );
+      }
+    }
+    if (request.method === "POST" && request.url.split("?", 1)[0]?.endsWith("/qa")) {
+      const now = Date.now();
+      const key = request.ip;
+      const existing = rateBuckets.get(key);
+      const bucket =
+        !existing || now - existing.windowStartedAt >= 60_000
+          ? { windowStartedAt: now, count: 0 }
+          : existing;
+      bucket.count += 1;
+      rateBuckets.set(key, bucket);
+      if (rateBuckets.size > 1_000) {
+        for (const [bucketKey, value] of rateBuckets)
+          if (now - value.windowStartedAt >= 60_000) rateBuckets.delete(bucketKey);
+      }
+      if (bucket.count > config.localRateLimitPerMinute) {
+        reply.header("retry-after", "60");
+        throw new DomainError("rate_limited", "Too many question requests", undefined, 429);
+      }
+    }
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    const requestId = String(request.headers["x-request-id"] ?? randomUUID());
+    if (error instanceof DomainError) {
+      reply.code(error.statusCode).send({
+        error: {
+          code: error.code,
+          message: error.message,
+          requestId,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        },
+      });
+      return;
+    }
+    if (error instanceof z.ZodError) {
+      reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Request validation failed",
+          requestId,
+          details: error.issues.map((issue) => ({ path: issue.path, message: issue.message })),
+        },
+      });
+      return;
+    }
+    if ((error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      reply.code(413).send({
+        error: {
+          code: "request_too_large",
+          message: "Request body is too large",
+          requestId,
+        },
+      });
+      return;
+    }
+    request.log.error({ requestId, code: "internal_error" }, "request failed");
+    reply
+      .code(500)
+      .send({ error: { code: "internal_error", message: "Internal server error", requestId } });
+  });
+
+  app.get("/api/health", async () => ({ status: "ok", service: "api" }));
+  app.get("/api/ready", async (_request, reply) => {
+    const health = await repository.health();
+    if (health.database === "down" || health.currentRevision === "missing")
+      return reply.code(503).send({ status: "not_ready", ...health });
+    return { status: "ready", ...health };
+  });
+  app.get("/api/ready/search", async (_request, reply) => {
+    const health = await repository.health();
+    if (health.searchIndex !== "ready")
+      return reply.code(503).send({ status: "not_ready", search: health.searchIndex });
+    return { status: "ready", search: "ready" };
+  });
+  app.get("/api/ready/worker", async (_request, reply) => {
+    const worker = repository.workerHealth ? await repository.workerHealth() : "not_ready";
+    if (worker !== "up") return reply.code(503).send({ status: "not_ready", worker });
+    return { status: "ready", worker };
+  });
+  app.get("/api/ready/llm", async (_request, reply) => {
+    const llmReady = Boolean(config.llm.baseUrl && config.llm.modelId);
+    if (!llmReady) return reply.code(503).send({ status: "not_ready", llm: "not_configured" });
+    return { status: "configured", llm: "configured" };
+  });
+
+  app.get("/api/games", async () => ({ games: await domain.listGames() }));
+  app.get("/api/games/:gameId/sources", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    const sources = await repository.listSources(gameId);
+    return {
+      sources: sources.map((source) => ({ id: source.id, name: source.name, type: source.type })),
+    };
+  });
+  app.get("/api/games/:gameId/capabilities", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    return { gameId, capabilities: await repository.getCapabilities(gameId) };
+  });
+
+  app.get("/api/games/:gameId/entities", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    const query = parseQuery(request);
+    const type = query.type ? entityTypeSchema.parse(String(query.type)) : undefined;
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    return {
+      entities: await repository.listEntities(gameId, {
+        query: typeof query.q === "string" ? query.q : undefined,
+        type,
+        limit: parsePositive(query.limit, 20, 100),
+        offset: Math.max(0, Number(query.offset ?? 0) || 0),
+        revisionId,
+      }),
+    };
+  });
+
+  app.get("/api/games/:gameId/entities/:entityId", async (request) => {
+    const { gameId, entityId } = parseIdParams(request);
+    const query = parseQuery(request);
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    return { entity: await domain.getEntity(gameId, entityId ?? "", revisionId) };
+  });
+
+  app.get("/api/games/:gameId/entities/:entityId/relationships", async (request) => {
+    const { gameId, entityId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    const query = parseQuery(request);
+    const predicate = query.predicate
+      ? relationshipPredicateSchema.parse(String(query.predicate))
+      : undefined;
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    await domain.getEntity(gameId, entityId ?? "", revisionId);
+    return {
+      relationships: await repository.getRelationships(gameId, entityId ?? "", {
+        predicate,
+        limit: parsePositive(query.limit, 50, 200),
+        revisionId,
+      }),
+    };
+  });
+
+  app.get("/api/games/:gameId/entities/:entityId/documents", async (request) => {
+    const { gameId, entityId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    const query = parseQuery(request);
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    await domain.getEntity(gameId, entityId ?? "", revisionId);
+    return {
+      documents: await repository.getEntityDocuments(
+        gameId,
+        entityId ?? "",
+        parsePositive(query.limit, 20, 100),
+        revisionId,
+      ),
+    };
+  });
+
+  app.get("/api/games/:gameId/documents", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    const query = parseQuery(request);
+    const type = query.type ? documentTypeSchema.parse(String(query.type)) : undefined;
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    return {
+      documents: await repository.listDocuments(gameId, {
+        query: typeof query.q === "string" ? query.q : undefined,
+        type,
+        limit: parsePositive(query.limit, 20, 100),
+        offset: Math.max(0, Number(query.offset ?? 0) || 0),
+        revisionId,
+      }),
+    };
+  });
+
+  app.get("/api/games/:gameId/documents/:documentId", async (request) => {
+    const { gameId, documentId } = parseIdParams(request);
+    const query = parseQuery(request);
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    return { document: await domain.getDocument(gameId, documentId ?? "", revisionId) };
+  });
+
+  app.post("/api/games/:gameId/search", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    const parsed = searchRequestSchema.parse(request.body);
+    const result = await retrieval.search(gameId, parsed);
+    if (!result.revision)
+      throw new DomainError(
+        "index_not_ready",
+        "No searchable Dataset Revision is ready",
+        undefined,
+        503,
+      );
+    return result;
+  });
+
+  app.post("/api/games/:gameId/qa", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireCapability(gameId, "evidence_qa");
+    const parsed = qaRequestSchema.parse(request.body);
+    try {
+      return await qa.answer(gameId, parsed.question, parsed.maxEvidence, parsed.revisionId);
+    } catch (error) {
+      if (error instanceof Error && "code" in error)
+        throw new DomainError(String(error.code), error.message, undefined, 502);
+      throw error;
+    }
+  });
+
+  app.get("/api/admin/sources", async (request) => {
+    const query = request.query as { gameId?: unknown };
+    const gameId = typeof query.gameId === "string" ? gameIdSchema.parse(query.gameId) : undefined;
+    return { sources: (await repository.listSources(gameId)).map(safeSource) };
+  });
+  app.get("/api/admin/acquisition/status", async (request) => {
+    const query = z.object({ gameId: gameIdSchema.optional() }).parse(request.query);
+    const reportPath = resolve(config.dataDir, "verification/reports/latest-anime-status.json");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(reportPath, "utf8"));
+    } catch {
+      throw new DomainError(
+        "acquisition_status_unavailable",
+        "The latest acquisition status report is unavailable; run the status report command first",
+        undefined,
+        404,
+      );
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new DomainError(
+        "acquisition_status_unavailable",
+        "The latest acquisition status report is unavailable; run the status report command first",
+        undefined,
+        404,
+      );
+    if (query.gameId) {
+      const reportGame = (parsed as { game?: unknown }).game;
+      const reportGameId =
+        reportGame && typeof reportGame === "object" && !Array.isArray(reportGame)
+          ? (reportGame as { id?: unknown }).id
+          : undefined;
+      if (typeof reportGameId === "string" && reportGameId !== query.gameId)
+        throw new DomainError(
+          "acquisition_status_game_mismatch",
+          "The latest acquisition status report belongs to another game",
+          undefined,
+          404,
+        );
+    }
+    return { status: safeAcquisitionStatus(parsed as Record<string, unknown>) };
+  });
+  app.post("/api/admin/sources", async (request) => {
+    const body = z
+      .object({
+        gameId: z.string().uuid(),
+        name: z.string().trim().min(1).max(200),
+        type: z.enum(["local_json", "local_markdown", "local_text", "local_directory"]),
+        pathLabel: z.string().trim().min(1).max(500),
+        licenseNote: z.string().trim().max(2_000).optional(),
+        parserType: z.string().trim().min(1).max(100).default("builtin"),
+        enabled: z.boolean().default(true),
+      })
+      .parse(request.body);
+    await domain.requireGame(body.gameId);
+    return safeSource(
+      await repository.createSource({ ...body, pathLabel: safePathLabel(body.pathLabel) }),
+    );
+  });
+
+  app.post("/api/admin/imports", async (request) => {
+    const body = z
+      .object({
+        gameId: z.string().uuid(),
+        sourceId: z.string().uuid(),
+        path: z.string().trim().min(1).max(2_000),
+      })
+      .parse(request.body);
+    const source = await repository.getSource(body.sourceId);
+    if (!source || source.gameId !== body.gameId)
+      throw new DomainError("source_not_found", "Source was not found", undefined, 404);
+    if (repository.createPendingImport && repository.enqueueJob) {
+      const batch = await repository.createPendingImport({
+        gameId: body.gameId,
+        sourceId: source.id,
+        parserVersion: PARSER_VERSION,
+      });
+      await repository.enqueueJob({
+        type: "parse_import",
+        idempotencyKey: `parse_import:${batch.id}`,
+        payload: {
+          batchId: batch.id,
+          gameId: body.gameId,
+          sourceId: source.id,
+          path: body.path,
+        },
+      });
+      return safeBatch(batch);
+    }
+    const adapter = adapterFor(source.type as SourceType);
+    const input = {
+      sourceId: source.id,
+      type: source.type as SourceType,
+      path: body.path,
+      storageDir: config.dataDir,
+    };
+    const inspection = await adapter.inspect(input);
+    if (!inspection.supported)
+      throw new DomainError("unsupported_source", "The source is not supported", {
+        type: inspection.type,
+      });
+    const snapshot = await adapter.snapshot(input);
+    const savedSnapshot = await repository.createSnapshot({
+      sourceId: source.id,
+      contentHash: snapshot.contentHash,
+      storagePath: snapshot.storagePath,
+      metadata: snapshot.metadata,
+    });
+    const normalized = await normalizeSnapshot(snapshot, adapter);
+    const previousKeys = await repository.getSourceRecordHashes(source.id);
+    const knownEntityKeys = new Set((await repository.listEntitySourceKeys?.(body.gameId)) ?? []);
+    const validation = validateImport(
+      normalized.records,
+      normalized.parseIssues,
+      previousKeys,
+      knownEntityKeys,
+    );
+    const diff = computeDiff(normalized.records, previousKeys, [
+      ...normalized.parseIssues,
+      ...validation.errors,
+      ...validation.warnings,
+    ]);
+    const batch = await repository.createImport({
+      gameId: body.gameId,
+      sourceId: source.id,
+      sourceSnapshotId: savedSnapshot.id,
+      parserVersion: PARSER_VERSION,
+      stagedRecords: normalized.records,
+      errors: validation.errors,
+      warnings: [
+        ...validation.warnings,
+        ...inspection.warnings.map((message) => ({
+          severity: "warning" as const,
+          code: "inspection_warning",
+          message,
+        })),
+      ],
+      diff,
+    });
+    return safeBatch(batch);
+  });
+
+  app.get("/api/admin/imports/:batchId", async (request) => {
+    const { batchId } = parseIdParams(request);
+    const batch = await repository.getImport(batchId ?? "");
+    if (!batch)
+      throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
+    return safeBatch(batch);
+  });
+
+  app.get("/api/admin/imports/:batchId/diff", async (request) => {
+    const { batchId } = parseIdParams(request);
+    const batch = await repository.getImport(batchId ?? "");
+    if (!batch)
+      throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
+    return {
+      batchId: batch.id,
+      status: batch.status,
+      diff: batch.diff ?? null,
+      errors: batch.errors,
+      warnings: batch.warnings,
+    };
+  });
+
+  app.get("/api/admin/imports", async (request) => {
+    if (!repository.listImports)
+      throw new DomainError(
+        "imports_not_supported",
+        "Import listing is not supported",
+        undefined,
+        501,
+      );
+    const query = z.object({ gameId: z.string().uuid().optional() }).parse(request.query);
+    return { imports: (await repository.listImports(query.gameId)).map(safeBatch) };
+  });
+
+  app.post("/api/admin/imports/:batchId/review", async (request) => {
+    const { batchId } = parseIdParams(request);
+    const body = reviewRequestSchema.parse(request.body);
+    return safeBatch(
+      await repository.reviewImport(
+        batchId ?? "",
+        body.approved,
+        body.note,
+        body.confirmedDeletionKeys,
+      ),
+    );
+  });
+
+  app.post("/api/admin/imports/:batchId/publish", async (request) => {
+    const { batchId } = parseIdParams(request);
+    const body = publishRequestSchema.parse(request.body ?? {});
+    return repository.publishImport(batchId ?? "", body.releaseNote);
+  });
+
+  app.get("/api/admin/imports/:batchId/verification", async (request) => {
+    const { batchId } = parseIdParams(request);
+    if (!repository.getVerificationRun)
+      throw new DomainError(
+        "verification_not_supported",
+        "Verification is not supported",
+        undefined,
+        501,
+      );
+    const run = await repository.getVerificationRun(batchId ?? "");
+    if (!run)
+      throw new DomainError(
+        "verification_run_not_found",
+        "Verification run was not found",
+        undefined,
+        404,
+      );
+    return run;
+  });
+
+  app.patch("/api/admin/verification/items/:itemId", async (request) => {
+    const { itemId } = parseIdParams(request);
+    if (!repository.updateVerificationItem)
+      throw new DomainError(
+        "verification_not_supported",
+        "Verification is not supported",
+        undefined,
+        501,
+      );
+    const body = updateVerificationItemSchema.parse(request.body);
+    return repository.updateVerificationItem({ itemId: itemId ?? "", ...body });
+  });
+
+  app.post(
+    "/api/admin/verification/items/:itemId/screenshots",
+    { bodyLimit: 8_000_000 },
+    async (request) => {
+      const { itemId } = parseIdParams(request);
+      if (!repository.addVerificationScreenshot)
+        throw new DomainError(
+          "verification_not_supported",
+          "Verification is not supported",
+          undefined,
+          501,
+        );
+      const body = screenshotUploadSchema.parse(request.body);
+      const bytes = Buffer.from(body.dataBase64, "base64");
+      if (!bytes.length || bytes.length > 5_000_000)
+        throw new DomainError("invalid_screenshot", "Screenshot must be between 1 byte and 5 MB");
+      const signatures: Record<string, (buffer: Buffer) => boolean> = {
+        "image/png": (buffer) =>
+          buffer.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")),
+        "image/jpeg": (buffer) => buffer.subarray(0, 3).equals(Buffer.from("ffd8ff", "hex")),
+        "image/webp": (buffer) =>
+          buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+          buffer.subarray(8, 12).toString("ascii") === "WEBP",
+      };
+      if (!signatures[body.mimeType]?.(bytes))
+        throw new DomainError("invalid_screenshot", "Screenshot bytes do not match the MIME type");
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const extension =
+        body.mimeType === "image/png" ? "png" : body.mimeType === "image/jpeg" ? "jpg" : "webp";
+      const relativePath = join("verification", itemId ?? "unknown", `${sha256}.${extension}`);
+      const absolutePath = join(config.dataDir, relativePath);
+      await mkdir(join(config.dataDir, "verification", itemId ?? "unknown"), { recursive: true });
+      let createdFile = false;
+      try {
+        await writeFile(absolutePath, bytes, { flag: "wx" });
+        createdFile = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      try {
+        await repository.addVerificationScreenshot({
+          itemId: itemId ?? "",
+          relativePath,
+          sha256,
+          bytes: bytes.length,
+          mimeType: body.mimeType,
+        });
+      } catch (error) {
+        if (createdFile) await unlink(absolutePath).catch(() => undefined);
+        throw error;
+      }
+      return { relativePath, sha256, bytes: bytes.length, mimeType: body.mimeType };
+    },
+  );
+
+  app.get("/api/admin/conflicts", async (request) => {
+    if (!repository.listConflicts)
+      throw new DomainError(
+        "conflicts_not_supported",
+        "Conflict review is not supported",
+        undefined,
+        501,
+      );
+    const query = z
+      .object({ gameId: z.string().uuid(), status: z.enum(["open", "resolved"]).optional() })
+      .parse(request.query);
+    return { conflicts: await repository.listConflicts(query.gameId, query.status) };
+  });
+
+  app.get("/api/admin/conflicts/:conflictId", async (request) => {
+    const { conflictId } = parseIdParams(request);
+    if (!repository.getConflict)
+      throw new DomainError(
+        "conflicts_not_supported",
+        "Conflict detail is not supported",
+        undefined,
+        501,
+      );
+    const conflict = await repository.getConflict(conflictId ?? "");
+    if (!conflict)
+      throw new DomainError("conflict_not_found", "Conflict case was not found", undefined, 404);
+    return { conflict };
+  });
+
+  app.post("/api/admin/conflicts/:conflictId/resolve", async (request) => {
+    const { conflictId } = parseIdParams(request);
+    if (!repository.resolveConflict)
+      throw new DomainError(
+        "conflicts_not_supported",
+        "Conflict review is not supported",
+        undefined,
+        501,
+      );
+    const body = resolveConflictSchema.parse(request.body);
+    return repository.resolveConflict(
+      conflictId ?? "",
+      body.resolution,
+      body.selectedObservationId,
+    );
+  });
+
+  app.get("/api/admin/revisions", async (request) => {
+    const query = request.query as { gameId?: unknown };
+    const gameId = typeof query.gameId === "string" ? gameIdSchema.parse(query.gameId) : undefined;
+    return {
+      revisions: await repository.listRevisions(gameId),
+    };
+  });
+
+  app.post("/api/admin/revisions/:revisionId/rollback", async (request) => {
+    const { revisionId } = parseIdParams(request);
+    const body = rollbackRequestSchema.parse(request.body);
+    return repository.rollbackRevision(revisionId ?? "", body.reason);
+  });
+
+  app.get("/api/admin/jobs", async () => ({ jobs: await repository.listJobs() }));
+  return app;
+}
+
+export async function startApp(dependencies: AppDependencies): Promise<FastifyInstance> {
+  const app = createApp(dependencies);
+  const config = dependencies.config ?? loadConfig();
+  await app.listen({ host: config.host, port: config.apiPort });
+  return app;
+}

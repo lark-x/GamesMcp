@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/config" },
+    { "path": "packages/contracts" },
+    { "path": "packages/domain" },
+    { "path": "packages/database" },
+    { "path": "packages/ingestion" },
+    { "path": "packages/retrieval" },
+    { "path": "packages/qa" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "apps/mcp-server" }
+  ]
+}

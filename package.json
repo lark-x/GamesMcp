@@ -1,0 +1,63 @@
+{
+  "name": "game-intelligence-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Evidence-first narrative knowledge platform for Genshin Impact.",
+  "packageManager": "pnpm@11.1.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=22 <26"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "predev": "node --import tsx scripts/check-data-storage.ts",
+    "dev": "pnpm --parallel --filter @gip/api --filter @gip/web --filter @gip/worker dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:db": "node --import tsx scripts/test-database.ts",
+    "test:acquisition": "node --import tsx scripts/test-acquisition-review.ts",
+    "test:backup-gate": "node --import tsx scripts/test-backup-gate.ts",
+    "test:storage": "node --import tsx scripts/check-data-storage.test.ts",
+    "db:up": "node --import tsx scripts/start-postgres.ts",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "eval:retrieval": "node --import tsx scripts/evaluate-retrieval.ts",
+    "eval:qa": "node --import tsx scripts/evaluate-qa.ts",
+    "benchmark:search": "node --import tsx scripts/benchmark-search.ts",
+    "data:convert:anime": "node --import tsx scripts/convert-anime-game-data.ts",
+    "data:import:anime": "node --import tsx scripts/import-anime-game-data.ts",
+    "data:verify:anime": "node --import tsx scripts/verify-anime-game-data.ts",
+    "data:status:anime": "node --import tsx scripts/report-acquisition-status.ts",
+    "data:status:anime:write": "node --import tsx scripts/report-acquisition-status.ts --write",
+    "data:reconcile:anime": "node --import tsx scripts/reconcile-anime-observations.ts",
+    "data:checklist:anime": "node --import tsx scripts/export-anime-verification-checklist.ts",
+    "data:backup": "node --import tsx scripts/backup-acquisition.ts",
+    "typecheck": "tsc -b",
+    "db:generate": "drizzle-kit generate --config packages/database/drizzle.config.ts",
+    "db:migrate": "node --import tsx packages/database/src/migrate.ts",
+    "db:seed": "node --import tsx packages/database/src/seed.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.11.11",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "eslint": "^9.26.0",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0",
+    "vitest": "^3.1.2"
+  }
+}

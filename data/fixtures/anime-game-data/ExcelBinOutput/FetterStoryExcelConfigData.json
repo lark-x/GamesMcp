@@ -1,0 +1,26 @@
+[
+  {
+    "avatarId": 10001,
+    "fetterId": 101,
+    "storyTitleTextMapHash": 1003,
+    "storyContextTextMapHash": 1004
+  },
+  {
+    "avatarId": 10001,
+    "fetterId": 101,
+    "storyTitleTextMapHash": 1003,
+    "storyContextTextMapHash": 1004
+  },
+  {
+    "avatarId": 10001,
+    "fetterId": 102,
+    "storyTitleTextMapHash": 1003,
+    "storyContextTextMapHash": 1005
+  },
+  {
+    "avatarId": 10001,
+    "fetterId": 103,
+    "storyTitleTextMapHash": 99999,
+    "storyContextTextMapHash": 1004
+  }
+]

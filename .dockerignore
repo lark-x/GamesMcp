@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+.git
+data/imports
+data/snapshots
+.env

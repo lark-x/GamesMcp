@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "jsx": "react-jsx", "noEmit": true, "allowImportingTsExtensions": true },
+  "references": [{ "path": "../../packages/contracts" }, { "path": "../../packages/domain" }],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}

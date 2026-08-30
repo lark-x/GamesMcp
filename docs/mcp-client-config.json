@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "game-intelligence-platform": {
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "/path/to/GameIntelligencePlatform",
+        "exec",
+        "tsx",
+        "apps/mcp-server/src/index.ts"
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+test-results/
+data/snapshots/
+**/data/snapshots/
+pnpm-lock.yaml

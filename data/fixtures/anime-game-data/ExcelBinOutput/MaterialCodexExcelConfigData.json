@@ -1,0 +1,27 @@
+[
+  {
+    "id": 30001,
+    "materialId": 20001,
+    "nameTextMapHash": 1007,
+    "descTextMapHash": 1008,
+    "sortOrder": 1
+  },
+  {
+    "id": 30001,
+    "materialId": 20001,
+    "nameTextMapHash": 1007,
+    "descTextMapHash": 1008,
+    "sortOrder": 1
+  },
+  {
+    "id": 30002,
+    "materialId": 29999,
+    "nameTextMapHash": 1007,
+    "descTextMapHash": 1008
+  },
+  {
+    "id": 30003,
+    "materialId": 20002,
+    "nameTextMapHash": 1007
+  }
+]

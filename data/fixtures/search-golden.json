@@ -1,0 +1,671 @@
+[
+  {
+    "query": "旅行",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": false,
+    "tags": ["zh", "abbreviation"]
+  },
+  {
+    "query": "旅行者",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "exact"]
+  },
+  {
+    "query": "行者",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "abbreviation"]
+  },
+  {
+    "query": "者在",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "在提",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "提瓦",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "提瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "特寻",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "寻找",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "找失",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "失散",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "散的",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "的血",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "血亲",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "并与",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "与派",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "派蒙",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "exact"]
+  },
+  {
+    "query": "蒙一",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "一起",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "起踏",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "踏上",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "上旅",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "旅程",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "蒙德",
+    "expected_entity_ids": ["entities/mondstadt"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "exact"]
+  },
+  {
+    "query": "德是",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "是他",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "他们",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "们抵",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "抵达",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "达的",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "的第",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "第一",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "一处",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "处重",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "重要",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "要地",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "地区",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "document"]
+  },
+  {
+    "query": "旅行者在",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "在提瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "提瓦特寻找",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "寻找失散",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "失散的血亲",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "的血亲，并",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "并与派蒙",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "派蒙一起",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "一起踏上",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "踏上旅程",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "旅程。蒙德",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "蒙德是",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "是他们抵达",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "他们抵达",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "抵达的第一",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "第一处重要",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "重要地区",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "旅行者在提瓦特寻找失散的血亲",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "派蒙一起踏上旅程",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "蒙德是他们抵达的第一处重要地区",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "踏入",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "title"]
+  },
+  {
+    "query": "踏入提瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "title"]
+  },
+  {
+    "query": "入提瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "title"]
+  },
+  {
+    "query": "Traveler",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "en"]
+  },
+  {
+    "query": "trave",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": [],
+    "tags": ["alias", "en", "prefix"]
+  },
+  {
+    "query": "travel",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": [],
+    "tags": ["alias", "en", "prefix"]
+  },
+  {
+    "query": "traveler",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "en"]
+  },
+  {
+    "query": "TRAVELER",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "case"]
+  },
+  {
+    "query": "Paimon",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "en"]
+  },
+  {
+    "query": "paim",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "tags": ["alias", "en", "prefix"]
+  },
+  {
+    "query": "PAIMON",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "case"]
+  },
+  {
+    "query": "pai",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "tags": ["alias", "en", "prefix"]
+  },
+  {
+    "query": "aim",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "tags": ["alias", "en", "contains"]
+  },
+  {
+    "query": "mon",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "tags": ["alias", "en", "contains"]
+  },
+  {
+    "query": "派",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "abbreviation"]
+  },
+  {
+    "query": "蒙",
+    "expected_entity_ids": ["entities/paimon", "entities/mondstadt"],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "ambiguous"]
+  },
+  {
+    "query": "失",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "typo_like"]
+  },
+  {
+    "query": "血",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "abbreviation"]
+  },
+  {
+    "query": "亲",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "abbreviation"]
+  },
+  {
+    "query": "踏",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "abbreviation"]
+  },
+  {
+    "query": "上旅程",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "寻找失散的",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "在提瓦特寻找失散",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "与派蒙一起踏",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "踏上旅程。蒙德是",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "们抵达的第一处",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "处重要地区",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "phrase"]
+  },
+  {
+    "query": "提瓦特寻找失散的血亲",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "失散的血亲，并与派蒙",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "派蒙一起踏上旅程。蒙德",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "第一处重要地区。",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "punctuation"]
+  },
+  {
+    "query": "旅行者在提瓦特寻找失散的血亲，并",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "并与派蒙一起踏上旅程。蒙德是他们",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "long_phrase"]
+  },
+  {
+    "query": "旅行者",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "派蒙",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "蒙德",
+    "expected_entity_ids": ["entities/mondstadt"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "提瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "血亲",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "旅程",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "重要地区",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "Traveler",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "regression"]
+  },
+  {
+    "query": "Paimon",
+    "expected_entity_ids": ["entities/paimon"],
+    "expected_document_ids": [],
+    "exact_name": true,
+    "tags": ["alias", "regression"]
+  },
+  {
+    "query": "旅行者在提瓦特",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "蒙德是他们",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "与派蒙",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "踏上旅程",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "抵达的第一处重要地区",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "寻找失散的血亲，并与派蒙一起",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "regression"]
+  },
+  {
+    "query": "旅行者在提瓦特寻找失散的血亲，并与派蒙一起踏上旅程。蒙德是他们抵达的第一处重要地区。",
+    "expected_entity_ids": [],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "full_text"]
+  },
+  {
+    "query": "蒙",
+    "expected_entity_ids": ["entities/paimon", "entities/mondstadt"],
+    "expected_document_ids": ["lore/first-steps"],
+    "tags": ["zh", "cross_signal"]
+  },
+  {
+    "query": "旅行者",
+    "expected_entity_ids": ["entities/traveler"],
+    "expected_document_ids": ["lore/first-steps"],
+    "exact_name": true,
+    "tags": ["zh", "final_check"]
+  }
+]

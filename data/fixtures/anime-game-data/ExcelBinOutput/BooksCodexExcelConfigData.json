@@ -1,0 +1,22 @@
+[
+  {
+    "id": 9001,
+    "materialId": 7001,
+    "sortOrder": 1
+  },
+  {
+    "id": 9002,
+    "materialId": 7001,
+    "sortOrder": 2
+  },
+  {
+    "id": 9003,
+    "materialId": 7002,
+    "sortOrder": 3
+  },
+  {
+    "id": 9004,
+    "materialId": 7999,
+    "sortOrder": 4
+  }
+]

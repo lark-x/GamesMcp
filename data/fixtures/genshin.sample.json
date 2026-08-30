@@ -1,0 +1,65 @@
+[
+  {
+    "sourceKey": "entities/traveler",
+    "recordType": "entity",
+    "name": "旅行者",
+    "entityType": "character",
+    "summary": "从世界之外来到提瓦特的旅行者。",
+    "aliases": [{ "value": "Traveler", "language": "en", "primary": false }],
+    "properties": { "element": "variable" }
+  },
+  {
+    "sourceKey": "entities/paimon",
+    "recordType": "entity",
+    "name": "派蒙",
+    "entityType": "character",
+    "summary": "与旅行者同行的神秘伙伴。",
+    "aliases": [{ "value": "Paimon", "language": "en", "primary": false }]
+  },
+  {
+    "sourceKey": "entities/mondstadt",
+    "recordType": "entity",
+    "name": "蒙德",
+    "entityType": "region",
+    "summary": "风与牧歌的城邦。"
+  },
+  {
+    "sourceKey": "lore/first-steps",
+    "recordType": "document",
+    "title": "踏入提瓦特",
+    "documentType": "lore",
+    "gameVersion": "fixture",
+    "body": "旅行者在提瓦特寻找失散的血亲，并与派蒙一起踏上旅程。蒙德是他们抵达的第一处重要地区。",
+    "entities": [
+      { "sourceKey": "entities/traveler", "name": "旅行者", "entityType": "character" },
+      { "sourceKey": "entities/paimon", "name": "派蒙", "entityType": "character" },
+      { "sourceKey": "entities/mondstadt", "name": "蒙德", "entityType": "region" }
+    ],
+    "relationships": [
+      {
+        "subjectSourceKey": "entities/traveler",
+        "predicate": "related_to",
+        "objectSourceKey": "entities/paimon",
+        "confidence": 0.98
+      },
+      {
+        "subjectSourceKey": "entities/traveler",
+        "predicate": "located_in",
+        "objectSourceKey": "entities/mondstadt",
+        "confidence": 0.8
+      }
+    ],
+    "claims": [
+      {
+        "sourceKey": "claims/traveler-searches",
+        "statement": "旅行者在提瓦特寻找失散的血亲。",
+        "status": "confirmed",
+        "confidence": 0.95,
+        "entitySourceKeys": ["entities/traveler"],
+        "evidence": [
+          { "documentSourceKey": "lore/first-steps", "quote": "旅行者在提瓦特寻找失散的血亲" }
+        ]
+      }
+    ]
+  }
+]

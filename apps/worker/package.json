@@ -1,0 +1,17 @@
+{
+  "name": "@gip/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@gip/config": "workspace:*",
+    "@gip/database": "workspace:*",
+    "@gip/ingestion": "workspace:*",
+    "@gip/retrieval": "workspace:*"
+  }
+}

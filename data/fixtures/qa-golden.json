@@ -1,0 +1,74 @@
+[
+  {
+    "id": "fact-traveler",
+    "question": "旅行者",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["fact", "chinese"]
+  },
+  {
+    "id": "fact-paimon",
+    "question": "派蒙",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["fact", "chinese"]
+  },
+  {
+    "id": "fact-teyvat",
+    "question": "提瓦特",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["fact", "chinese"]
+  },
+  {
+    "id": "fact-blood-relative",
+    "question": "寻找失散的血亲",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["fact", "chinese"]
+  },
+  {
+    "id": "fact-mondstadt",
+    "question": "蒙德",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["fact", "entity"]
+  },
+  {
+    "id": "fact-english-alias",
+    "question": "Traveler",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["alias", "english"]
+  },
+  {
+    "id": "fact-journey",
+    "question": "踏上旅程",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["fact", "document"]
+  },
+  {
+    "id": "relationship-traveler-paimon",
+    "question": "与派蒙一起踏上旅程",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["relationship"]
+  },
+  {
+    "id": "synthesis-teyvat-mondstadt",
+    "question": "旅行者在提瓦特寻找失散的血亲，并与派蒙一起踏上旅程",
+    "expected_document_source_keys": ["lore/first-steps"],
+    "tags": ["multi-fact", "synthesis"]
+  },
+  {
+    "id": "refuse-unknown-archive",
+    "question": "不存在的量子档案",
+    "should_refuse": true,
+    "tags": ["insufficient", "refusal"]
+  },
+  {
+    "id": "refuse-invented-planet",
+    "question": "虚构星球阿尔法的官方历史",
+    "should_refuse": true,
+    "tags": ["insufficient", "hallucination"]
+  },
+  {
+    "id": "refuse-unpublished-claim",
+    "question": "未发布资料中的不存在结论",
+    "should_refuse": true,
+    "tags": ["insufficient", "unpublished"]
+  }
+]
