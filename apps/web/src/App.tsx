@@ -1411,15 +1411,23 @@ function previewRecordsFromPayload(payload: unknown, kind: "entity" | "document"
   });
 }
 
-async function loadPreviewRecords(buildId: string, adminToken: string): Promise<PreviewRecord[]> {
+async function loadPreviewRecords(
+  buildId: string,
+  adminToken: string,
+  offset: number,
+  limit: number,
+): Promise<{ records: PreviewRecord[]; total: number }> {
   const [entities, documents] = await Promise.all([
-    api<unknown>(`/api/admin/previews/${buildId}/entities?limit=500&offset=0`, {}, adminToken),
-    api<unknown>(`/api/admin/previews/${buildId}/documents?limit=500&offset=0`, {}, adminToken),
+    api<unknown>(`/api/admin/previews/${buildId}/entities?limit=${limit}&offset=${offset}`, {}, adminToken),
+    api<unknown>(`/api/admin/previews/${buildId}/documents?limit=${limit}&offset=${offset}`, {}, adminToken),
   ]);
-  return [
-    ...previewRecordsFromPayload(entities, "entity"),
-    ...previewRecordsFromPayload(documents, "document"),
-  ];
+  const entityRows = previewRecordsFromPayload(entities, "entity");
+  const documentRows = previewRecordsFromPayload(documents, "document");
+  const total = Math.max(
+    Number((entities as { total?: number })?.total ?? 0),
+    Number((documents as { total?: number })?.total ?? 0),
+  );
+  return { records: [...entityRows, ...documentRows], total };
 }
 
 function PreviewBrowser({
@@ -1441,6 +1449,9 @@ function PreviewBrowser({
   const [selectedKey, setSelectedKey] = useState("");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | "entity" | "document">("all");
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -1496,10 +1507,11 @@ function PreviewBrowser({
     let cancelled = false;
     setLoading(true);
     setError("");
-    loadPreviewRecords(buildId, adminToken)
-      .then((nextRecords) => {
+    loadPreviewRecords(buildId, adminToken, page * pageSize, pageSize)
+      .then(({ records: nextRecords, total: nextTotal }) => {
         if (cancelled) return;
         setRecords(nextRecords);
+        setTotal(nextTotal);
         setSelectedKey((current) =>
           nextRecords.some((record) => record.sourceKey === current)
             ? current
@@ -1522,7 +1534,9 @@ function PreviewBrowser({
     return () => {
       cancelled = true;
     };
-  }, [adminToken, buildId]);
+  }, [adminToken, buildId, page]);
+
+  useEffect(() => setPage(0), [buildId, query, kind]);
 
   const selectedBuild = candidate?.builds.find((build) => build.id === buildId);
   const visibleRecords = useMemo(() => {
@@ -1710,6 +1724,11 @@ function PreviewBrowser({
               </div>
             )}
           </div>
+          <nav className="preview-pagination" aria-label="预发布资料分页">
+            <button type="button" className="secondary-button" disabled={page === 0 || loading} onClick={() => setPage((value) => Math.max(0, value - 1))}>上一页</button>
+            <span>{total ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} / ${total}` : "0 / 0"}</span>
+            <button type="button" className="secondary-button" disabled={loading || (page + 1) * pageSize >= total} onClick={() => setPage((value) => value + 1)}>下一页</button>
+          </nav>
         </aside>
 
         <section className="preview-record-detail">
