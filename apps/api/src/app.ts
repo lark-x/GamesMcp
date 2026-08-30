@@ -874,6 +874,60 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     };
   });
 
+  app.get("/api/admin/previews/:buildId/records", async (request) => {
+    if (!repository.getReleaseCandidateBuild)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { buildId } = parseIdParams(request);
+    const build = await repository.getReleaseCandidateBuild(buildId ?? "");
+    if (!build)
+      throw new DomainError("build_not_found", "Preview build was not found", undefined, 404);
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+        offset: z.coerce.number().int().min(0).default(0),
+        q: z.string().optional(),
+        kind: z.enum(["all", "entity", "document"]).default("all"),
+      })
+      .parse(request.query);
+    const needle = query.q?.trim().toLocaleLowerCase();
+    const records = build.normalizedRecords.flatMap((record) => {
+      const isEntity =
+        record.recordType === "entity" ||
+        Boolean(record.entityType) ||
+        Boolean(record.entities?.length);
+      const displayKind = isEntity ? "entity" : "document";
+      if (query.kind !== "all" && query.kind !== displayKind) return [];
+      const haystack =
+        `${record.sourceKey} ${record.title ?? ""} ${record.body ?? ""}`.toLocaleLowerCase();
+      if (needle && !haystack.includes(needle)) return [];
+      return [
+        {
+          sourceKey: record.sourceKey,
+          displayKind,
+          type: record.entityType ?? record.documentType ?? record.recordType,
+          title: record.title ?? record.sourceKey,
+          body: record.body ?? "",
+          metadata: record.metadata ?? {},
+          contentHash: record.contentHash,
+          parserVersion: record.parserVersion,
+        },
+      ];
+    });
+    return {
+      buildId: build.id,
+      candidateId: build.candidateId,
+      records: records.slice(query.offset, query.offset + query.limit),
+      total: records.length,
+      offset: query.offset,
+      limit: query.limit,
+    };
+  });
+
   app.get("/api/admin/previews/:buildId/documents", async (request) => {
     if (!repository.getReleaseCandidateBuild)
       throw new DomainError(

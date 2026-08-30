@@ -1,5 +1,21 @@
 import { useEffect, useState } from "react";
-type Row = { sourceKey: string; title?: string; name?: string; body?: string; type?: string };
+type RecordRow = {
+  sourceKey: string;
+  displayKind: "entity" | "document";
+  type: string;
+  title: string;
+  body: string;
+  metadata: Record<string, unknown>;
+  contentHash: string;
+  parserVersion: string;
+};
+type Candidate = {
+  id: string;
+  name: string;
+  status: string;
+  currentBuildId?: string | null;
+  builds: Array<{ id: string; buildNumber: number; status: string; recordCount: number }>;
+};
 export function PreviewBrowser({
   candidateId,
   initialBuildId,
@@ -7,42 +23,121 @@ export function PreviewBrowser({
   candidateId: string;
   initialBuildId?: string;
 }) {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [total, setTotal] = useState(0);
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [buildId, setBuildId] = useState(initialBuildId ?? "");
+  const [rows, setRows] = useState<RecordRow[]>([]);
+  const [selected, setSelected] = useState<RecordRow | null>(null);
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<"all" | "entity" | "document">("all");
   const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
   const size = 50;
   useEffect(() => {
-    const build = initialBuildId ?? candidateId;
-    Promise.all([
-      fetch(`/api/admin/previews/${build}/entities?limit=${size}&offset=${page * size}`).then((r) =>
-        r.json(),
-      ),
-      fetch(`/api/admin/previews/${build}/documents?limit=${size}&offset=${page * size}`).then(
-        (r) => r.json(),
-      ),
-    ])
-      .then(([a, b]) => {
-        setRows([...(a.entities ?? []), ...(b.documents ?? [])]);
-        setTotal(Math.max(a.total ?? 0, b.total ?? 0));
-      })
-      .catch(() => setRows([]));
-  }, [candidateId, initialBuildId, page]);
+    fetch(`/api/admin/release-candidates/${candidateId}`)
+      .then((r) => r.json())
+      .then((v) => {
+        const c = v.candidate ?? v;
+        setCandidate(c);
+        setBuildId(initialBuildId ?? c.currentBuildId ?? c.builds?.[0]?.id ?? "");
+      });
+  }, [candidateId, initialBuildId]);
+  useEffect(() => {
+    if (!buildId) return;
+    const params = new URLSearchParams({ limit: String(size), offset: String(page * size), kind });
+    if (query) params.set("q", query);
+    fetch(`/api/admin/previews/${buildId}/records?${params}`)
+      .then((r) => r.json())
+      .then((v) => {
+        setRows(v.records ?? []);
+        setTotal(v.total ?? 0);
+        setSelected(v.records?.[0] ?? null);
+      });
+  }, [buildId, kind, page, query]);
+  const updateUrl = (next: string) => {
+    setBuildId(next);
+    setPage(0);
+    window.history.replaceState(null, "", `#preview/${candidateId}/${next}`);
+  };
+  const report = async () => {
+    if (!selected) return;
+    await fetch("/api/admin/review-issues", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        candidateId,
+        buildId,
+        canonicalKey: selected.sourceKey,
+        title: selected.title,
+      }),
+    });
+    window.location.hash = `admin/issues?candidateId=${candidateId}&buildId=${buildId}&canonicalKey=${encodeURIComponent(selected.sourceKey)}`;
+  };
   return (
     <main className="app-shell preview-shell">
       <header className="preview-topbar">
         <span className="preview-badge">PREVIEW</span>
-        <h1>预发布资料</h1>
+        <h1>{candidate?.name ?? "预发布"}</h1>
+        <button
+          onClick={() => {
+            window.location.hash = "admin/preview";
+          }}
+        >
+          返回预发布分支
+        </button>
       </header>
-      <p className="preview-warning">此内容隔离于正式 Revision 和 MCP。</p>
+      <p className="preview-warning">预发布数据与正式 Revision、MCP 完全隔离。</p>
+      <section className="preview-version-bar">
+        <label>
+          Candidate{" "}
+          <select value={candidateId}>
+            <option>{candidate?.name ?? candidateId}</option>
+          </select>
+        </label>
+        <label>
+          Build{" "}
+          <select value={buildId} onChange={(e) => updateUrl(e.target.value)}>
+            {candidate?.builds?.map((b) => (
+              <option key={b.id} value={b.id}>
+                Build {b.buildNumber} · {b.status} · {b.recordCount} 条
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
       <section className="preview-workspace">
         <aside>
+          <input
+            aria-label="搜索预发布资料"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(0);
+            }}
+            placeholder="搜索标题、正文或 key"
+          />
+          <div>
+            {(["all", "entity", "document"] as const).map((v) => (
+              <button
+                key={v}
+                className={kind === v ? "active" : ""}
+                onClick={() => {
+                  setKind(v);
+                  setPage(0);
+                }}
+              >
+                {v === "all" ? "全部" : v === "entity" ? "实体" : "文档"}
+              </button>
+            ))}
+          </div>
           <h2>
             资料列表 <small>{total} 条</small>
           </h2>
           {rows.map((r) => (
-            <button className="preview-row" key={r.sourceKey}>
-              <strong>{r.title ?? r.name ?? r.sourceKey}</strong>
-              <small>{r.sourceKey}</small>
+            <button className="preview-row" key={r.sourceKey} onClick={() => setSelected(r)}>
+              <strong>{r.title}</strong>
+              <small>
+                {r.displayKind} · {r.sourceKey}
+              </small>
             </button>
           ))}
           <nav className="preview-pagination">
@@ -60,8 +155,25 @@ export function PreviewBrowser({
           </nav>
         </aside>
         <article>
-          <h2>来源与内容</h2>
-          <p>选择资料查看详情并报告问题。</p>
+          {selected ? (
+            <>
+              <h2>{selected.title}</h2>
+              <p>{selected.body}</p>
+              <details>
+                <summary>来源与技术信息</summary>
+                <p>
+                  source key: {selected.sourceKey}
+                  <br />
+                  hash: {selected.contentHash}
+                  <br />
+                  parser: {selected.parserVersion}
+                </p>
+              </details>
+              <button onClick={() => void report()}>报告问题</button>
+            </>
+          ) : (
+            <p>该 Build 暂无记录。</p>
+          )}
         </article>
       </section>
     </main>
