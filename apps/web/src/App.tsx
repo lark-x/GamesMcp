@@ -1405,15 +1405,17 @@ async function loadPreviewRecords(
   adminToken: string,
   offset: number,
   limit: number,
+  query = "",
 ): Promise<{ records: PreviewRecord[]; total: number }> {
+  const suffix = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
   const [entities, documents] = await Promise.all([
     api<unknown>(
-      `/api/admin/previews/${buildId}/entities?limit=${limit}&offset=${offset}`,
+      `/api/admin/previews/${buildId}/entities?limit=${limit}&offset=${offset}${suffix}`,
       {},
       adminToken,
     ),
     api<unknown>(
-      `/api/admin/previews/${buildId}/documents?limit=${limit}&offset=${offset}`,
+      `/api/admin/previews/${buildId}/documents?limit=${limit}&offset=${offset}${suffix}`,
       {},
       adminToken,
     ),
@@ -1424,7 +1426,13 @@ async function loadPreviewRecords(
     Number((entities as { total?: number })?.total ?? 0),
     Number((documents as { total?: number })?.total ?? 0),
   );
-  return { records: [...entityRows, ...documentRows], total };
+  const seen = new Set<string>();
+  const records = [...entityRows, ...documentRows].filter((record) => {
+    if (seen.has(record.sourceKey)) return false;
+    seen.add(record.sourceKey);
+    return true;
+  });
+  return { records, total };
 }
 
 function PreviewBrowser({
@@ -1504,7 +1512,7 @@ function PreviewBrowser({
     let cancelled = false;
     setLoading(true);
     setError("");
-    loadPreviewRecords(buildId, adminToken, page * pageSize, pageSize)
+    loadPreviewRecords(buildId, adminToken, page * pageSize, pageSize, query)
       .then(({ records: nextRecords, total: nextTotal }) => {
         if (cancelled) return;
         setRecords(nextRecords);
@@ -1531,7 +1539,7 @@ function PreviewBrowser({
     return () => {
       cancelled = true;
     };
-  }, [adminToken, buildId, page]);
+  }, [adminToken, buildId, page, query]);
 
   useEffect(() => setPage(0), [buildId, query, kind]);
 

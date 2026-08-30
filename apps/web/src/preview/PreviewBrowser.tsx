@@ -59,13 +59,48 @@ export function PreviewBrowser({
     if (query) params.set("q", query);
     setLoading(true);
     setError("");
-    fetch(`/api/admin/previews/${buildId}/records?${params}`)
-      .then((r) => r.json())
-      .then((v) => {
-        setRows(v.records ?? []);
-        setTotal(v.total ?? 0);
-        setSelected(v.records?.[0] ?? null);
-      })
+    const load = async () => {
+      // The API exposes typed entity/document collections. Keep the legacy
+      // aggregate endpoint as a compatibility fallback for older servers.
+      const endpoint = `/api/admin/previews/${buildId}`;
+      const fetchTyped = async (type: "entities" | "documents") => {
+        const response = await fetch(`${endpoint}/${type}?${params}`);
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        return response.json() as Promise<{ entities?: RecordRow[]; documents?: RecordRow[]; total?: number }>;
+      };
+      let records: RecordRow[] = [];
+      let count = 0;
+      try {
+        if (kind === "entity") {
+          const value = await fetchTyped("entities");
+          records = value.entities ?? [];
+          count = value.total ?? records.length;
+        } else if (kind === "document") {
+          const value = await fetchTyped("documents");
+          records = value.documents ?? [];
+          count = value.total ?? records.length;
+        } else {
+          const [entities, documents] = await Promise.all([fetchTyped("entities"), fetchTyped("documents")]);
+          const seen = new Set<string>();
+          records = [...(entities.entities ?? []), ...(documents.documents ?? [])].filter((row) => {
+            if (seen.has(row.sourceKey)) return false;
+            seen.add(row.sourceKey);
+            return true;
+          });
+          count = (entities.total ?? entities.entities?.length ?? 0) + (documents.total ?? documents.documents?.length ?? 0);
+        }
+      } catch {
+        const response = await fetch(`/api/admin/previews/${buildId}/records?${params}`);
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const value = await response.json();
+        records = value.records ?? [];
+        count = value.total ?? records.length;
+      }
+      setRows(records);
+      setTotal(count);
+      setSelected(records[0] ?? null);
+    };
+    load()
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [buildId, kind, page, query]);
