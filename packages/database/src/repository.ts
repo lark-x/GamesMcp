@@ -2957,7 +2957,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       });
       return preparing;
     });
-    return revision;
+    return this.mapDatasetRevision(revision);
   }
 
   async finalizeActivation(input: {
