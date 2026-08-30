@@ -5,11 +5,6 @@
   "type": "module",
   "description": "Evidence-first narrative knowledge platform for Genshin Impact.",
   "packageManager": "pnpm@11.1.2",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "engines": {
     "node": ">=22 <26"
   },
