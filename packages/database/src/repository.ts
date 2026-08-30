@@ -2615,8 +2615,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
             .update(canonicalRecordBytes(records.at(-1)!))
             .digest("hex"),
         };
-        if (base && canonicalRecordBytes(base) !== canonicalRecordBytes(records.at(-1)!))
-          addIssue("overwrite", key, `Incoming record overwrites ${key}`, {}, hashes);
+        // A normal version/content change is a Diff, not an overwrite Issue.
+        // Overwrite is reserved for an explicit competing write in the same
+        // import aggregation; comparing against the published base alone
+        // would turn every routine refresh into a blocking issue.
         if (records.length > 1 && new Set(records.map(canonicalRecordBytes)).size > 1)
           addIssue(
             "field_conflict",
