@@ -19,7 +19,7 @@ export function VersionSwitcher({ onPreview }: { onPreview: (candidateId: string
       版本{" "}
       <select
         value={value}
-        onChange={(e) => { const v=e.target.value; setValue(v); if(v.startsWith("candidate:")){const [,c,b]=v.split(":"); onPreview(c,b);} }}
+        onChange={(e) => { const v=e.target.value; setValue(v); if(v.startsWith("candidate:")){const [,c,b]=v.split(":"); onPreview(c,b);} else if(v === "current") { window.location.hash = ""; } else if(v.startsWith("revision:")) { window.location.hash = `revision/${v.slice(9)}`; } }}
       >
         <option value="current">正式 · Current</option>
         <optgroup label="历史正式版本">

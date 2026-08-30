@@ -14,7 +14,7 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [revisions, setRevisions] = useState<Array<Record<string, unknown>>>([]);
-  const [source, setSource] = useState(""); const [message, setMessage] = useState(""); const [issueAction, setIssueAction] = useState<Record<string,string>>({});
+  const [source, setSource] = useState(""); const [gameId, setGameId] = useState(""); const [sourceId, setSourceId] = useState(""); const [message, setMessage] = useState(""); const [issueAction, setIssueAction] = useState<Record<string,string>>({});
   useEffect(() => {
     fetch("/api/admin/release-candidates")
       .then((r) => r.json())
@@ -67,11 +67,13 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
           <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                try { const created=await api.createImport(source); setMessage(`导入任务已创建：${created.batchId}`); setSource(""); } catch(err) { setMessage(`提交失败：${(err as Error).message}`); }
+                try { const created=await api.createImport({ gameId, sourceId, path: source }); setMessage(`导入任务已创建：${created.id}`); setSource(""); } catch(err) { setMessage(`提交失败：${(err as Error).message}`); }
             }}
           >
             <label>
-              来源路径 <input required value={source} onChange={e=>setSource(e.target.value)} placeholder="合法公开资料路径或 URL" />
+              Game ID <input required value={gameId} onChange={e=>setGameId(e.target.value)} placeholder="游戏 UUID" />
+              Source ID <input required value={sourceId} onChange={e=>setSourceId(e.target.value)} placeholder="来源 UUID" />
+              来源路径 <input required value={source} onChange={e=>setSource(e.target.value)} placeholder="本地路径或 URL" />
             </label>
           <button type="submit">创建导入任务</button>
           {message && <p role="status">{message}</p>}
