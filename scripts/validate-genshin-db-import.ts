@@ -20,6 +20,27 @@ const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<stri
 const records = JSON.parse(await readFile(recordsPath, "utf8")) as unknown;
 if (!Array.isArray(records)) throw new Error("records.json must contain an array");
 if (records.length !== 1699) throw new Error(`expected 1699 records, got ${records.length}`);
+const stableKeys = new Set<string>();
+for (const [index, value] of records.entries()) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`record ${index} must be an object`);
+  const record = value as Record<string, unknown>;
+  for (const field of ["sourceKey", "recordType", "title", "entityType", "properties", "metadata", "contentHash", "parserVersion"])
+    if (!(field in record)) throw new Error(`record ${index} missing ${field}`);
+  if (typeof record.sourceKey !== "string" || !record.sourceKey.startsWith("genshin-db/"))
+    throw new Error(`record ${index} has invalid stable sourceKey`);
+  if (stableKeys.has(record.sourceKey)) throw new Error(`duplicate stable sourceKey: ${record.sourceKey}`);
+  stableKeys.add(record.sourceKey);
+  if (!record.properties || typeof record.properties !== "object" || Array.isArray(record.properties))
+    throw new Error(`record ${index} properties must be an object`);
+  if (!record.metadata || typeof record.metadata !== "object" || Array.isArray(record.metadata))
+    throw new Error(`record ${index} metadata must be an object`);
+  const metadata = record.metadata as Record<string, unknown>;
+  for (const field of ["upstreamSource", "upstreamCommit", "upstreamUrl", "sourceKind", "codeLicense", "contentRights", "locale", "sourceFile", "sourceFileHash", "recordHash"])
+    if (!(field in metadata)) throw new Error(`record ${index} metadata missing ${field}`);
+  if (!/^[a-f0-9]{64}$/.test(String(record.contentHash)) || !/^[a-f0-9]{64}$/.test(String(metadata.sourceFileHash)) || !/^[a-f0-9]{64}$/.test(String(metadata.recordHash)))
+    throw new Error(`record ${index} has invalid hash metadata`);
+}
 if (manifest.converted !== 1699)
   throw new Error(`manifest converted must be 1699, got ${String(manifest.converted)}`);
 if (!Array.isArray(manifest.failures) || manifest.failures.length !== 0)
