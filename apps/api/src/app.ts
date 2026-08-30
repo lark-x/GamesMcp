@@ -852,18 +852,25 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     const { issueId } = parseIdParams(request);
     const body = z
       .object({
-        relativePath: z
-          .string()
-          .regex(/^verification\/[a-f0-9-]+\/[a-f0-9]{64}\.(png|jpe?g|webp)$/i),
-        sha256: z.string().regex(/^[a-f0-9]{64}$/),
-        bytes: z.number().int().positive(),
+        dataBase64: z.string().min(1),
         mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
         checkedGameVersion: z.string().min(1),
         checkedLocale: z.string().min(1),
         note: z.string().default(""),
       })
       .parse(request.body);
-    return repository.addReviewEvidence({ issueId: issueId ?? "", ...body });
+    const bytes = Buffer.from(body.dataBase64, "base64");
+    if (!bytes.length || bytes.length > 5_000_000)
+      throw new DomainError("invalid_evidence", "Evidence must be between 1 byte and 5 MB");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const extension = body.mimeType === "image/png" ? "png" : body.mimeType === "image/jpeg" ? "jpg" : "webp";
+    const relativePath = `review-evidence/${issueId}/${sha256}.${extension}`;
+    const absolutePath = join(config.dataDir, ...relativePath.split("/"));
+    await mkdir(join(config.dataDir, "review-evidence", issueId ?? "unknown"), { recursive: true });
+    await writeFile(absolutePath, bytes, { flag: "wx" }).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    });
+    return repository.addReviewEvidence({ issueId: issueId ?? "", relativePath, sha256, bytes: bytes.length, mimeType: body.mimeType, checkedGameVersion: body.checkedGameVersion, checkedLocale: body.checkedLocale, note: body.note });
   });
   app.get("/api/admin/release-candidates/:candidateId/checks", async (request) => {
     if (!repository.listReleaseCandidateChecks)
