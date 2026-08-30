@@ -1035,7 +1035,16 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         {
           sourceKey: record.sourceKey,
           recordSourceKey: record.sourceKey,
-          type: record.entityType ?? record.recordType,
+          type: (record.entityType ?? record.recordType) as
+            | "character"
+            | "faction"
+            | "region"
+            | "location"
+            | "item"
+            | "event"
+            | "concept"
+            | "quest"
+            | "book",
           name: record.title ?? record.sourceKey,
           summary: record.body ?? "",
           aliases: [],
