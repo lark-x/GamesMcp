@@ -95,6 +95,33 @@ async function processOne(): Promise<boolean> {
         diff,
       });
       await repository.completeJob(String(job.id), "completed");
+    } else if (job.type === "activate_revision") {
+      const payload = job.payload as {
+        revisionId?: unknown;
+        candidateId?: unknown;
+        buildId?: unknown;
+        contentChecksum?: unknown;
+        expectedCurrentRevisionId?: unknown;
+      };
+      if (
+        typeof payload.revisionId !== "string" ||
+        typeof payload.candidateId !== "string" ||
+        typeof payload.buildId !== "string" ||
+        typeof payload.contentChecksum !== "string"
+      )
+        throw new Error("Activation payload is invalid");
+      await repository.setRevisionIndexStatus?.(payload.revisionId, "ready");
+      await repository.finalizeActivation?.({
+        revisionId: payload.revisionId,
+        candidateId: payload.candidateId,
+        buildId: payload.buildId,
+        contentChecksum: payload.contentChecksum,
+        expectedCurrentRevisionId:
+          typeof payload.expectedCurrentRevisionId === "string"
+            ? payload.expectedCurrentRevisionId
+            : null,
+      });
+      await repository.completeJob(String(job.id), "completed");
     } else if (job.type === "rebuild_search" || job.type === "validate_import") {
       // PostgreSQL indexes are maintained transactionally in the MVP. This job
       // is still persisted so readiness, retries and auditability are explicit.

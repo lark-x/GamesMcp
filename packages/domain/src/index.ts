@@ -622,6 +622,18 @@ export interface KnowledgeRepository {
     contentChecksum: string;
     expectedCurrentRevisionId?: Id | null;
   }): Promise<DatasetRevision>;
+  setRevisionIndexStatus?(
+    revisionId: Id,
+    status: "ready" | "failed",
+    error?: string,
+  ): Promise<void>;
+  finalizeActivation?(input: {
+    revisionId: Id;
+    candidateId: Id;
+    buildId: Id;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: Id | null;
+  }): Promise<DatasetRevision>;
   listReviewIssues?(candidateId: Id): Promise<ReviewIssue[]>;
   reportReviewIssue?(input: {
     candidateId: Id;

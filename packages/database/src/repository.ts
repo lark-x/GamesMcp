@@ -2556,7 +2556,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           baseRevisionId: candidate.baseRevisionId,
           importBatchId: candidate.importBatchIds.at(-1),
           buildKind: "import",
-          indexStatus: "ready",
+          indexStatus: "pending",
         })
         .returning();
       if (!build)
@@ -2944,15 +2944,20 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         reason: input.releaseNote ?? "Candidate promotion",
         metadata: { candidateId: candidate.id, buildId: build.id },
       });
+      await tx.insert(jobs).values({
+        type: "activate_revision",
+        idempotencyKey: `activate_revision:${preparing.id}`,
+        payload: {
+          revisionId: preparing.id,
+          candidateId: candidate.id,
+          buildId: build.id,
+          contentChecksum: build.contentChecksum,
+          expectedCurrentRevisionId: input.expectedCurrentRevisionId ?? null,
+        },
+      });
       return preparing;
     });
-    return this.finalizeActivation({
-      revisionId: revision.id,
-      candidateId: candidate.id,
-      buildId: build.id,
-      contentChecksum: input.contentChecksum,
-      expectedCurrentRevisionId: input.expectedCurrentRevisionId,
-    });
+    return revision;
   }
 
   async finalizeActivation(input: {
@@ -3036,6 +3041,17 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       });
       return this.mapDatasetRevision(active!);
     });
+  }
+
+  async setRevisionIndexStatus(
+    revisionId: string,
+    status: "ready" | "failed",
+    error?: string,
+  ): Promise<void> {
+    await this.db
+      .update(datasetRevisions)
+      .set({ indexStatus: status, activationError: error ? { error } : null })
+      .where(eq(datasetRevisions.id, revisionId));
   }
 
   async publishImport(
