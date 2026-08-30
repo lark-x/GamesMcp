@@ -47,6 +47,7 @@ const repository = {
       publishedAt: new Date("2026-08-29T00:00:00Z"),
       isCurrent: true,
       indexStatus: "ready" as const,
+      manifestId: "00000000-0000-0000-0000-000000000099",
     },
   ],
 } as unknown as KnowledgeRepository;
@@ -235,4 +236,35 @@ describe("MCP server", () => {
     await client.close();
     await server.close();
   });
+
+  it.each([
+    ["preparing", "ready", true],
+    ["failed", "ready", true],
+    ["published", "pending", true],
+    ["published", "ready", false],
+  ])(
+    "requires public revision manifest and state (%s/%s)",
+    async (lifecycleStatus, indexStatus, hidden) => {
+      const repo = {
+        ...repository,
+        listRevisions: async () => [
+          {
+            ...(await repository.listRevisions!())[0]!,
+            lifecycleStatus,
+            indexStatus,
+            manifestId: hidden ? undefined : "00000000-0000-0000-0000-000000000099",
+          },
+        ],
+      } as unknown as KnowledgeRepository;
+      const server = createMcpServer(repo);
+      const client = new Client({ name: "guard-test", version: "0.1.0" }, { capabilities: {} });
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      await server.connect(st);
+      await client.connect(ct);
+      const result = await client.readResource({ uri: `revision://${gameId}/current` });
+      expect(resultJson(result)).toBe(hidden ? null : expect.anything());
+      await client.close();
+      await server.close();
+    },
+  );
 });
