@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { convertSnapshot, writeSnapshot } from "./genshin-db-adapter.js";
+import { convertSnapshot, writeSnapshot } from "../packages/ingestion/src/genshin-db-adapter.js";
 
 const root = resolve(process.env.GENSHIN_DB_DIR ?? "data/upstream/genshin-db");
 const output = resolve(process.env.GENSHIN_DB_OUTPUT_DIR ?? "data/imports/normalized/genshin-db");

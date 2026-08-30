@@ -562,3 +562,5 @@ export function validateImport(
     warnings: issues.filter((issue) => issue.severity === "warning" || issue.severity === "info"),
   };
 }
+
+export * from "./genshin-db-adapter.js";

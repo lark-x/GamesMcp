@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import {
-  convertSnapshot,
-  LOCKED_COMMIT,
-  verifyCommit,
-} from "../../../scripts/genshin-db-adapter.js";
+import { convertSnapshot, LOCKED_COMMIT, verifyCommit } from "./genshin-db-adapter.js";
 
 const checkout = resolve("data/upstream/genshin-db");
 describe("genshin-db adapter", () => {
