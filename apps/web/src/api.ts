@@ -78,6 +78,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  uploadEvidence: (
+    itemId: string,
+    input: { mimeType: "image/png" | "image/jpeg" | "image/webp"; dataBase64: string },
+  ) =>
+    request(`/api/admin/verification/items/${itemId}/screenshots`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   resolve: (id: string, action: string, note: string) =>
     request(`/api/admin/review-issues/${id}/resolve`, {
       method: "POST",
