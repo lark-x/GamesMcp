@@ -31,7 +31,7 @@ D:\GamesMcp\data\upstream\   # AnimeGameData checkout
    不要同时设置一个指向 `C:` 的 `DATA_ROOT`；如果存在旧配置，应删除或改成同一个 `D:` 数据根。
 
 5. 确认 Docker Desktop 已启动，并允许访问仓库所在的 `D:` 盘。
-6. 在仓库目录执行 `pnpm install`，然后依次执行 `pnpm db:up`、`pnpm db:migrate`、`pnpm db:seed`。
+6. 在仓库目录执行 `pnpm install` 和 `pnpm build`，然后依次执行 `pnpm db:up`、`pnpm db:migrate`、`pnpm db:seed`。
 7. 执行 `pnpm dev`，Web 默认地址为 `http://127.0.0.1:4173`。
 
 启动前的存储预检会确认数据盘存在、文件系统为 NTFS 或 ReFS、目录可写、剩余空间不少于 50 GiB，并确认数据盘不是系统盘。检查失败时程序会停止，不会偷偷改用 `C:`。

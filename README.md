@@ -11,6 +11,7 @@ Windows 原生运行和数据迁移说明见 [`docs/windows.md`](docs/windows.md
 ```bash
 cp .env.example .env
 pnpm install
+pnpm build
 pnpm db:up
 pnpm db:migrate
 pnpm db:seed

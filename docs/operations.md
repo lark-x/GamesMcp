@@ -4,6 +4,7 @@
 
 ```bash
 node --import tsx scripts/check-data-storage.ts
+pnpm build
 pnpm db:up
 pnpm db:migrate
 pnpm db:seed

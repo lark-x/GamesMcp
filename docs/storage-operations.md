@@ -45,6 +45,7 @@ node --import tsx scripts/check-data-storage.ts
 存储初始化和本地开发只需要 Compose 中的 PostgreSQL：
 
 ```bash
+pnpm build
 pnpm db:up
 docker compose ps postgres
 ```

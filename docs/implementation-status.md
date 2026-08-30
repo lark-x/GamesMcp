@@ -15,6 +15,7 @@ pnpm build
 ```bash
 cp .env.example .env
 pnpm install
+pnpm build
 pnpm db:up
 pnpm db:migrate
 pnpm db:seed

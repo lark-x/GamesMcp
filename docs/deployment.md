@@ -9,6 +9,7 @@ Game Intelligence Platform 是独立部署的私有知识库。运行组件只�
 ```bash
 cp .env.example .env
 pnpm install
+pnpm build
 pnpm db:up
 pnpm db:migrate
 pnpm db:seed
