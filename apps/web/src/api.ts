@@ -1,15 +1,47 @@
-export type Build = { id: string; buildNumber: number; status: string; recordCount: number };
+export type GameSummary = { id: string; slug: string; name: string; status: string };
+export type SourceSummary = {
+  id: string;
+  name: string;
+  type: string;
+  pathLabel?: string;
+  licenseNote?: string | null;
+};
+export type ImportSummary = {
+  id: string;
+  gameId: string;
+  sourceId: string;
+  status: string;
+  successCount: number;
+  failureCount: number;
+  warnings?: unknown[];
+  errors?: unknown[];
+  createdAt: string;
+  completedAt?: string | null;
+};
+export type Build = {
+  id: string;
+  buildNumber: number;
+  status: string;
+  recordCount: number;
+  contentChecksum: string;
+  manifestId?: string | null;
+  indexStatus?: string;
+  createdAt?: string;
+};
 export type Candidate = {
   id: string;
+  gameId: string;
   name: string;
   status: string;
   currentBuildId?: string | null;
+  baseRevisionId?: string | null;
+  importBatchIds?: string[];
   builds?: Build[];
 };
 export type Issue = {
   id: string;
   candidateId?: string;
-  buildId?: string;
+  detectedBuildId?: string;
   canonicalKey: string;
   kind: string;
   status: string;
@@ -20,14 +52,52 @@ export type Issue = {
   preview?: unknown;
   source?: unknown;
   contentHash?: string;
+  blocking?: boolean;
+  details?: Record<string, unknown>;
+};
+export type BlockingReason = {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+};
+export type CandidateReadiness = {
+  candidateId: string;
+  buildId?: string;
+  contentChecksum?: string;
+  ready: boolean;
+  blockingReasons: BlockingReason[];
+};
+export type CandidateCheck = {
+  id: string;
+  candidateId: string;
+  buildId?: string | null;
+  checkType: string;
+  status: "pending" | "passed" | "blocked" | "failed";
+  message?: string | null;
+  checkedAt?: string | null;
+};
+export type ReviewEvidence = {
+  id: string;
+  issueId: string;
+  mimeType: string;
+  checkedGameVersion: string;
+  checkedLocale: string;
+  note: string;
+  createdAt: string;
 };
 export type Revision = {
   id: string;
+  gameId?: string;
+  revisionNumber?: number;
   version?: string;
+  lifecycleStatus?: string;
   status?: string;
   releaseNote?: string;
   manifestId?: string;
   indexId?: string;
+  indexStatus?: string;
+  isCurrent?: boolean;
+  publishedAt?: string;
 };
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem("gip.adminToken");
@@ -43,23 +113,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return r.json() as Promise<T>;
 }
 export const api = {
-  games: () => request<{ games: unknown[] }>("/api/games"),
+  games: () => request<{ games: GameSummary[] }>("/api/games"),
   sources: (gameId?: string) =>
-    request<{ sources: unknown[] }>(gameId ? `/api/games/${gameId}/sources` : "/api/admin/sources"),
-  imports: () => request<{ imports: unknown[] }>("/api/admin/imports"),
+    request<{ sources: SourceSummary[] }>(
+      `/api/admin/sources${gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`,
+    ),
+  imports: (gameId?: string) =>
+    request<{ imports: ImportSummary[] }>(
+      `/api/admin/imports${gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`,
+    ),
   createImport: (input: { gameId: string; sourceId: string; path: string }) =>
     request<{ id: string; batchId?: string }>("/api/admin/imports", {
       method: "POST",
       body: JSON.stringify(input),
     }),
   importStatus: (id: string) => request<Record<string, unknown>>(`/api/admin/imports/${id}`),
-  candidates: () => request<{ candidates: Candidate[] }>("/api/admin/release-candidates"),
+  candidates: (gameId?: string) =>
+    request<{ candidates: Candidate[] }>(
+      `/api/admin/release-candidates${gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`,
+    ),
   candidate: (id: string) =>
     request<{ candidate: Candidate }>(`/api/admin/release-candidates/${id}`),
   candidateReadiness: (id: string) =>
-    request<Record<string, unknown>>(`/api/admin/release-candidates/${id}/readiness`),
+    request<CandidateReadiness>(`/api/admin/release-candidates/${id}/readiness`),
   candidateChecks: (id: string) =>
-    request<Record<string, unknown>>(`/api/admin/release-candidates/${id}/checks`),
+    request<{ checks: CandidateCheck[] }>(`/api/admin/release-candidates/${id}/checks`),
   candidateIssues: (id: string) =>
     request<{ issues: Issue[] }>(`/api/admin/release-candidates/${id}/issues`),
   build: (id: string) =>
@@ -67,9 +145,17 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
-  readiness: (id: string) =>
-    request<Record<string, unknown>>(`/api/admin/release-candidates/${id}/readiness`),
-  promote: (candidateId: string, input: Record<string, unknown>) =>
+  readiness: (id: string) => api.candidateReadiness(id),
+  promote: (
+    candidateId: string,
+    input: {
+      buildId: string;
+      contentChecksum: string;
+      expectedCurrentRevisionId?: string | null;
+      releaseNote?: string;
+      idempotencyKey: string;
+    },
+  ) =>
     request(`/api/admin/release-candidates/${candidateId}/promote`, {
       method: "POST",
       body: JSON.stringify(input),
@@ -79,7 +165,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  issues: () => request<{ issues: Issue[] }>("/api/admin/review-issues"),
+  issues: (status?: "open" | "resolved" | "reopened") =>
+    request<{ issues: Issue[] }>(`/api/admin/review-issues${status ? `?status=${status}` : ""}`),
   issue: (id: string) => request<{ issue: Issue }>(`/api/admin/review-issues/${id}`),
   patches: (candidateId: string) =>
     request<Record<string, unknown>>(`/api/admin/release-candidates/${candidateId}/patches`),
@@ -102,12 +189,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  evidence: (issueId: string) =>
+    request<{ evidence: ReviewEvidence[] }>(`/api/admin/review-issues/${issueId}/evidence`),
   resolve: (id: string, action: string, note: string) =>
     request(`/api/admin/review-issues/${id}/resolve`, {
       method: "POST",
       body: JSON.stringify({ action, note }),
     }),
-  revisions: () => request<{ revisions: Revision[] }>("/api/admin/revisions"),
+  revisions: (gameId?: string) =>
+    request<{ revisions: Revision[] }>(
+      `/api/admin/revisions${gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`,
+    ),
   rollback: (id: string, reason: string) =>
     request(`/api/admin/revisions/${id}/rollback`, {
       method: "POST",

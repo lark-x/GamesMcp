@@ -27,11 +27,20 @@ for (const [index, value] of records.entries()) {
   const record = value as Record<string, unknown>;
   // The persisted converter contract calls this short-facts field `props`.
   // `properties` is the normalized ingestion shape and is asserted below.
-  for (const field of ["sourceKey", "recordType", "title", "entityType", "metadata", "contentHash", "parserVersion"])
+  for (const field of [
+    "sourceKey",
+    "recordType",
+    "title",
+    "entityType",
+    "metadata",
+    "contentHash",
+    "parserVersion",
+  ])
     if (!(field in record)) throw new Error(`record ${index} missing ${field}`);
   if (typeof record.sourceKey !== "string" || !record.sourceKey.startsWith("genshin-db/"))
     throw new Error(`record ${index} has invalid stable sourceKey`);
-  if (stableKeys.has(record.sourceKey)) throw new Error(`duplicate stable sourceKey: ${record.sourceKey}`);
+  if (stableKeys.has(record.sourceKey))
+    throw new Error(`duplicate stable sourceKey: ${record.sourceKey}`);
   stableKeys.add(record.sourceKey);
   const props = record.props ?? record.properties;
   if (!props || typeof props !== "object" || Array.isArray(props))
@@ -39,9 +48,24 @@ for (const [index, value] of records.entries()) {
   if (!record.metadata || typeof record.metadata !== "object" || Array.isArray(record.metadata))
     throw new Error(`record ${index} metadata must be an object`);
   const metadata = record.metadata as Record<string, unknown>;
-  for (const field of ["upstreamSource", "upstreamCommit", "upstreamUrl", "sourceKind", "codeLicense", "contentRights", "locale", "sourceFile", "sourceFileHash", "recordHash"])
+  for (const field of [
+    "upstreamSource",
+    "upstreamCommit",
+    "upstreamUrl",
+    "sourceKind",
+    "codeLicense",
+    "contentRights",
+    "locale",
+    "sourceFile",
+    "sourceFileHash",
+    "recordHash",
+  ])
     if (!(field in metadata)) throw new Error(`record ${index} metadata missing ${field}`);
-  if (!/^[a-f0-9]{64}$/.test(String(record.contentHash)) || !/^[a-f0-9]{64}$/.test(String(metadata.sourceFileHash)) || !/^[a-f0-9]{64}$/.test(String(metadata.recordHash)))
+  if (
+    !/^[a-f0-9]{64}$/.test(String(record.contentHash)) ||
+    !/^[a-f0-9]{64}$/.test(String(metadata.sourceFileHash)) ||
+    !/^[a-f0-9]{64}$/.test(String(metadata.recordHash))
+  )
     throw new Error(`record ${index} has invalid hash metadata`);
 }
 if (manifest.converted !== 1699)

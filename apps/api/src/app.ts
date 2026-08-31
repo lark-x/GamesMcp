@@ -839,7 +839,7 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     return { patches: await repository.listCandidatePatches(candidateId ?? "") };
   });
   app.post("/api/admin/release-candidates/:candidateId/patches", async (request) => {
-    if (!repository.createCandidatePatch)
+    if (!repository.createCandidatePatch || !repository.buildReleaseCandidate)
       throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
     const { candidateId } = parseIdParams(request);
     const body = z
@@ -873,7 +873,12 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         undefined,
         400,
       );
-    return repository.createCandidatePatch({ candidateId: candidateId ?? "", ...body });
+    const patch = await repository.createCandidatePatch({
+      candidateId: candidateId ?? "",
+      ...body,
+    });
+    const build = await repository.buildReleaseCandidate(candidateId ?? "");
+    return { patch, build };
   });
   app.get("/api/admin/review-issues/:issueId/evidence", async (request) => {
     if (!repository.listReviewEvidence)
@@ -895,7 +900,7 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
         checkedGameVersion: z.string().min(1),
         checkedLocale: z.string().min(1),
-        note: z.string().default(""),
+        note: z.string().trim().min(1),
       })
       .parse(request.body);
     const bytes = Buffer.from(body.dataBase64, "base64");

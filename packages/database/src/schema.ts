@@ -312,6 +312,9 @@ export const datasetRevisions = knowledge.table(
   },
   (table) => [
     uniqueIndex("dataset_revisions_game_number_unique").on(table.gameId, table.revisionNumber),
+    uniqueIndex("dataset_revisions_activation_candidate_unique")
+      .on(table.activationCandidateId)
+      .where(sql`${table.activationCandidateId} IS NOT NULL`),
     index("dataset_revisions_current_index").on(table.gameId, table.isCurrent),
     index("dataset_revisions_lifecycle_index").on(table.gameId, table.lifecycleStatus),
     check(

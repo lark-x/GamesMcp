@@ -3563,3 +3563,553 @@ footer {
     padding: 20px 16px;
   }
 }
+
+/* Candidate-first data operations workbench */
+.admin-shell {
+  max-width: 1440px;
+  min-height: 100vh;
+  padding-bottom: 72px;
+}
+.admin-topbar {
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+.admin-topbar h1,
+.admin-page h2,
+.admin-page h3 {
+  color: #102a43;
+}
+.admin-topbar h1 {
+  margin: 4px 0 0;
+  font-size: clamp(30px, 4vw, 48px);
+}
+.admin-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.version-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #486581;
+  font-size: 13px;
+  font-weight: 700;
+}
+.version-switcher select {
+  min-width: 260px;
+}
+.admin-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #d9e2ec;
+  border-radius: 18px;
+  background: #edf2f7;
+}
+.admin-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 50px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #486581;
+  background: transparent;
+  font-weight: 800;
+}
+.admin-nav button span {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 50%;
+  color: #627d98;
+  background: #fff;
+  font-size: 11px;
+}
+.admin-nav button.active {
+  border-color: #c8d9eb;
+  color: #086fad;
+  background: #fff;
+  box-shadow: 0 8px 20px rgb(16 42 67 / 8%);
+}
+.admin-nav button.active span {
+  color: #fff;
+  background: #0878b9;
+}
+.workflow-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 24px;
+  margin-top: 18px;
+  padding: 18px 22px;
+  border: 1px solid #cfe3f3;
+  border-radius: 16px;
+  color: #334e68;
+  background: linear-gradient(110deg, #f8fbff, #e9f7ff);
+}
+.workflow-banner > strong {
+  color: #075985;
+}
+.workflow-banner ol {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: workflow;
+}
+.workflow-banner li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  counter-increment: workflow;
+}
+.workflow-banner li::before {
+  display: grid;
+  flex: 0 0 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #0b83bf;
+  content: counter(workflow);
+  font-size: 11px;
+}
+.admin-status-message {
+  margin: 16px 0 0;
+  border: 1px solid #b7ead3;
+}
+.admin-page {
+  margin-top: 18px;
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid #d9e2ec;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgb(16 42 67 / 7%);
+}
+.admin-page-heading,
+.admin-section-heading,
+.candidate-card > header,
+.issue-card > header,
+.revision-card > header,
+.admin-card-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.admin-page-heading h2 {
+  margin: 4px 0 8px;
+  font-size: clamp(25px, 3vw, 34px);
+}
+.admin-page-heading p {
+  max-width: 780px;
+  margin: 0;
+  color: #627d98;
+  line-height: 1.65;
+}
+.admin-form-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 26px;
+  padding: 22px;
+  border: 1px solid #d9e2ec;
+  border-radius: 17px;
+  background: #f8fafc;
+}
+.admin-form-card label,
+.review-form label,
+.promote-panel label {
+  display: grid;
+  gap: 8px;
+  color: #334e68;
+  font-size: 13px;
+  font-weight: 800;
+}
+.admin-form-card input,
+.admin-form-card select,
+.review-form input,
+.review-form select,
+.review-form textarea,
+.promote-panel input,
+.rollback-panel input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bcccdc;
+  border-radius: 11px;
+  color: #102a43;
+  background: #fff;
+}
+.admin-form-wide {
+  grid-column: 1 / -1;
+}
+.source-license {
+  margin: 0;
+  color: #627d98;
+  font-size: 12px;
+}
+.admin-form-card > button {
+  justify-self: start;
+}
+.admin-section-heading {
+  align-items: center;
+  margin-top: 34px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e7edf3;
+}
+.admin-section-heading h3 {
+  margin: 0;
+}
+.admin-section-heading span {
+  color: #829ab1;
+  font-size: 12px;
+}
+.admin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.admin-card,
+.candidate-card,
+.issue-card,
+.revision-card {
+  border: 1px solid #d9e2ec;
+  border-radius: 17px;
+  background: #fff;
+}
+.admin-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+.status-pill,
+.readiness-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #486581;
+  background: #e9eff5;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.status-review_required,
+.status-preview_ready,
+.status-ready,
+.status-passed,
+.readiness-badge.ready {
+  color: #087f5b;
+  background: #dff8ed;
+}
+.status-failed,
+.status-blocked,
+.status-open,
+.readiness-badge.blocked {
+  color: #b42318;
+  background: #ffe7e5;
+}
+.status-running,
+.status-pending {
+  color: #8b5e00;
+  background: #fff3c4;
+}
+.metric-row,
+.revision-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.metric-row div,
+.revision-facts div {
+  padding: 10px;
+  border-radius: 10px;
+  background: #f4f7fa;
+}
+.metric-row dt,
+.revision-facts dt {
+  color: #829ab1;
+  font-size: 10px;
+}
+.metric-row dd,
+.revision-facts dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: #102a43;
+  font-weight: 900;
+  text-overflow: ellipsis;
+}
+.candidate-list,
+.issue-list,
+.revision-list {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+}
+.candidate-card,
+.issue-card,
+.revision-card {
+  padding: 22px;
+}
+.candidate-card h3,
+.issue-card h3,
+.revision-card h3 {
+  margin: 4px 0 5px;
+  font-size: 21px;
+}
+.candidate-card header p,
+.issue-card header p {
+  margin: 0;
+  color: #627d98;
+}
+.build-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  margin-top: 20px;
+  padding-bottom: 4px;
+}
+.build-strip button {
+  display: grid;
+  flex: 0 0 170px;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid #d9e2ec;
+  border-radius: 12px;
+  color: #334e68;
+  background: #f8fafc;
+  text-align: left;
+}
+.build-strip button.active {
+  border-color: #78b7d8;
+  color: #075985;
+  background: #edf9ff;
+}
+.build-strip button span {
+  font-size: 11px;
+}
+.release-gates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+.release-gates > div {
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid #d9e2ec;
+  border-radius: 11px;
+}
+.release-gates > div span {
+  font-size: 11px;
+}
+.release-gates .gate-pass {
+  border-color: #b7ead3;
+  color: #087f5b;
+  background: #f0fbf6;
+}
+.release-gates .gate-block {
+  border-color: #ffc9c5;
+  color: #b42318;
+  background: #fff5f4;
+}
+.blocker-list {
+  margin-top: 16px;
+  padding: 16px;
+  border-left: 4px solid #e14b3b;
+  border-radius: 8px 13px 13px 8px;
+  background: #fff5f4;
+}
+.blocker-list ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.blocker-list li {
+  display: grid;
+  gap: 2px;
+}
+.blocker-list small {
+  color: #8a4a44;
+}
+.check-details,
+.issue-card details {
+  margin-top: 15px;
+  color: #486581;
+}
+.candidate-actions,
+.issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.promote-panel,
+.rollback-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e7edf3;
+}
+.promote-panel small {
+  grid-column: 1 / -1;
+  color: #829ab1;
+}
+.issue-card code {
+  color: #829ab1;
+  font-size: 11px;
+}
+.issue-summary {
+  margin: 18px 0;
+  padding: 13px;
+  border-radius: 11px;
+  color: #6f4d00;
+  background: #fff9e6;
+}
+.issue-card pre {
+  max-height: 240px;
+  overflow: auto;
+  padding: 13px;
+  border-radius: 10px;
+  background: #f4f7fa;
+  white-space: pre-wrap;
+}
+.review-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+.review-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+.evidence-picker {
+  padding: 15px;
+  border: 1px dashed #9fb3c8;
+  border-radius: 12px;
+  color: #486581;
+  background: #f8fafc;
+}
+.evidence-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+  padding: 13px;
+  border-radius: 11px;
+  background: #f0fbf6;
+}
+.evidence-list a {
+  color: #087f5b;
+  font-size: 12px;
+}
+.blocking-hint {
+  display: block;
+  margin-top: 10px;
+  color: #b42318;
+}
+.revision-facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+.empty-state {
+  grid-column: 1 / -1;
+  padding: 42px 24px;
+  border: 1px dashed #bcccdc;
+  border-radius: 15px;
+  color: #627d98;
+  background: #f8fafc;
+  text-align: center;
+}
+.empty-state strong {
+  color: #334e68;
+  font-size: 18px;
+}
+.empty-state p {
+  margin: 8px 0 16px;
+}
+
+@media (max-width: 900px) {
+  .admin-topbar,
+  .admin-top-actions,
+  .admin-page-heading,
+  .candidate-card > header,
+  .issue-card > header,
+  .revision-card > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .admin-top-actions {
+    display: grid;
+  }
+  .version-switcher,
+  .version-switcher select {
+    width: 100%;
+  }
+  .admin-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workflow-banner {
+    grid-template-columns: 1fr;
+  }
+  .workflow-banner ol,
+  .release-gates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-shell {
+    padding-inline: 12px;
+  }
+  .admin-page {
+    padding: 18px 14px;
+    border-radius: 16px;
+  }
+  .admin-nav,
+  .workflow-banner ol,
+  .admin-form-card,
+  .review-form,
+  .release-gates,
+  .revision-facts,
+  .promote-panel,
+  .rollback-panel {
+    grid-template-columns: 1fr;
+  }
+  .admin-form-wide,
+  .promote-panel small {
+    grid-column: auto;
+  }
+  .admin-nav button {
+    justify-content: flex-start;
+    padding-inline: 12px;
+  }
+  .candidate-card,
+  .issue-card,
+  .revision-card {
+    padding: 16px;
+  }
+  .candidate-actions,
+  .issue-actions {
+    display: grid;
+  }
+}

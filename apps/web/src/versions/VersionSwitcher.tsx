@@ -6,7 +6,7 @@ export function VersionSwitcher({
   onCurrent,
 }: {
   onPreview: (candidateId: string, buildId?: string) => void;
-  onRevision?: (revisionId: string) => void;
+  onRevision?: (revisionId: string, revision?: Revision) => void;
   onCurrent?: () => void;
 }) {
   const [candidates, setCandidates] = useState<
@@ -47,7 +47,10 @@ export function VersionSwitcher({
             onCurrent?.();
           } else if (v.startsWith("revision:")) {
             const revisionId = v.slice(9);
-            onRevision?.(revisionId);
+            onRevision?.(
+              revisionId,
+              revisions.find((revision) => revision.id === revisionId),
+            );
           }
         }}
       >

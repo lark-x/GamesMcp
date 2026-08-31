@@ -682,6 +682,50 @@ describe("API", () => {
     await app.close();
   });
 
+  it("creates a patch and immediately returns the immutable successor Build", async () => {
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const issueId = "00000000-0000-0000-0000-000000000042";
+    const buildId = "00000000-0000-0000-0000-000000000043";
+    const now = new Date("2026-08-31T00:00:00Z");
+    let built = false;
+    const app = appWith({
+      createCandidatePatch: async (input) => ({
+        id: "00000000-0000-0000-0000-000000000044",
+        candidateId,
+        issueId: input.issueId,
+        canonicalKey: input.canonicalKey,
+        action: input.action,
+        createdAt: now,
+      }),
+      buildReleaseCandidate: async () => {
+        built = true;
+        return {
+          id: buildId,
+          candidateId,
+          buildNumber: 2,
+          status: "ready",
+          contentChecksum: "a".repeat(64),
+          recordCount: 1,
+          createdAt: now,
+        };
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/admin/release-candidates/${candidateId}/patches`,
+      payload: {
+        issueId,
+        canonicalKey: "character/amber",
+        action: "use_incoming",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().patch.issueId).toBe(issueId);
+    expect(response.json().build).toMatchObject({ id: buildId, buildNumber: 2 });
+    expect(built).toBe(true);
+    await app.close();
+  });
+
   it("serves isolated preview entities and documents for a candidate build", async () => {
     const buildId = "00000000-0000-0000-0000-000000000041";
     const candidateId = "00000000-0000-0000-0000-000000000040";
@@ -787,6 +831,73 @@ describe("API", () => {
     expect(response.json().issues).toHaveLength(1);
     expect(response.json().issues[0]).toMatchObject({ id: issueId, candidateId });
     await app.close();
+  });
+
+  it("accepts review screenshots only with provenance metadata and matching image bytes", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "gip-review-evidence-"));
+    const issueId = "00000000-0000-0000-0000-000000000042";
+    let stored: Record<string, unknown> | undefined;
+    const app = appWith(
+      {
+        addReviewEvidence: async (input) => {
+          stored = input;
+          return {
+            id: "00000000-0000-0000-0000-000000000045",
+            ...input,
+            createdAt: new Date("2026-08-31T00:00:00Z"),
+          };
+        },
+      },
+      { ...testConfig, dataDir },
+    );
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const missingNote = await app.inject({
+      method: "POST",
+      url: `/api/admin/review-issues/${issueId}/evidence`,
+      payload: {
+        mimeType: "image/png",
+        dataBase64: png,
+        checkedGameVersion: "7.0",
+        checkedLocale: "zh-CN",
+        note: "",
+      },
+    });
+    expect(missingNote.statusCode).toBe(400);
+    const mismatchedBytes = await app.inject({
+      method: "POST",
+      url: `/api/admin/review-issues/${issueId}/evidence`,
+      payload: {
+        mimeType: "image/jpeg",
+        dataBase64: png,
+        checkedGameVersion: "7.0",
+        checkedLocale: "zh-CN",
+        note: "客户端角色详情截图",
+      },
+    });
+    expect(mismatchedBytes.statusCode).toBe(400);
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/admin/review-issues/${issueId}/evidence`,
+      payload: {
+        mimeType: "image/png",
+        dataBase64: png,
+        checkedGameVersion: "7.0",
+        checkedLocale: "zh-CN",
+        note: "客户端角色详情截图",
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(stored).toMatchObject({
+      issueId,
+      mimeType: "image/png",
+      checkedGameVersion: "7.0",
+      checkedLocale: "zh-CN",
+      note: "客户端角色详情截图",
+    });
+    expect(String(stored?.sha256)).toMatch(/^[a-f0-9]{64}$/);
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
   });
 
   it("stores and hashes PNG screenshot evidence under the data directory", async () => {

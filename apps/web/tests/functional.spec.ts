@@ -2,16 +2,32 @@ import { test, expect } from "@playwright/test";
 
 const candidate = {
   id: "c1",
+  gameId: "g1",
   name: "Amber",
   status: "ready",
   currentBuildId: "b1",
-  builds: [{ id: "b1", buildNumber: 1, status: "ready", recordCount: 51 }],
+  importBatchIds: ["import-1"],
+  builds: [
+    {
+      id: "b1",
+      buildNumber: 1,
+      status: "ready",
+      recordCount: 51,
+      contentChecksum: "a".repeat(64),
+      manifestId: "m1",
+      indexStatus: "ready",
+    },
+  ],
 };
 async function mockApi(page: import("@playwright/test").Page) {
   await page.route("**/api/**", async (route) => {
     const u = new URL(route.request().url());
     if (u.pathname === "/api/games")
       return route.fulfill({ json: { games: [{ id: "g1", name: "Game" }] } });
+    if (u.pathname === "/api/admin/sources")
+      return route.fulfill({
+        json: { sources: [{ id: "s1", name: "Fixture source", type: "local_json" }] },
+      });
     if (
       u.pathname.includes("/previews/b1/") &&
       (u.pathname.endsWith("/records") ||
@@ -52,9 +68,32 @@ async function mockApi(page: import("@playwright/test").Page) {
       return route.fulfill({ json: { candidates: [candidate] } });
     if (u.pathname === "/api/admin/release-candidates/c1")
       return route.fulfill({ json: { candidate } });
+    if (u.pathname === "/api/admin/release-candidates/c1/readiness")
+      return route.fulfill({
+        json: {
+          candidateId: "c1",
+          buildId: "b1",
+          contentChecksum: "a".repeat(64),
+          ready: false,
+          blockingReasons: [{ code: "review_issue_open", message: "Needs review" }],
+        },
+      });
+    if (u.pathname === "/api/admin/release-candidates/c1/checks")
+      return route.fulfill({ json: { checks: [] } });
     if (u.pathname === "/api/admin/revisions")
       return route.fulfill({
-        json: { revisions: [{ id: "r1", version: "1.0", status: "published", manifestId: "m1" }] },
+        json: {
+          revisions: [
+            {
+              id: "r1",
+              revisionNumber: 1,
+              lifecycleStatus: "published",
+              indexStatus: "ready",
+              isCurrent: false,
+              manifestId: "m1",
+            },
+          ],
+        },
       });
     if (u.pathname === "/api/admin/review-issues")
       return route.fulfill({
@@ -71,6 +110,8 @@ async function mockApi(page: import("@playwright/test").Page) {
           ],
         },
       });
+    if (u.pathname === "/api/admin/review-issues/i1/evidence")
+      return route.fulfill({ json: { evidence: [] } });
     if (u.pathname === "/api/admin/imports")
       return route.fulfill({
         json: route.request().method() === "POST" ? { id: "import-1" } : { imports: [] },
@@ -92,7 +133,7 @@ test("预览搜索过滤会发送 q 参数", async ({ page }) => {
   let requested = "";
   await page.route("**/api/admin/previews/**", async (route) => {
     requested = route.request().url();
-    await route.continue();
+    await route.fallback();
   });
   await page.goto("/#preview/c1");
   await page.getByLabel("搜索预发布资料").fill("amber");
@@ -115,9 +156,9 @@ test("从预发布详情报告问题并进入问题工作台", async ({ page }) 
 test("导入提交显示自动 Candidate 说明", async ({ page }) => {
   await mockApi(page);
   await page.goto("/#admin/intake");
-  await page.getByPlaceholder("游戏 UUID").fill("g1");
-  await page.getByPlaceholder("来源 UUID").fill("s1");
-  await page.getByPlaceholder("本地路径或 URL").fill("/tmp/data");
+  await page.getByLabel("选择游戏").selectOption("g1");
+  await page.getByLabel("选择数据来源").selectOption("s1");
+  await page.getByPlaceholder(/例如 F:/).fill("/tmp/data");
   await page.getByRole("button", { name: "创建导入任务" }).click();
   await expect(page.getByRole("status")).toContainText("导入任务已创建：import-1");
 });
@@ -145,9 +186,9 @@ test("问题页上传证据并创建 Patch", async ({ page }) => {
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: "evidence.png", mimeType: "image/png", buffer: Buffer.from("png") });
-  await page.getByRole("button", { name: "上传证据" }).click();
+  await page.getByRole("button", { name: "上传截图证据" }).click();
   await expect.poll(() => evidenceBody).toContain("dataBase64");
-  await page.getByRole("button", { name: "创建 Patch 并生成 Build N+1" }).click();
+  await page.getByRole("button", { name: "生成 Patch 与 Build N+1" }).click();
   await expect.poll(() => patchBody).toContain("issueId");
   await expect(page).toHaveURL(/#preview\/c1\/b2/);
 });
@@ -161,6 +202,6 @@ test("历史页回滚提交原因", async ({ page }) => {
   });
   await page.goto("/#admin/history");
   await page.getByLabel("回滚原因 r1").fill("安全回退");
-  await page.getByRole("button", { name: "带原因回滚" }).click();
+  await page.getByRole("button", { name: "切换到此 Revision" }).click();
   await expect.poll(() => body).toContain("安全回退");
 });

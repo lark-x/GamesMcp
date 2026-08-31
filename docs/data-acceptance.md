@@ -20,9 +20,12 @@ pnpm data:validate:genshin-db
 在隔离数据库执行现有集成测试：
 
 ```powershell
-pnpm test:database
+pnpm test:db
 pnpm test:acquisition
 pnpm test:backup-gate
+pnpm test:candidate-flow
 ```
 
-验收记录应逐项覆盖：导入 → Candidate/Build → 预览 → Issue → Evidence → Patch → Build N+1 → readiness → Revision → MCP → rollback。测试应证明失败门禁不会发布、回滚后 readiness 恢复，并保留审计历史。未有同版本客户端逐条核验及真实截图前，Amber 问题必须保持开放，不能写成“全部完成”。
+`test:candidate-flow` 逐项覆盖：导入 → Candidate/Build → Issue → Evidence → Patch → Build N+1 → readiness → Revision → current → rollback；MCP 的 current/preview 隔离由 MCP 契约测试覆盖。测试应证明失败门禁不会发布、旧 Build 不会被修改、回滚后 current 指针恢复，并保留审计历史。
+
+本机未单独配置 `GIP_DB_TEST_URL` 时，可运行 `pnpm test:candidate-flow:local`。它只创建随机命名的临时数据库，测试结束后删除，不会清空真实资料库。未有同版本客户端真实截图前，Amber 问题必须保持开放，不能写成“全部完成”。

@@ -355,6 +355,7 @@ export function App() {
   const [documentType, setDocumentType] = useState("");
   const [gameVersion, setGameVersion] = useState("");
   const [selectedRevision, setSelectedRevision] = useState<string | undefined>();
+  const [selectedRevisionLabel, setSelectedRevisionLabel] = useState<string | undefined>();
   const [sourceId, setSourceId] = useState("");
   const [overview, setOverview] = useState<Overview>({
     ready: null,
@@ -388,8 +389,12 @@ export function App() {
     const load = async () => {
       const [ready, documents, entities, sources] = await Promise.allSettled([
         api<Overview["ready"]>("/api/ready"),
-        api<{ documents: DocumentSummary[] }>(`/api/games/${gameId}/documents?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`),
-        api<{ entities: EntitySummary[] }>(`/api/games/${gameId}/entities?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`),
+        api<{ documents: DocumentSummary[] }>(
+          `/api/games/${gameId}/documents?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`,
+        ),
+        api<{ entities: EntitySummary[] }>(
+          `/api/games/${gameId}/entities?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`,
+        ),
         api<Pick<Overview, "sources">>(`/api/games/${gameId}/sources`),
       ]);
       if (cancelled) return;
@@ -419,6 +424,11 @@ export function App() {
   }, []);
 
   const currentGame = useMemo(() => games.find((game) => game.id === gameId), [games, gameId]);
+  const visibleRevisionLabel =
+    selectedRevisionLabel ??
+    overview.ready?.currentRevision ??
+    currentGame?.currentRevision ??
+    "未发布";
 
   function clearError() {
     setError("");
@@ -437,8 +447,8 @@ export function App() {
         types,
         entityTypes: entityType ? [entityType] : undefined,
         documentTypes: documentType ? [documentType] : undefined,
-          gameVersions: gameVersion ? [gameVersion] : undefined,
-          revisionId: selectedRevision,
+        gameVersions: gameVersion ? [gameVersion] : undefined,
+        revisionId: selectedRevision,
         sourceId: sourceId || undefined,
         limit: 20,
       };
@@ -455,7 +465,7 @@ export function App() {
     }
   }
 
-  async function openEntity(id: string, revisionId?: string) {
+  async function openEntity(id: string, revisionId: string | undefined = selectedRevision) {
     if (!gameId) return;
     setError("");
     setDetailLoading(true);
@@ -473,7 +483,11 @@ export function App() {
     }
   }
 
-  async function openDocument(id: string, revisionId?: string, segmentId?: string) {
+  async function openDocument(
+    id: string,
+    revisionId: string | undefined = selectedRevision,
+    segmentId?: string,
+  ) {
     if (!gameId) return;
     setError("");
     setDetailLoading(true);
@@ -492,7 +506,7 @@ export function App() {
   }
 
   function openCitation(citation: Citation) {
-    void openDocument(citation.documentId, undefined, citation.segmentId);
+    void openDocument(citation.documentId, selectedRevision, citation.segmentId);
   }
 
   async function ask(event: FormEvent) {
@@ -504,7 +518,7 @@ export function App() {
       setAnswer(
         await api<EvidenceAnswer>(`/api/games/${gameId}/qa`, {
           method: "POST",
-          body: JSON.stringify({ question, maxEvidence: 8 }),
+          body: JSON.stringify({ question, maxEvidence: 8, revisionId: selectedRevision }),
         }),
       );
     } catch (reason) {
@@ -571,14 +585,30 @@ export function App() {
             onPreview={(candidateId, buildId) => {
               window.location.hash = `preview/${candidateId}${buildId ? `/${buildId}` : ""}`;
             }}
-            onRevision={(revisionId) => setSelectedRevision(revisionId)}
-            onCurrent={() => setSelectedRevision(undefined)}
+            onRevision={(revisionId, revision) => {
+              setSelectedRevision(revisionId);
+              setSelectedRevisionLabel(
+                revision?.revisionNumber
+                  ? `r${revision.revisionNumber}`
+                  : (revision?.version ?? revisionId),
+              );
+              setSearch(null);
+              setEntity(null);
+              setDocument(null);
+            }}
+            onCurrent={() => {
+              setSelectedRevision(undefined);
+              setSelectedRevisionLabel(undefined);
+              setSearch(null);
+              setEntity(null);
+              setDocument(null);
+            }}
           />
           <button
             className="preview-entry-button"
             onClick={() => (window.location.hash = "admin/preview")}
           >
-            预发布版本
+            管理预发布
           </button>
         </div>
       </header>
@@ -723,9 +753,7 @@ export function App() {
 
             <section className="sidebar-version" aria-label="资料版本">
               <span>当前资料版本</span>
-              <strong>
-                {overview.ready?.currentRevision ?? currentGame?.currentRevision ?? "未发布"}
-              </strong>
+              <strong>{visibleRevisionLabel}</strong>
               <small>{overview.ready?.searchIndex ?? "索引状态检查中"}</small>
             </section>
           </aside>
@@ -743,9 +771,7 @@ export function App() {
                   <span>{search.segments.length} 片段</span>
                 </div>
               ) : (
-                <span className="archive-revision">
-                  {overview.ready?.currentRevision ?? currentGame?.currentRevision ?? "尚无版本"}
-                </span>
+                <span className="archive-revision">{visibleRevisionLabel}</span>
               )}
             </div>
 
@@ -849,9 +875,7 @@ export function App() {
         </div>
       </main>
       <footer>
-        {currentGame?.name ?? "加载中"}资料库 · 当前版本{" "}
-        {overview.ready?.currentRevision ?? currentGame?.currentRevision ?? "未发布"} ·
-        内容均可追溯到来源
+        {currentGame?.name ?? "加载中"}资料库 · 当前版本 {visibleRevisionLabel} · 内容均可追溯到来源
       </footer>
     </div>
   );

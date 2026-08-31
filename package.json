@@ -17,6 +17,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:db": "node --import tsx scripts/test-database.ts",
+    "test:candidate-flow": "node --import tsx scripts/test-release-candidate-flow.ts",
+    "test:candidate-flow:local": "node --import tsx scripts/with-disposable-test-db.ts scripts/test-release-candidate-flow.ts",
     "test:acquisition": "node --import tsx scripts/test-acquisition-review.ts",
     "test:backup-gate": "node --import tsx scripts/test-backup-gate.ts",
     "test:storage": "node --import tsx scripts/check-data-storage.test.ts",

@@ -2523,7 +2523,9 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         );
       if (
         issue.canonicalKey !== input.canonicalKey ||
-        (issue.fieldPath ?? null) !== (input.fieldPath ?? null)
+        (issue.fieldPath !== null &&
+          issue.fieldPath !== undefined &&
+          issue.fieldPath !== (input.fieldPath ?? null))
       )
         throw new DomainError(
           "patch_issue_scope_mismatch",
@@ -2531,13 +2533,26 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           undefined,
           409,
         );
-      if (issue.detectedBuildId && issue.detectedBuildId !== build.id)
-        throw new DomainError(
-          "patch_issue_build_stale",
-          "Review issue was reported against an older Build",
-          { detectedBuildId: issue.detectedBuildId, currentBuildId: build.id },
-          409,
+      if (issue.detectedBuildId && issue.detectedBuildId !== build.id) {
+        const detectedBuild = await this.getReleaseCandidateBuild(issue.detectedBuildId);
+        const detectedRecord = detectedBuild?.normalizedRecords.find(
+          (record) => record.sourceKey === issue.canonicalKey,
         );
+        const currentRecord = build.normalizedRecords.find(
+          (record) => record.sourceKey === issue.canonicalKey,
+        );
+        if (
+          !detectedRecord ||
+          !currentRecord ||
+          canonicalRecordBytes(detectedRecord) !== canonicalRecordBytes(currentRecord)
+        )
+          throw new DomainError(
+            "patch_issue_build_stale",
+            "The reviewed record changed after this issue was reported",
+            { detectedBuildId: issue.detectedBuildId, currentBuildId: build.id },
+            409,
+          );
+      }
       const uploadedEvidence = await this.listReviewEvidence(issue.id);
       if (!uploadedEvidence.length)
         throw new DomainError(
@@ -3046,11 +3061,38 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       const revision = await this.getRevision(candidate.promotedRevisionId, candidate.gameId);
       if (revision) return this.mapDatasetRevision(revision);
     }
+    const [promotionState] = await this.db
+      .select({ idempotencyKey: releaseCandidates.promotionIdempotencyKey })
+      .from(releaseCandidates)
+      .where(eq(releaseCandidates.id, candidate.id))
+      .limit(1);
+    let existingPromotion: typeof datasetRevisions.$inferSelect | undefined;
+    if (promotionState?.idempotencyKey) {
+      if (promotionState.idempotencyKey !== input.idempotencyKey)
+        throw new DomainError(
+          "candidate_promotion_in_progress",
+          "This candidate already has a promotion in progress",
+          undefined,
+          409,
+        );
+      [existingPromotion] = await this.db
+        .select()
+        .from(datasetRevisions)
+        .where(
+          and(
+            eq(datasetRevisions.activationCandidateId, candidate.id),
+            eq(datasetRevisions.activationBuildId, input.buildId),
+          ),
+        )
+        .orderBy(desc(datasetRevisions.revisionNumber))
+        .limit(1);
+    }
     const build = await this.getReleaseCandidateBuild(input.buildId);
     if (!build || build.candidateId !== candidate.id || candidate.currentBuildId !== build.id)
       throw new DomainError("candidate_build_mismatch", "Promote the current build only");
     if (build.contentChecksum !== input.contentChecksum)
       throw new DomainError("candidate_checksum_mismatch", "Preview build checksum does not match");
+    if (existingPromotion) return this.mapDatasetRevision(existingPromotion);
     const current = await this.getCurrentRevision(candidate.gameId);
     if (
       input.expectedCurrentRevisionId !== undefined &&
@@ -3251,19 +3293,6 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         activationError: error ? { error } : null,
       })
       .where(eq(datasetRevisions.id, revisionId));
-    const [revision] = await this.db
-      .select({ activationBuildId: datasetRevisions.activationBuildId })
-      .from(datasetRevisions)
-      .where(eq(datasetRevisions.id, revisionId))
-      .limit(1);
-    if (revision?.activationBuildId)
-      await this.db
-        .update(releaseCandidateBuilds)
-        .set({
-          indexStatus: status,
-          status: status === "failed" ? "failed" : "ready",
-        })
-        .where(eq(releaseCandidateBuilds.id, revision.activationBuildId));
   }
 
   /**
@@ -5588,6 +5617,11 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       contentChecksum: row.contentChecksum,
       recordCount: row.normalizedRecords.length,
       createdAt: row.createdAt,
+      manifestId: row.manifestId,
+      importBatchId: row.importBatchId,
+      baseRevisionId: row.baseRevisionId,
+      buildKind: row.buildKind,
+      indexStatus: row.indexStatus,
     };
   }
 
