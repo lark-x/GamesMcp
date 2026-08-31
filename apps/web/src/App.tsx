@@ -1356,19 +1356,23 @@ function AnswerView({
   );
 }
 
-function previewRecordsFromPayload(payload: unknown, kind: "entity" | "document"): PreviewRecord[] {
+function previewRecordsFromPayload(
+  payload: unknown,
+  fallbackKind: "entity" | "document" = "entity",
+): PreviewRecord[] {
   if (!payload || typeof payload !== "object") return [];
   const object = payload as Record<string, unknown>;
   const rows =
     (Array.isArray(object.records) && object.records) ||
     (Array.isArray(object.normalizedRecords) && object.normalizedRecords) ||
-    (Array.isArray(object[kind === "entity" ? "entities" : "documents"]) &&
-      (object[kind === "entity" ? "entities" : "documents"] as unknown[])) ||
+    (Array.isArray(object[fallbackKind === "entity" ? "entities" : "documents"]) &&
+      (object[fallbackKind === "entity" ? "entities" : "documents"] as unknown[])) ||
     [];
 
   return rows.flatMap((row, index) => {
     if (!row || typeof row !== "object") return [];
     const value = row as Record<string, unknown>;
+    const kind = value.displayKind === "document" ? "document" : fallbackKind;
     const sourceKey = String(value.sourceKey ?? value.id ?? `${kind}-${index}`);
     const displayTitle = String(value.title ?? value.name ?? sourceKey);
     const metadata =
@@ -1408,31 +1412,15 @@ async function loadPreviewRecords(
   query = "",
 ): Promise<{ records: PreviewRecord[]; total: number }> {
   const suffix = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
-  const [entities, documents] = await Promise.all([
-    api<unknown>(
-      `/api/admin/previews/${buildId}/entities?limit=${limit}&offset=${offset}${suffix}`,
-      {},
-      adminToken,
-    ),
-    api<unknown>(
-      `/api/admin/previews/${buildId}/documents?limit=${limit}&offset=${offset}${suffix}`,
-      {},
-      adminToken,
-    ),
-  ]);
-  const entityRows = previewRecordsFromPayload(entities, "entity");
-  const documentRows = previewRecordsFromPayload(documents, "document");
-  const total = Math.max(
-    Number((entities as { total?: number })?.total ?? 0),
-    Number((documents as { total?: number })?.total ?? 0),
+  const payload = await api<unknown>(
+    `/api/admin/previews/${buildId}/records?kind=all&limit=${limit}&offset=${offset}${suffix}`,
+    {},
+    adminToken,
   );
-  const seen = new Set<string>();
-  const records = [...entityRows, ...documentRows].filter((record) => {
-    if (seen.has(record.sourceKey)) return false;
-    seen.add(record.sourceKey);
-    return true;
-  });
-  return { records, total };
+  return {
+    records: previewRecordsFromPayload(payload),
+    total: Number((payload as { total?: number })?.total ?? 0),
+  };
 }
 
 function PreviewBrowser({

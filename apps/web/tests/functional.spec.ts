@@ -14,7 +14,9 @@ async function mockApi(page: import("@playwright/test").Page) {
       return route.fulfill({ json: { games: [{ id: "g1", name: "Game" }] } });
     if (
       u.pathname.includes("/previews/b1/") &&
-      (u.pathname.endsWith("/entities") || u.pathname.endsWith("/documents"))
+      (u.pathname.endsWith("/records") ||
+        u.pathname.endsWith("/entities") ||
+        u.pathname.endsWith("/documents"))
     ) {
       const offset = Number(u.searchParams.get("offset") ?? 0);
       const records = Array.from({ length: Math.min(50, 51 - offset) }, (_, i) => ({
@@ -36,9 +38,14 @@ async function mockApi(page: import("@playwright/test").Page) {
         parserVersion: "p",
       }));
       return route.fulfill({
-        json: u.pathname.endsWith("/entities")
-          ? { entities: payload, total: 51 }
-          : { documents: payload, total: 51 },
+        json: u.pathname.endsWith("/records")
+          ? {
+              records: payload.map((record) => ({ ...record, displayKind: "entity" })),
+              total: 51,
+            }
+          : u.pathname.endsWith("/entities")
+            ? { entities: payload, total: 51 }
+            : { documents: payload, total: 51 },
       });
     }
     if (u.pathname === "/api/admin/release-candidates")
@@ -64,7 +71,10 @@ async function mockApi(page: import("@playwright/test").Page) {
           ],
         },
       });
-    if (u.pathname === "/api/admin/imports") return route.fulfill({ json: { imports: [] } });
+    if (u.pathname === "/api/admin/imports")
+      return route.fulfill({
+        json: route.request().method() === "POST" ? { id: "import-1" } : { imports: [] },
+      });
     return route.fulfill({ json: {} });
   });
 }
@@ -96,7 +106,7 @@ test("导入提交显示自动 Candidate 说明", async ({ page }) => {
   await page.getByPlaceholder("来源 UUID").fill("s1");
   await page.getByPlaceholder("本地路径或 URL").fill("/tmp/data");
   await page.getByRole("button", { name: "创建导入任务" }).click();
-  await expect(page.getByText(/导入任务已创建|Worker 会自动聚合 Candidate/)).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("导入任务已创建：import-1");
 });
 
 test("问题页上传证据并创建 Patch", async ({ page }) => {
