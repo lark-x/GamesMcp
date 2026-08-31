@@ -71,6 +71,14 @@ Remove-Item Env:\ANIME_GAME_CATEGORY
 
 成功后，管理页面的“预发布与发布”会出现 `AnimeGameData zh-CN+en 7.0.0 · quest` 候选版本；打开预发布查看页后，分类选择“剧情任务”即可按当前 Build 浏览任务和分页对话。该预发布数据不会被 MCP 读取。
 
+发布为正式 Current Revision 后，可以导出 Windows 游戏内核验用的剧情节点清单：
+
+```powershell
+pnpm data:checklist:quests
+```
+
+清单会写入 `data/verification/checklists/quest-node-verification-r<revision>-zh-CN.md`。它抽的是具体剧情节点，不是 30 个完整任务；默认覆盖四类任务、玩家选项、长台词、动态变体以及 `partial` / `metadata_only` 风险项。逐字核验只计入同版本 `7.0.0 + zh-CN` 客户端；异常、版本不符或未解锁不可访问时，截图仍保存到 `data/verification/`。
+
 ## 迁移已有数据
 
 建议保持 macOS 外置盘为原始副本，另外准备 NTFS 目标盘。迁移顺序如下：

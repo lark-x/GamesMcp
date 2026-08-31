@@ -37,6 +37,7 @@
     "data:status:anime:write": "node --import tsx scripts/report-acquisition-status.ts --write",
     "data:reconcile:anime": "node --import tsx scripts/reconcile-anime-observations.ts",
     "data:checklist:anime": "node --import tsx scripts/export-anime-verification-checklist.ts",
+    "data:checklist:quests": "node --import tsx scripts/export-quest-verification-checklist.ts",
     "data:backup": "node --import tsx scripts/backup-acquisition.ts",
     "typecheck": "tsc -b",
     "db:generate": "drizzle-kit generate --config packages/database/drizzle.config.ts",

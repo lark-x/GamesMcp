@@ -182,7 +182,10 @@ async function latestBackup(): Promise<BackupInspection | null> {
   return null;
 }
 
-async function findManifest(expectedCommit?: string): Promise<{
+async function findManifest(
+  expectedCommit?: string,
+  leaf = "zh-CN",
+): Promise<{
   path: string;
   value: Record<string, unknown>;
 } | null> {
@@ -197,7 +200,7 @@ async function findManifest(expectedCommit?: string): Promise<{
   }
   for (const commit of commits) {
     if (expectedCommit && commit.name !== expectedCommit) continue;
-    const path = join(root, commit.name, "zh-CN", "manifest.json");
+    const path = join(root, commit.name, leaf, "manifest.json");
     try {
       return { path, value: JSON.parse(await readFile(path, "utf8")) as Record<string, unknown> };
     } catch {
@@ -211,15 +214,23 @@ const animeCategoryFiles = {
   book: "books.json",
   character_story: "character-stories.json",
   item_description: "items.json",
+  quest: "quests.json",
 } as const;
 
 const animeCategoryPlural = {
   book: "books",
   character_story: "characterStories",
   item_description: "itemDescriptions",
+  quest: "quests",
 } as const;
 
 type AnimeCategory = keyof typeof animeCategoryFiles;
+const questObservationCategories = new Set([
+  "archon_quest",
+  "story_quest",
+  "world_quest",
+  "event_quest",
+]);
 
 function animeCategoryFromParser(parserType: string): AnimeCategory | undefined {
   const category = parserType.replace(/^anime-game-data:/, "");
@@ -263,6 +274,17 @@ async function loadExpectedKeys(
     }
   }
   return result;
+}
+
+function manifestExpectedLocales(
+  manifest: { value: Record<string, unknown> } | null,
+): string[] | undefined {
+  const locales = manifest?.value.locales;
+  if (Array.isArray(locales)) {
+    const values = locales.filter((value): value is string => typeof value === "string").sort();
+    return values.length ? values : undefined;
+  }
+  return typeof manifest?.value.locale === "string" ? [manifest.value.locale] : undefined;
 }
 
 try {
@@ -568,11 +590,11 @@ try {
   ];
   const expectedCommit = upstreamCommits.length === 1 ? upstreamCommits[0] : undefined;
   const manifest = await findManifest(expectedCommit);
-  const expectedKeys = await loadExpectedKeys(manifest);
-  const expectedGameVersion =
-    typeof manifest?.value.gameVersion === "string" ? manifest.value.gameVersion : undefined;
-  const expectedLocale =
-    typeof manifest?.value.locale === "string" ? manifest.value.locale : undefined;
+  const questManifest = await findManifest(expectedCommit, "quests");
+  const expectedKeys = new Map<AnimeCategory, Set<string>>([
+    ...(await loadExpectedKeys(manifest)).entries(),
+    ...(await loadExpectedKeys(questManifest)).entries(),
+  ]);
   const snapshotRows = (
     await pool.query<{
       id: string;
@@ -590,13 +612,19 @@ try {
     .map((source) => {
       const category = animeCategoryFromParser(source.parserType);
       if (!category) return undefined;
+      const categoryManifest = category === "quest" ? questManifest : manifest;
       const expectedSet = expectedKeys.get(category);
       const accounting = asRecord(
-        asRecord(manifest?.value.accounting)[animeCategoryPlural[category]],
+        asRecord(categoryManifest?.value.accounting)[animeCategoryPlural[category]],
       );
       const expectedCount =
         expectedSet?.size ??
         (typeof accounting.converted === "number" ? accounting.converted : undefined);
+      const categoryExpectedGameVersion =
+        typeof categoryManifest?.value.gameVersion === "string"
+          ? categoryManifest.value.gameVersion
+          : undefined;
+      const categoryExpectedLocales = manifestExpectedLocales(categoryManifest);
       const snapshots = snapshotRows
         .filter((snapshot) => snapshot.sourceId === source.id)
         .map((snapshot) => {
@@ -604,7 +632,9 @@ try {
             (observation) =>
               observation.sourceId === source.id &&
               observation.sourceSnapshotId === snapshot.id &&
-              observation.category === category,
+              (category === "quest"
+                ? questObservationCategories.has(observation.category)
+                : observation.category === category),
           );
           const observedKeys = new Set(rows.map((row) => row.canonicalKey));
           const missingKeys = expectedSet
@@ -621,12 +651,12 @@ try {
             observedKeys.size === expectedCount &&
             missingKeys.length === 0 &&
             unexpectedKeys.length === 0 &&
-            expectedGameVersion &&
+            categoryExpectedGameVersion &&
             versions.length === 1 &&
-            versions[0] === expectedGameVersion &&
-            expectedLocale &&
-            locales.length === 1 &&
-            locales[0] === expectedLocale,
+            versions[0] === categoryExpectedGameVersion &&
+            categoryExpectedLocales &&
+            locales.length === categoryExpectedLocales.length &&
+            locales.every((locale, index) => locale === categoryExpectedLocales[index]),
           );
           return {
             snapshotId: snapshot.id,
@@ -741,6 +771,14 @@ try {
       const entry = asRecord(manifestAccounting[key]);
       return entry.coverage === 1;
     }) && Object.keys(manifestAccounting).length === requiredAccountingKeys.length;
+  const questManifestComplete = Boolean(
+    questManifest &&
+    Array.isArray(questManifest.value.unexplainedMissing) &&
+    questManifest.value.unexplainedMissing.length === 0 &&
+    Array.isArray(questManifest.value.failures) &&
+    questManifest.value.failures.length === 0 &&
+    expectedKeys.get("quest")?.size,
+  );
   const manifestComplete =
     upstreamCommits.length === 1 &&
     gameVersions.length === 1 &&
@@ -749,6 +787,7 @@ try {
     Array.isArray(manifest?.value.unexplainedMissing) &&
     manifest.value.unexplainedMissing.length === 0 &&
     accountingComplete &&
+    questManifestComplete &&
     sourceCoverageComplete;
   const categoryGate = reports.flatMap((report) => report.verification?.categories ?? []);
   const allSamplesProcessed = categoryGate.every((category) => category.pending === 0);

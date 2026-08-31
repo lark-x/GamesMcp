@@ -79,7 +79,9 @@
 - 发布后结构化表：`quest_subquests=33064`、`quest_dialogue_nodes=53748`、`quest_dialogue_edges=9552`、`document_segments=58888`、重复 subquest/node/edge 均为 0
 - 修复项：双语 quest 文档的结构化唯一约束改为 document-scoped；重复 dialogue edge 在 converter 和物化层确定性去重；同一 source 的多次 observation 刷新不再作为跨渠道冲突阻塞发布
 - 当前备份：`backups/20260831T133516Z/gip.dump`，同时保存 quest source manifest，`datasetManifestRootHash=6f40de0871250973a426f8fc9659754f1a6030b9452f5b900f62bf76111467fe`，状态报告确认 `backupAvailable=true`、`matchesCurrentManifest=true`
-- 状态报告：`openConflicts=0`、`observationIntegrity=true`、`sourceCoverageComplete=true`；剩余 `releaseGate.ready=false` 是因为人工核验仍未处理
+- 状态报告：`openConflicts=0`、`observationIntegrity=true`、`sourceCoverageComplete=true`；quest source coverage 已按四类任务 observation 归并验证为 `8208/8208`
+- 剧情节点核验清单：`data/verification/checklists/quest-node-verification-r2-zh-CN.md` 已生成，包含 12 个具体节点核验点，覆盖四类任务、玩家选项、长台词、动态变体以及 `partial` / `metadata_only` 风险项
+- 剩余 `releaseGate.ready=false` 是因为历史书籍、角色故事、物品描述的人工核验仍未处理
 
 尚未完成游戏内抽样核验和视觉回归截图；这些需要在 Windows 上使用 `7.0.0 + 简体中文` 客户端人工核对。
 
