@@ -6,6 +6,8 @@ describe("AnimeGameData import failure mapping", () => {
     expect(failureSourceKey("book", "7999")).toBe("book/7999");
     expect(failureSourceKey("character_story", "10001:103")).toBe("character/10001/story/103");
     expect(failureSourceKey("item_description", "30002")).toBe("item-codex/30002");
+    expect(failureSourceKey("quest", "1001")).toBe("quest/1001");
+    expect(failureSourceKey("quest", "quest/1001")).toBe("quest/1001");
     expect(failureSourceKey("character_story", "10001")).toBeUndefined();
   });
 
@@ -37,6 +39,24 @@ describe("AnimeGameData import failure mapping", () => {
         code: "anime_conversion_document_missing",
         message: "AnimeGameData conversion failed: document_missing",
         sourceKey: "book/7999",
+      },
+    ]);
+  });
+
+  it("turns quest Manifest failures into blocking validation issues", () => {
+    expect(
+      manifestFailureIssues(
+        {
+          failures: [{ sourceKey: "quest/1001/locale/zh-CN", reason: "dangling_dialogue_edge" }],
+        },
+        "quest",
+      ),
+    ).toEqual([
+      {
+        severity: "error",
+        code: "anime_conversion_dangling_dialogue_edge",
+        message: "AnimeGameData conversion failed: dangling_dialogue_edge",
+        sourceKey: "quest/1001/locale/zh-CN",
       },
     ]);
   });

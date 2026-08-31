@@ -146,7 +146,7 @@ index.
    AnimeGameData snapshot.
 4. Import and preview: create ImportBatch, Candidate, Build, Manifest, and
    preview records atomically for both locales.
-5. MCP and Web: add quest tools and the dedicated reader.
+5. MCP and Web: add quest tools, the published reader, and the preview reader.
 6. Acceptance: run typecheck, lint, unit, integration, E2E, build, and database
    release-flow tests.
 

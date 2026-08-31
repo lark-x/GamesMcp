@@ -1962,6 +1962,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     // A partially failed acquisition still has useful, auditable observations
     // for its successful rows; only the failed rows stay in the error list.
     await this.registerAcquisitionReview(batch);
+    await this.ensurePreviewForImport(batch);
     return batch;
   }
 

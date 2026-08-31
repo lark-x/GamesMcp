@@ -21,6 +21,7 @@ const categoryFiles = {
   book: "books.json",
   character_story: "character-stories.json",
   item_description: "items.json",
+  quest: "quests.json",
 } as const;
 
 type Category = keyof typeof categoryFiles;
@@ -72,7 +73,14 @@ if (!process.env.ANIME_GAME_OUTPUT_DIR && !detectedCommit)
   );
 const outputRoot = resolve(
   process.env.ANIME_GAME_OUTPUT_DIR ??
-    join(configuredDataRoot, "imports", "normalized", "anime-game-data", detectedCommit, "zh-CN"),
+    join(
+      configuredDataRoot,
+      "imports",
+      "normalized",
+      "anime-game-data",
+      detectedCommit,
+      category === "quest" ? "quests" : "zh-CN",
+    ),
 );
 const inputPath = resolve(outputRoot, "records", categoryFiles[category]);
 if (!isPathInside(outputRoot, preflight.config.dataRoot))
@@ -86,20 +94,35 @@ const manifestCommit =
 const manifestGameVersion =
   typeof manifest.gameVersion === "string" ? manifest.gameVersion.trim() : undefined;
 const manifestLocale = typeof manifest.locale === "string" ? manifest.locale.trim() : undefined;
+const manifestLocales = Array.isArray(manifest.locales)
+  ? manifest.locales.filter((value): value is string => typeof value === "string")
+  : [];
 const manifestLanguage =
   typeof manifest.language === "string" ? manifest.language.trim() : undefined;
-if (!manifestCommit || !manifestGameVersion || !manifestLocale || !manifestLanguage)
+if (
+  !manifestCommit ||
+  !manifestGameVersion ||
+  (category === "quest" ? !manifestLocales.length : !manifestLocale || !manifestLanguage)
+)
   throw new Error(
-    "AnimeGameData Manifest is missing upstream Commit, game version, locale, or language; regenerate the snapshot before importing",
+    "AnimeGameData Manifest is missing upstream Commit, game version, locale/language, or locales; regenerate the snapshot before importing",
   );
-if (manifestLocale !== "zh-CN" || manifestLanguage !== "CHS")
+if (category === "quest") {
+  const localeSet = new Set(manifestLocales);
+  if (!localeSet.has("zh-CN") || !localeSet.has("en"))
+    throw new Error(
+      `AnimeGameData quest import requires bilingual zh-CN/en Manifest; received ${manifestLocales.join(", ")}`,
+    );
+} else if (manifestLocale !== "zh-CN" || manifestLanguage !== "CHS") {
   throw new Error(
     `AnimeGameData import only supports zh-CN/CHS in this phase; received ${manifestLocale}/${manifestLanguage}`,
   );
+}
 if (detectedCommit && manifestCommit !== detectedCommit)
   throw new Error(
     `AnimeGameData Manifest Commit ${manifestCommit} does not match checkout/configured Commit ${detectedCommit}`,
   );
+const sourceLocaleLabel = category === "quest" ? manifestLocales.join("+") : manifestLocale;
 
 const pool = createPool(config.databaseUrl);
 const repository = new SqlKnowledgeRepository(createDatabase(pool), config.dataDir);
@@ -114,7 +137,7 @@ try {
     sources.find((candidate) => candidate.parserType === parserType) ??
     (await repository.createSource({
       gameId: game.id,
-      name: `AnimeGameData ${manifestLocale} ${manifestGameVersion} · ${category}`,
+      name: `AnimeGameData ${sourceLocaleLabel} ${manifestGameVersion} · ${category}`,
       type: "local_json",
       pathLabel: `records/${basename(inputPath)}`,
       licenseNote: "上游许可证未声明；仅限私有内部使用，待权利审查",
@@ -147,6 +170,7 @@ try {
       upstream: manifest.upstream,
       gameVersion: manifest.gameVersion,
       locale: manifest.locale,
+      locales: manifest.locales,
       language: manifest.language,
       inputHashes: manifest.inputHashes,
     },

@@ -862,6 +862,131 @@ describe("API", () => {
     await app.close();
   });
 
+  it("serves isolated preview quest search and paginated quest reads", async () => {
+    const buildId = "00000000-0000-0000-0000-000000000041";
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const app = appWith({
+      getReleaseCandidateBuild: async () => ({
+        id: buildId,
+        candidateId,
+        buildNumber: 7,
+        status: "ready",
+        contentChecksum: "a".repeat(64),
+        recordCount: 1,
+        createdAt: new Date("2026-08-30T00:00:00Z"),
+        gameId,
+        normalizedRecords: [
+          {
+            sourceKey: "quest/1001/locale/zh-CN",
+            recordType: "document",
+            documentType: "archon_quest",
+            title: "捕风的异乡人",
+            body: "派蒙：我们到了。\n旅行者：出发。",
+            gameVersion: "7.0.0",
+            locale: "zh-CN",
+            segments: [
+              {
+                segmentKey: "quest/1001/dialog/1",
+                ordinal: 0,
+                body: "派蒙：我们到了。",
+                startOffset: 0,
+                endOffset: 8,
+              },
+              {
+                segmentKey: "quest/1001/dialog/2",
+                ordinal: 1,
+                body: "旅行者：出发。",
+                startOffset: 9,
+                endOffset: 16,
+              },
+            ],
+            quest: {
+              questKey: "quest/1001",
+              mainQuestId: "1001",
+              questType: "archon_quest",
+              locale: "zh-CN",
+              chapter: "序章",
+              series: "捕风的异乡人",
+              completeness: "complete",
+              subquests: [
+                {
+                  subquestKey: "quest/1001/subquest/100101",
+                  subquestId: "100101",
+                  order: 1,
+                  title: "鸟瞰风物",
+                  completeness: "complete",
+                },
+              ],
+              dialogueNodes: [
+                {
+                  nodeKey: "quest/1001/dialog/1",
+                  nodeId: "1",
+                  type: "dialogue",
+                  speakerKey: "npc/1",
+                  speakerName: "派蒙",
+                  body: "派蒙：我们到了。",
+                  subquestKey: "quest/1001/subquest/100101",
+                  segmentKey: "quest/1001/dialog/1",
+                  order: 0,
+                },
+                {
+                  nodeKey: "quest/1001/dialog/2",
+                  nodeId: "2",
+                  type: "player_choice",
+                  body: "旅行者：出发。",
+                  subquestKey: "quest/1001/subquest/100101",
+                  segmentKey: "quest/1001/dialog/2",
+                  order: 1,
+                },
+              ],
+              dialogueEdges: [
+                {
+                  fromNodeKey: "quest/1001/dialog/1",
+                  toNodeKey: "quest/1001/dialog/2",
+                  type: "next",
+                },
+              ],
+            },
+            entities: [{ sourceKey: "npc/1", type: "npc", name: "派蒙", aliases: [] }],
+            metadata: { provenance: { upstreamCommit: "commit" } },
+            contentHash: "hash-quest",
+            parserVersion: "anime-game-data-quests-v0",
+          },
+        ],
+      }),
+    });
+    const search = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/quests?q=捕风&locale=zh-CN`,
+    });
+    expect(search.statusCode).toBe(200);
+    expect(search.json().preview).toBe(true);
+    expect(search.json().quests[0]).toMatchObject({
+      questKey: "quest/1001",
+      revision: "preview:7",
+      locale: "zh-CN",
+    });
+
+    const page1 = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/quests/1001?locale=zh-CN&limit=1`,
+    });
+    expect(page1.statusCode).toBe(200);
+    expect(page1.json().quest.dialogueNodes).toHaveLength(1);
+    expect(page1.json().quest.citations[0].dialogueNodeKey).toBe("quest/1001/dialog/1");
+    expect(page1.json().quest.nextCursor).toBeTruthy();
+
+    const page2 = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/quests/1001?locale=zh-CN&cursor=${encodeURIComponent(
+        page1.json().quest.nextCursor,
+      )}`,
+    });
+    expect(page2.statusCode).toBe(200);
+    expect(page2.json().quest.dialogueNodes[0].nodeKey).toBe("quest/1001/dialog/2");
+    await app.close();
+  });
+
   it("lists review issues across release candidates for the issue workbench", async () => {
     const candidateId = "00000000-0000-0000-0000-000000000040";
     const issueId = "00000000-0000-0000-0000-000000000042";

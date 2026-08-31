@@ -431,11 +431,24 @@ function normalizeClaims(value: unknown, defaultSourceKey: string): ClaimCandida
   });
 }
 
+function isPreNormalizedRecord(value: Record<string, unknown>): value is NormalizedRecord {
+  return (
+    typeof value.sourceKey === "string" &&
+    typeof value.recordType === "string" &&
+    typeof value.metadata === "object" &&
+    value.metadata !== null &&
+    !Array.isArray(value.metadata) &&
+    typeof value.contentHash === "string" &&
+    typeof value.parserVersion === "string"
+  );
+}
+
 export function normalizeRawRecord(
   raw: RawRecord,
   parserVersion = PARSER_VERSION,
 ): NormalizedRecord {
   const payload = raw.payload;
+  if (isPreNormalizedRecord(payload)) return payload;
   const resolvedParserVersion = stringValue(payload.parserVersion) ?? parserVersion;
   const body = stringValue(payload.body ?? payload.content ?? payload.text);
   const title = stringValue(payload.title ?? payload.name);

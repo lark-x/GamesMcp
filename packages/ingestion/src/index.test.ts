@@ -32,6 +32,58 @@ describe("ingestion", () => {
     expect(record.contentHash).toHaveLength(64);
   });
 
+  it("preserves pre-normalized structured records", () => {
+    const record = normalizeRawRecord({
+      sourceKey: "quest/1001/locale/zh-CN",
+      recordType: "document",
+      payload: {
+        sourceKey: "quest/1001/locale/zh-CN",
+        recordType: "document",
+        title: "捕风的异乡人",
+        body: "派蒙：我们到了。",
+        documentType: "archon_quest",
+        gameVersion: "7.0.0",
+        locale: "zh-CN",
+        segments: [
+          {
+            segmentKey: "quest/1001/dialog/1",
+            body: "派蒙：我们到了。",
+            start: 0,
+            end: 8,
+          },
+        ],
+        quest: {
+          questKey: "quest/1001",
+          mainQuestId: "1001",
+          questType: "archon_quest",
+          locale: "zh-CN",
+          completeness: "complete",
+          subquests: [],
+          dialogueNodes: [
+            {
+              nodeKey: "quest/1001/dialog/1",
+              nodeId: "1",
+              type: "dialogue",
+              body: "派蒙：我们到了。",
+              segmentKey: "quest/1001/dialog/1",
+              order: 0,
+            },
+          ],
+          dialogueEdges: [],
+        },
+        metadata: { provenance: { upstreamCommit: "commit" } },
+        contentHash: "a".repeat(64),
+        parserVersion: "anime-game-data-quests-v0",
+      },
+      metadata: { file: "quests.json", index: 0 },
+    });
+    expect(record.contentHash).toBe("a".repeat(64));
+    expect(record.locale).toBe("zh-CN");
+    expect(record.segments?.[0]?.segmentKey).toBe("quest/1001/dialog/1");
+    expect(record.quest?.dialogueNodes[0]?.nodeKey).toBe("quest/1001/dialog/1");
+    expect(record.metadata).toEqual({ provenance: { upstreamCommit: "commit" } });
+  });
+
   it("computes additions, modifications and deletion candidates", () => {
     const one = normalizeRawRecord({
       sourceKey: "a",

@@ -104,6 +104,84 @@ async function mockApi(page: import("@playwright/test").Page) {
       return route.fulfill({
         json: { sources: [{ id: "s1", name: "Fixture source", type: "local_json" }] },
       });
+    if (u.pathname === "/api/admin/previews/b1/quests")
+      return route.fulfill({
+        json: {
+          preview: true,
+          buildId: "b1",
+          candidateId: "c1",
+          quests: [
+            {
+              questKey: "quest/1000",
+              mainQuestId: "1000",
+              title: "浮世浮生千岩间",
+              type: "archon_quest",
+              chapter: "第一章",
+              series: "1001",
+              completeness: "complete",
+              locale: u.searchParams.get("locale") ?? "zh-CN",
+              documentId: "quest/1000/locale/zh-CN",
+              revision: "preview:1",
+              match: "preview_build",
+            },
+          ],
+        },
+      });
+    if (u.pathname === "/api/admin/previews/b1/quests/quest%2F1000")
+      return route.fulfill({
+        json: {
+          preview: true,
+          buildId: "b1",
+          candidateId: "c1",
+          quest: {
+            questKey: "quest/1000",
+            mainQuestId: "1000",
+            title: "浮世浮生千岩间",
+            type: "archon_quest",
+            chapter: "第一章",
+            series: "1001",
+            completeness: "complete",
+            locale: u.searchParams.get("locale") ?? "zh-CN",
+            documentId: "quest/1000/locale/zh-CN",
+            revision: "preview:1",
+            gameVersion: "7.0.0",
+            subquests: [
+              {
+                subquestKey: "quest/1000/subquest/100000",
+                subquestId: "100000",
+                title: "前往璃月港",
+                objective: "前往璃月港",
+                order: 1,
+                completeness: "complete",
+              },
+            ],
+            dialogueNodes: [
+              {
+                nodeKey: "quest/1000/dialog/100001",
+                nodeId: "100001",
+                type: "dialogue",
+                speakerName: "派蒙",
+                body: "预发布任务台词",
+                order: 1,
+              },
+            ],
+            dialogueEdges: [],
+            participants: [{ id: "e1", sourceKey: "npc/1005", name: "派蒙", type: "npc" }],
+            prerequisites: [],
+            citations: [
+              {
+                documentId: "quest/1000/locale/zh-CN",
+                locale: "zh-CN",
+                questKey: "quest/1000",
+                dialogueNodeKey: "quest/1000/dialog/100001",
+                revision: "preview:1",
+              },
+            ],
+            warnings: [],
+            nextCursor: null,
+          },
+        },
+      });
     if (
       u.pathname.includes("/previews/b1/") &&
       (u.pathname.endsWith("/records") ||
@@ -214,6 +292,16 @@ test("预览搜索过滤会发送 q 参数", async ({ page }) => {
   await page.goto("/#preview/c1");
   await page.getByLabel("搜索预发布资料").fill("amber");
   await expect.poll(() => requested).toContain("q=amber");
+});
+
+test("预发布查看页可切换到剧情任务并读取 Build 内对话", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/#preview/c1");
+  await page.getByRole("button", { name: "剧情任务" }).click();
+  await expect(page.getByText("当前 Build 任务")).toBeVisible();
+  await page.getByRole("button", { name: /浮世浮生千岩间/ }).click();
+  await expect(page.getByText("预发布任务台词")).toBeVisible();
+  await expect(page.getByText(/quest\/1000 · zh-CN · preview:1/)).toBeVisible();
 });
 
 test("从预发布详情报告问题并进入问题工作台", async ({ page }) => {

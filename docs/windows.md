@@ -61,6 +61,16 @@ pnpm data:convert:anime-quests -- --upstream=data/upstream/AnimeGameData --commi
 生成结果仍在 `data/` 下，默认不会提交到 GitHub。后续导入、Candidate、发布和 MCP
 读取需要 PostgreSQL 通过预检并完成迁移。
 
+导入生成的双语任务快照并自动生成预发布 Build：
+
+```powershell
+$env:ANIME_GAME_CATEGORY="quest"
+pnpm data:import:anime
+Remove-Item Env:\ANIME_GAME_CATEGORY
+```
+
+成功后，管理页面的“预发布与发布”会出现 `AnimeGameData zh-CN+en 7.0.0 · quest` 候选版本；打开预发布查看页后，分类选择“剧情任务”即可按当前 Build 浏览任务和分页对话。该预发布数据不会被 MCP 读取。
+
 ## 迁移已有数据
 
 建议保持 macOS 外置盘为原始副本，另外准备 NTFS 目标盘。迁移顺序如下：

@@ -163,6 +163,7 @@ type PreviewRecord = NormalizedRecord & {
 
 const previewCategories = [
   ["all", "全部"],
+  ["quests", "剧情任务"],
   ["characters", "角色"],
   ["weapons", "武器"],
   ["artifacts", "圣遗物"],
@@ -1807,6 +1808,41 @@ async function loadPreviewRecords(
   };
 }
 
+async function loadPreviewQuests(
+  buildId: string,
+  adminToken: string,
+  query = "",
+  locale = "zh-CN",
+  questType = "",
+): Promise<QuestSearchHit[]> {
+  const params = new URLSearchParams({ locale, limit: "50" });
+  if (query.trim()) params.set("q", query.trim());
+  if (questType) params.set("type", questType);
+  const payload = await api<{ quests: QuestSearchHit[] }>(
+    `/api/admin/previews/${buildId}/quests?${params.toString()}`,
+    {},
+    adminToken,
+  );
+  return payload.quests;
+}
+
+async function loadPreviewQuest(
+  buildId: string,
+  adminToken: string,
+  questId: string,
+  locale = "zh-CN",
+  cursor?: string | null,
+): Promise<QuestDetail> {
+  const params = new URLSearchParams({ locale, limit: "100" });
+  if (cursor) params.set("cursor", cursor);
+  const payload = await api<{ quest: QuestDetail }>(
+    `/api/admin/previews/${buildId}/quests/${encodeURIComponent(questId)}?${params.toString()}`,
+    {},
+    adminToken,
+  );
+  return payload.quest;
+}
+
 function PreviewBrowser({
   gameId,
   candidateId,
@@ -1824,6 +1860,11 @@ function PreviewBrowser({
   const [buildId, setBuildId] = useState(initialBuildId ?? "");
   const [records, setRecords] = useState<PreviewRecord[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
+  const [previewQuests, setPreviewQuests] = useState<QuestSearchHit[]>([]);
+  const [selectedPreviewQuest, setSelectedPreviewQuest] = useState<QuestDetail | null>(null);
+  const [questCursor, setQuestCursor] = useState<string | null | undefined>();
+  const [questLocale, setQuestLocale] = useState("zh-CN");
+  const [questType, setQuestType] = useState("");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | "entity" | "document">("all");
   const [category, setCategory] = useState("all");
@@ -1832,6 +1873,7 @@ function PreviewBrowser({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const showingQuestPreview = category === "quests";
 
   useEffect(() => {
     window.sessionStorage.setItem("gip-admin-token", adminToken);
@@ -1878,7 +1920,7 @@ function PreviewBrowser({
   }, [adminToken, candidateId, gameId, initialBuildId]);
 
   useEffect(() => {
-    if (!buildId) {
+    if (!buildId || showingQuestPreview) {
       setRecords([]);
       setSelectedKey("");
       return;
@@ -1913,7 +1955,38 @@ function PreviewBrowser({
     return () => {
       cancelled = true;
     };
-  }, [adminToken, buildId, category, page, query]);
+  }, [adminToken, buildId, category, page, query, showingQuestPreview]);
+
+  useEffect(() => {
+    if (!buildId || !showingQuestPreview) {
+      setPreviewQuests([]);
+      setSelectedPreviewQuest(null);
+      setQuestCursor(undefined);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    loadPreviewQuests(buildId, adminToken, query, questLocale, questType)
+      .then((nextQuests) => {
+        if (cancelled) return;
+        setPreviewQuests(nextQuests);
+        setSelectedPreviewQuest(null);
+        setQuestCursor(undefined);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setPreviewQuests([]);
+          setError(reason instanceof Error ? reason.message : "预发布任务加载失败");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adminToken, buildId, query, questLocale, questType, showingQuestPreview]);
 
   useEffect(() => setPage(0), [buildId, query, kind, category]);
 
@@ -1979,6 +2052,36 @@ function PreviewBrowser({
       return;
     }
     window.location.hash = adminHash("issues", params);
+  }
+
+  async function openPreviewQuest(hit: QuestSearchHit, nextCursor?: string | null) {
+    if (!buildId) return;
+    setError("");
+    setLoading(true);
+    try {
+      const quest = await loadPreviewQuest(
+        buildId,
+        adminToken,
+        hit.questKey,
+        questLocale,
+        nextCursor,
+      );
+      setSelectedPreviewQuest((current) =>
+        nextCursor && current
+          ? {
+              ...quest,
+              dialogueNodes: [...current.dialogueNodes, ...quest.dialogueNodes],
+              dialogueEdges: [...current.dialogueEdges, ...quest.dialogueEdges],
+              citations: [...current.citations, ...quest.citations],
+            }
+          : quest,
+      );
+      setQuestCursor(quest.nextCursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "预发布任务详情加载失败");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -2072,6 +2175,7 @@ function PreviewBrowser({
                   type="button"
                   key={value}
                   className={kind === value ? "is-active" : ""}
+                  disabled={showingQuestPreview}
                   onClick={() => setKind(value)}
                 >
                   {value === "all" ? "全部" : value === "entity" ? "实体" : "文档"}
@@ -2090,14 +2194,52 @@ function PreviewBrowser({
                 </button>
               ))}
             </div>
+            {showingQuestPreview && (
+              <div className="preview-category-filter" aria-label="预发布任务筛选">
+                <select
+                  aria-label="预发布任务语言"
+                  value={questLocale}
+                  onChange={(event) => setQuestLocale(event.target.value)}
+                >
+                  <option value="zh-CN">简体中文</option>
+                  <option value="en">English</option>
+                </select>
+                <select
+                  aria-label="预发布任务类型"
+                  value={questType}
+                  onChange={(event) => setQuestType(event.target.value)}
+                >
+                  {questTypeOptions.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <div className="preview-list-heading">
-            <b>当前 Build 资料</b>
-            <span>{visibleRecords.length} 条</span>
+            <b>{showingQuestPreview ? "当前 Build 任务" : "当前 Build 资料"}</b>
+            <span>{showingQuestPreview ? previewQuests.length : visibleRecords.length} 条</span>
           </div>
           <div className="preview-record-scroll" aria-busy={loading}>
             {loading ? (
               <div className="preview-empty">正在读取隔离的预发布数据…</div>
+            ) : showingQuestPreview ? (
+              previewQuests.map((quest) => (
+                <button
+                  type="button"
+                  key={`${quest.questKey}-${quest.locale}`}
+                  className={selectedPreviewQuest?.questKey === quest.questKey ? "is-active" : ""}
+                  onClick={() => void openPreviewQuest(quest)}
+                >
+                  <span>{questTypeLabel(quest.type)}</span>
+                  <strong>{quest.title}</strong>
+                  <small>
+                    {quest.questKey} · {quest.locale} · {completenessLabel(quest.completeness)}
+                  </small>
+                </button>
+              ))
             ) : (
               visibleRecords.map((record) => (
                 <button
@@ -2112,40 +2254,145 @@ function PreviewBrowser({
                 </button>
               ))
             )}
-            {!loading && !visibleRecords.length && (
+            {!loading && !showingQuestPreview && !visibleRecords.length && (
               <div className="preview-empty">
                 <b>没有符合条件的资料</b>
                 <span>可以更换 Build、类型或搜索条件。</span>
               </div>
             )}
+            {!loading && showingQuestPreview && !previewQuests.length && (
+              <div className="preview-empty">
+                <b>没有符合条件的任务</b>
+                <span>可以切换语言、任务类型或搜索条件。</span>
+              </div>
+            )}
           </div>
-          <nav className="preview-pagination" aria-label="预发布资料分页">
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={page === 0 || loading}
-              onClick={() => setPage((value) => Math.max(0, value - 1))}
-            >
-              上一页
-            </button>
-            <span>
-              {total
-                ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} / ${total}`
-                : "0 / 0"}
-            </span>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={loading || (page + 1) * pageSize >= total}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              下一页
-            </button>
-          </nav>
+          {!showingQuestPreview && (
+            <nav className="preview-pagination" aria-label="预发布资料分页">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={page === 0 || loading}
+                onClick={() => setPage((value) => Math.max(0, value - 1))}
+              >
+                上一页
+              </button>
+              <span>
+                {total
+                  ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} / ${total}`
+                  : "0 / 0"}
+              </span>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={loading || (page + 1) * pageSize >= total}
+                onClick={() => setPage((value) => value + 1)}
+              >
+                下一页
+              </button>
+            </nav>
+          )}
         </aside>
 
         <section className="preview-record-detail">
-          {selectedRecord ? (
+          {showingQuestPreview ? (
+            selectedPreviewQuest ? (
+              <>
+                <header>
+                  <div>
+                    <span className="eyebrow">QUEST PREVIEW</span>
+                    <h2>{selectedPreviewQuest.title}</h2>
+                    <small>
+                      {selectedPreviewQuest.questKey} · {selectedPreviewQuest.locale} ·{" "}
+                      {selectedPreviewQuest.revision}
+                    </small>
+                  </div>
+                </header>
+                <div className="preview-record-meta">
+                  <span>{questTypeLabel(selectedPreviewQuest.type)}</span>
+                  <span>{completenessLabel(selectedPreviewQuest.completeness)}</span>
+                  <span>本页对话：{selectedPreviewQuest.dialogueNodes.length}</span>
+                </div>
+                {selectedPreviewQuest.warnings.length > 0 && (
+                  <div className="inline-warning" role="status">
+                    <strong>读取警告</strong>
+                    <span>{selectedPreviewQuest.warnings.join("；")}</span>
+                  </div>
+                )}
+                <section className="quest-summary-grid">
+                  <div>
+                    <h3>子任务</h3>
+                    {selectedPreviewQuest.subquests.slice(0, 12).map((subquest) => (
+                      <div className="quest-subquest" key={subquest.subquestKey}>
+                        <strong>{subquest.title}</strong>
+                        <small>{subquest.objective ?? "无目标文本"}</small>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <h3>参与者与关系</h3>
+                    <p className="muted">
+                      {selectedPreviewQuest.participants.map((item) => item.name).join("、") ||
+                        "暂无"}
+                    </p>
+                    <p className="muted">
+                      前置任务：{selectedPreviewQuest.prerequisites.join("、") || "暂无"}
+                      ；本页分支边 {selectedPreviewQuest.dialogueEdges.length} 条
+                    </p>
+                  </div>
+                </section>
+                <h3>对话</h3>
+                <div className="quest-dialogue-list">
+                  {selectedPreviewQuest.dialogueNodes.map((node) => (
+                    <article
+                      id={node.nodeKey}
+                      className={`quest-dialogue-node ${node.type}`}
+                      key={node.nodeKey}
+                    >
+                      <header>
+                        <strong>
+                          {node.speakerName ?? (node.type === "narration" ? "旁白" : "未知")}
+                        </strong>
+                        <small>
+                          {node.type} · {node.nodeKey}
+                        </small>
+                      </header>
+                      <p>{node.body}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="quest-reader-actions">
+                  <button
+                    type="button"
+                    disabled={!questCursor || loading}
+                    onClick={() =>
+                      selectedPreviewQuest &&
+                      void openPreviewQuest(
+                        {
+                          questKey: selectedPreviewQuest.questKey,
+                          mainQuestId: selectedPreviewQuest.questKey.replace(/^quest\//, ""),
+                          title: selectedPreviewQuest.title,
+                          type: selectedPreviewQuest.type,
+                          completeness: selectedPreviewQuest.completeness,
+                          locale: selectedPreviewQuest.locale,
+                          documentId: selectedPreviewQuest.documentId,
+                          revision: selectedPreviewQuest.revision,
+                        },
+                        questCursor,
+                      )
+                    }
+                  >
+                    {questCursor ? "读取下一页对话" : "已到末尾"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="preview-empty preview-detail-empty">
+                <b>请选择一个预发布任务</b>
+                <span>这里会按当前 Build 的结构化任务图显示子任务、对话和分支。</span>
+              </div>
+            )
+          ) : selectedRecord ? (
             <>
               <header>
                 <div>
