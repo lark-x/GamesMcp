@@ -1509,6 +1509,9 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const first = batch.stagedRecords[0];
     const provenance = first ? safeProvenance(first.metadata, first.sourceKey) : undefined;
     const targetGameVersion = first?.gameVersion ?? provenance?.upstreamVersionLabel ?? "unknown";
+    const source = await this.getSource(batch.sourceId);
+    const upstreamReference = provenance?.upstreamCommit?.slice(0, 12);
+    const candidateName = `预发布 · ${source?.name ?? targetGameVersion}${upstreamReference ? ` · ${upstreamReference}` : ""}`;
     const existing = await this.db
       .select()
       .from(releaseCandidates)
@@ -1527,14 +1530,13 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       ["merged", "abandoned", "promoted", "withdrawn"].includes(existing[0]!.status)
     ) {
       const current = await this.getCurrentRevision(batch.gameId);
-      const slug = `${targetGameVersion}-${batch.id.slice(0, 8)}`.replace(/[^a-zA-Z0-9._-]+/g, "-");
       const [created] = await this.db
         .insert(releaseCandidates)
         .values({
           gameId: batch.gameId,
           sourceId: batch.sourceId,
           targetGameVersion,
-          name: `预发布 · ${slug}`,
+          name: candidateName,
           baseRevisionId: current?.id,
           importBatchIds: [batch.id],
           status: "draft",
@@ -1545,6 +1547,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       await this.db
         .update(releaseCandidates)
         .set({
+          name: candidateName,
           importBatchIds: [...existing[0]!.importBatchIds, batch.id],
           updatedAt: new Date(),
         })

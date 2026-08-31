@@ -697,7 +697,7 @@ describe("API", () => {
         gameId,
         normalizedRecords: [
           {
-            sourceKey: "entities/traveler",
+            sourceKey: "genshin-db/characters/traveler",
             recordType: "entity",
             entityType: "character",
             title: "旅行者",
@@ -733,6 +733,13 @@ describe("API", () => {
     expect(docRes.statusCode).toBe(200);
     expect(docRes.json().documents).toHaveLength(1);
     expect(docRes.json().documents[0].title).toBe("踏入提瓦特");
+    const filteredRes = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/records?category=characters&q=traveler&limit=50`,
+    });
+    expect(filteredRes.statusCode).toBe(200);
+    expect(filteredRes.json().total).toBe(1);
+    expect(filteredRes.json().records[0].sourceKey).toBe("genshin-db/characters/traveler");
     await app.close();
   });
 

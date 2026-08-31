@@ -1101,6 +1101,7 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         offset: z.coerce.number().int().min(0).default(0),
         q: z.string().optional(),
         kind: z.enum(["all", "entity", "document"]).default("all"),
+        category: z.string().trim().min(1).max(60).optional(),
       })
       .parse(request.query);
     const needle = query.q?.trim().toLocaleLowerCase();
@@ -1112,6 +1113,12 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         Boolean(record.entities?.length);
       const displayKind = isEntity ? "entity" : "document";
       if (query.kind !== "all" && query.kind !== displayKind) return [];
+      if (
+        query.category &&
+        query.category !== "all" &&
+        !record.sourceKey.startsWith(`genshin-db/${query.category}/`)
+      )
+        return [];
       const haystack = `${record.sourceKey} ${record.title ?? ""} ${record.body ?? ""} ${
         primaryEntity?.name ?? ""
       } ${(primaryEntity?.aliases ?? []).map((alias) => alias.value).join(" ")} ${JSON.stringify(

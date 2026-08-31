@@ -155,6 +155,25 @@ type PreviewRoute = {
 type PreviewRecord = NormalizedRecord & {
   displayKind: "entity" | "document";
   displayTitle: string;
+  properties?: Record<string, unknown>;
+  aliases?: Array<{ value: string }>;
+};
+
+const previewCategories = [
+  ["all", "全部"],
+  ["characters", "角色"],
+  ["weapons", "武器"],
+  ["artifacts", "圣遗物"],
+  ["materials", "材料"],
+  ["enemies", "敌人"],
+] as const;
+
+const previewPropertyLabels: Record<string, string> = {
+  rarity: "星级",
+  element: "元素",
+  weaponType: "武器类型",
+  region: "地区",
+  type: "类型",
 };
 
 function parsePreviewRoute(hash = window.location.hash): PreviewRoute | null {
@@ -1395,6 +1414,19 @@ function previewRecordsFromPayload(
             : undefined,
         gameVersion: typeof value.gameVersion === "string" ? value.gameVersion : undefined,
         metadata,
+        properties:
+          value.properties && typeof value.properties === "object"
+            ? (value.properties as Record<string, unknown>)
+            : {},
+        aliases: Array.isArray(value.aliases)
+          ? value.aliases.flatMap((alias) =>
+              alias &&
+              typeof alias === "object" &&
+              typeof (alias as { value?: unknown }).value === "string"
+                ? [{ value: String((alias as { value: string }).value) }]
+                : [],
+            )
+          : [],
         contentHash: String(value.contentHash ?? ""),
         parserVersion: String(value.parserVersion ?? "preview"),
         displayKind: kind,
@@ -1410,10 +1442,11 @@ async function loadPreviewRecords(
   offset: number,
   limit: number,
   query = "",
+  category = "all",
 ): Promise<{ records: PreviewRecord[]; total: number }> {
   const suffix = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
   const payload = await api<unknown>(
-    `/api/admin/previews/${buildId}/records?kind=all&limit=${limit}&offset=${offset}${suffix}`,
+    `/api/admin/previews/${buildId}/records?kind=all&category=${encodeURIComponent(category)}&limit=${limit}&offset=${offset}${suffix}`,
     {},
     adminToken,
   );
@@ -1442,6 +1475,7 @@ function PreviewBrowser({
   const [selectedKey, setSelectedKey] = useState("");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | "entity" | "document">("all");
+  const [category, setCategory] = useState("all");
   const [page, setPage] = useState(0);
   const pageSize = 50;
   const [total, setTotal] = useState(0);
@@ -1501,7 +1535,7 @@ function PreviewBrowser({
     let cancelled = false;
     setLoading(true);
     setError("");
-    loadPreviewRecords(buildId, adminToken, page * pageSize, pageSize, query)
+    loadPreviewRecords(buildId, adminToken, page * pageSize, pageSize, query, category)
       .then(({ records: nextRecords, total: nextTotal }) => {
         if (cancelled) return;
         setRecords(nextRecords);
@@ -1528,9 +1562,9 @@ function PreviewBrowser({
     return () => {
       cancelled = true;
     };
-  }, [adminToken, buildId, page, query]);
+  }, [adminToken, buildId, category, page, query]);
 
-  useEffect(() => setPage(0), [buildId, query, kind]);
+  useEffect(() => setPage(0), [buildId, query, kind, category]);
 
   const selectedBuild = candidate?.builds.find((build) => build.id === buildId);
   const visibleRecords = useMemo(() => {
@@ -1689,6 +1723,18 @@ function PreviewBrowser({
                 </button>
               ))}
             </div>
+            <div className="preview-category-filter" aria-label="预发布资料分类">
+              {previewCategories.map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={category === value ? "is-active" : ""}
+                  onClick={() => setCategory(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="preview-list-heading">
             <b>当前 Build 资料</b>
@@ -1773,6 +1819,29 @@ function PreviewBrowser({
                   <p className="muted">这条资料没有可显示的正文。</p>
                 )}
               </article>
+              {selectedRecord.properties && Object.keys(selectedRecord.properties).length > 0 && (
+                <section className="preview-properties" aria-label="条目属性">
+                  <h3>基础属性</h3>
+                  <dl>
+                    {Object.entries(selectedRecord.properties).map(([key, value]) => (
+                      <div key={key}>
+                        <dt>{previewPropertyLabels[key] ?? key}</dt>
+                        <dd>{Array.isArray(value) ? value.join("、") : String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
+              <section className="preview-source-card" aria-label="数据来源">
+                <h3>数据来源</h3>
+                <span>{String(selectedRecord.metadata.upstreamSource ?? "未标注")}</span>
+                <span>
+                  上游提交：
+                  {String(selectedRecord.metadata.upstreamCommit ?? "未标注").slice(0, 12)}
+                </span>
+                <span>语言：{String(selectedRecord.metadata.locale ?? "未标注")}</span>
+                <span>许可：{String(selectedRecord.metadata.codeLicense ?? "未标注")}</span>
+              </section>
               <footer className="preview-evidence-note">
                 <strong>发现内容错误？</strong>
                 <span>点击“报告问题”会定位对应审核项；提交修正时必须上传游戏内截图。</span>
