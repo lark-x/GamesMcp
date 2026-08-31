@@ -25,14 +25,17 @@ for (const [index, value] of records.entries()) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`record ${index} must be an object`);
   const record = value as Record<string, unknown>;
-  for (const field of ["sourceKey", "recordType", "title", "entityType", "properties", "metadata", "contentHash", "parserVersion"])
+  // The persisted converter contract calls this short-facts field `props`.
+  // `properties` is the normalized ingestion shape and is asserted below.
+  for (const field of ["sourceKey", "recordType", "title", "entityType", "metadata", "contentHash", "parserVersion"])
     if (!(field in record)) throw new Error(`record ${index} missing ${field}`);
   if (typeof record.sourceKey !== "string" || !record.sourceKey.startsWith("genshin-db/"))
     throw new Error(`record ${index} has invalid stable sourceKey`);
   if (stableKeys.has(record.sourceKey)) throw new Error(`duplicate stable sourceKey: ${record.sourceKey}`);
   stableKeys.add(record.sourceKey);
-  if (!record.properties || typeof record.properties !== "object" || Array.isArray(record.properties))
-    throw new Error(`record ${index} properties must be an object`);
+  const props = record.props ?? record.properties;
+  if (!props || typeof props !== "object" || Array.isArray(props))
+    throw new Error(`record ${index} props must be an object`);
   if (!record.metadata || typeof record.metadata !== "object" || Array.isArray(record.metadata))
     throw new Error(`record ${index} metadata must be an object`);
   const metadata = record.metadata as Record<string, unknown>;

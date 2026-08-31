@@ -28,7 +28,7 @@ pnpm dev
 
 | 阶段    | 状态   | 已交付内容                                                                                                                       |
 | ------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 | 已完成 | pnpm Monorepo、配置校验、PostgreSQL/pgvector Migration、API/Web/Worker、Docker Compose、CI、健康检查                             |
+| Phase 0 | 实现完成，待环境验收 | pnpm Monorepo、配置校验、PostgreSQL/pgvector Migration、API/Web/Worker、Docker Compose、CI、健康检查                             |
 | Phase 1 | 已完成 | 游戏能力、来源快照、实体/别名、文档/片段/提及、关系、Claim/Evidence、Dataset Revision                                            |
 | Phase 2 | 已完成 | JSON/Markdown/文本/目录导入、不可变快照、Worker 异步解析、标准化、校验、Diff、人工审核、原子发布、Tombstone 候选、回滚、Job 租约 |
 | Phase 3 | 已完成 | 名称/别名/中文文本/trigram/可选 pgvector 实体与片段检索、混合结果、调试字段、109 条黄金查询和评测 CLI                            |
@@ -36,7 +36,9 @@ pnpm dev
 | Phase 5 | 已完成 | 证据上下文、无 LLM 证据摘要、OpenAI-compatible LLM、引用标记校验、证据不足拒答                                                   |
 | Phase 6 | 已完成 | MCP stdio、7 个 Tool、4 个 Resource Template、参数/大小限制、客户端配置样例                                                      |
 | Phase 7 | 已完成 | 错误脱敏、API 限流、Worker readiness、备份恢复与操作手册、Caddy/Cloudflare Access 部署文档、分 profile 检索基准脚本              |
-| Phase 8 | 已完成 | 同名实体、独立 Revision、能力与检索跨游戏隔离的数据库集成测试；正式数据仍只注册《原神》                                          |
+| Phase 8 | 实现完成，待环境验收 | 同名实体、独立 Revision、能力与检索跨游戏隔离的数据库集成测试；正式数据仍只注册《原神》                                          |
+
+> 说明：状态描述代码与测试覆盖，不代表生产数据发布或端到端验收已完成。当前没有发布真实 Candidate；Amber 问题保持开放。
 
 ## AnimeGameData 首阶段状态
 
