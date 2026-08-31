@@ -436,6 +436,7 @@ export function normalizeRawRecord(
   parserVersion = PARSER_VERSION,
 ): NormalizedRecord {
   const payload = raw.payload;
+  const resolvedParserVersion = stringValue(payload.parserVersion) ?? parserVersion;
   const body = stringValue(payload.body ?? payload.content ?? payload.text);
   const title = stringValue(payload.title ?? payload.name);
   const entityType = stringValue(payload.entityType) as NormalizedRecord["entityType"] | undefined;
@@ -465,7 +466,7 @@ export function normalizeRawRecord(
     relationships: normalizeRelationships(payload.relationships ?? payload.relations),
     claims: normalizeClaims(payload.claims, raw.sourceKey),
     metadata: { ...raw.metadata, ...asObject(payload.metadata), parserRecordType: raw.recordType },
-    parserVersion,
+    parserVersion: resolvedParserVersion,
   };
   return { ...normalized, contentHash: sha256(JSON.stringify(normalized)) };
 }
