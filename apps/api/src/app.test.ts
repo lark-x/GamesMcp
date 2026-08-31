@@ -736,6 +736,52 @@ describe("API", () => {
     await app.close();
   });
 
+  it("lists review issues across release candidates for the issue workbench", async () => {
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const issueId = "00000000-0000-0000-0000-000000000042";
+    const now = new Date("2026-08-31T00:00:00Z");
+    const app = appWith({
+      listReleaseCandidates: async () => [
+        {
+          id: candidateId,
+          gameId,
+          name: "RC 1",
+          importBatchIds: [],
+          status: "preview_ready",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      listReviewIssues: async (requestedCandidateId) =>
+        requestedCandidateId === candidateId
+          ? [
+              {
+                id: issueId,
+                gameId,
+                candidateId,
+                canonicalKey: "character/amber",
+                kind: "content_error",
+                status: "open",
+                blocking: true,
+                fingerprint: "fingerprint",
+                summary: "文本错误",
+                details: {},
+                createdAt: now,
+                updatedAt: now,
+              },
+            ]
+          : [],
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/review-issues?status=open",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().issues).toHaveLength(1);
+    expect(response.json().issues[0]).toMatchObject({ id: issueId, candidateId });
+    await app.close();
+  });
+
   it("stores and hashes PNG screenshot evidence under the data directory", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "gip-api-verification-"));
     const itemId = "00000000-0000-0000-0000-000000000028";

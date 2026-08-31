@@ -766,6 +766,26 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     return repository.getReleaseCandidateReadiness(candidateId ?? "");
   });
 
+  app.get("/api/admin/review-issues", async (request) => {
+    if (!repository.listReleaseCandidates || !repository.listReviewIssues)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const query = z
+      .object({
+        gameId: z.string().uuid().optional(),
+        candidateId: z.string().uuid().optional(),
+        status: z.enum(["open", "resolved", "reopened"]).optional(),
+      })
+      .parse(request.query);
+    const candidateIds = query.candidateId
+      ? [query.candidateId]
+      : (await repository.listReleaseCandidates(query.gameId)).map((candidate) => candidate.id);
+    const issues = (await Promise.all(candidateIds.map((id) => repository.listReviewIssues!(id))))
+      .flat()
+      .filter((issue) => !query.status || issue.status === query.status)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+    return { issues };
+  });
+
   app.get("/api/admin/release-candidates/:candidateId/issues", async (request) => {
     if (!repository.listReviewIssues)
       throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
