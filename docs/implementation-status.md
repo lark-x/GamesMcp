@@ -63,7 +63,7 @@
 
 已实现内容包括任务合约、数据库结构化表、MCP `search_quests/get_quest`、REST 任务接口、Web 正式 Revision 剧情阅读器、真实字段转换器、fixture 和自动化测试。尚未完成真实数据库导入、Candidate 发布、游戏内抽样核验和预发布 Build 专用剧情阅读器实跑。
 
-当前本机数据库阻塞：`pnpm db:up` 被存储预检拒绝，因为系统盘剩余 9.23 GiB，小于安全门禁要求的 10 GiB。不要降低该门禁；应先清理系统盘或换到满足条件的机器后再跑数据库集成。
+当前本机数据库状态：已支持通过 `STORAGE_RUNTIME_VOLUME_PATH=/Volumes/Lark` 把 10 GiB 运行余量门禁切到外置 APFS 卷。`pnpm predev`、`pnpm db:up`、`pnpm db:migrate`、`pnpm db:seed`、PostgreSQL bind mount 写入/重启/恢复查询、`pnpm test:candidate-flow:local` 已在本机通过；PostgreSQL bind mount 仍位于 `DATA_DIR/postgres`。如果 Docker/OrbStack 实际运行缓存没有迁移到外置盘，不应设置该变量。
 
 ## 验收命令
 

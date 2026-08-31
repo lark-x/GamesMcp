@@ -6,7 +6,7 @@ Windows 原生运行和数据迁移见 [`windows.md`](./windows.md)。本手册�
 
 ## 一次完整运行
 
-1. 确认外置数据卷已连接。macOS 必须是挂载到 `/Volumes/Lark` 的 APFS 卷；Windows 原生运行建议使用 NTFS 或 ReFS 卷，并在 `.env` 中把 `DATA_DIR` 指向该卷。所有命令都会先执行 fail-closed 预检：卷类型不受支持、不可写、剩余空间小于 50 GiB，或系统卷剩余小于 10 GiB 时，流程直接停止，不会改用系统盘。
+1. 确认外置数据卷已连接。macOS 必须是挂载到 `/Volumes/Lark` 的 APFS 卷；Windows 原生运行建议使用 NTFS 或 ReFS 卷，并在 `.env` 中把 `DATA_DIR` 指向该卷。所有命令都会先执行 fail-closed 预检：卷类型不受支持、不可写、剩余空间小于 50 GiB 时，流程直接停止，不会改用系统盘。默认还会检查系统卷剩余至少 10 GiB；如果 Docker/运行缓存已经迁移到外置盘，可以设置 `STORAGE_RUNTIME_VOLUME_PATH`，改为检查该外置运行卷的 10 GiB 门禁。
 
 2. 确认上游目录和固定 Commit（Windows 可在 PowerShell 中运行 `git -C D:/GamesMcp/data/upstream/AnimeGameData rev-parse HEAD`）：
 

@@ -24,6 +24,7 @@ const config = resolveStorageConfig(
 assert.equal(config.externalVolumePath, DEFAULT_EXTERNAL_VOLUME_PATH);
 assert.equal(config.dataRoot, DEFAULT_DATA_ROOT);
 assert.equal(config.systemDataVolumePath, DEFAULT_SYSTEM_DATA_VOLUME_PATH);
+assert.equal(config.systemDataCheckKind, "system");
 assert.equal(config.externalMinFreeBytes, 0.5 * GIB);
 assert.equal(config.systemDataMinFreeBytes, 0.25 * GIB);
 
@@ -74,6 +75,7 @@ assert.equal(windowsConfig.platform, "win32");
 assert.equal(windowsConfig.dataRoot, "D:\\GamesMcp\\data");
 assert.equal(windowsConfig.externalVolumePath, "D:\\");
 assert.equal(windowsConfig.systemDataVolumePath, "C:\\");
+assert.equal(windowsConfig.systemDataCheckKind, "system");
 assert.equal(isPathInside(windowsConfig.dataRoot, windowsConfig.externalVolumePath, "win32"), true);
 assert.equal(
   isPathInside("C:\\Users\\someone\\data", windowsConfig.externalVolumePath, "win32"),
@@ -134,5 +136,39 @@ const windowsPreflight = await runStoragePreflight({
   realpathPath: async (path) => path,
 });
 assert.equal(windowsPreflight.ok, true);
+
+const externalRuntimeConfig = resolveStorageConfig(
+  {
+    DATA_DIR: "/Volumes/Lark/lark/GamesMcp/data",
+    STORAGE_RUNTIME_VOLUME_PATH: "/Volumes/Lark",
+    STORAGE_MIN_EXTERNAL_GIB: "1",
+    STORAGE_MIN_SYSTEM_DATA_GIB: "0.5",
+  },
+  "darwin",
+);
+assert.equal(externalRuntimeConfig.systemDataVolumePath, "/Volumes/Lark");
+assert.equal(externalRuntimeConfig.systemDataCheckKind, "external_runtime");
+const externalRuntimePreflight = await runStoragePreflight({
+  platform: "darwin",
+  env: {
+    DATA_DIR: "/Volumes/Lark/lark/GamesMcp/data",
+    STORAGE_RUNTIME_VOLUME_PATH: "/Volumes/Lark",
+    STORAGE_MIN_EXTERNAL_GIB: "1",
+    STORAGE_MIN_SYSTEM_DATA_GIB: "0.5",
+  },
+  runCommand: async (command) => {
+    if (command === "df")
+      return (
+        "Filesystem 1024-blocks Used Available Capacity Mounted on\n" +
+        "/dev/disk7s1 100000000 1 60000000 1% /Volumes/Lark\n"
+      );
+    if (command === "mount")
+      return "/dev/disk7s1 on /Volumes/Lark (apfs, local, nodev, nosuid, journaled)\n";
+    return "";
+  },
+  accessPath: async () => undefined,
+  realpathPath: async (path) => path,
+});
+assert.equal(externalRuntimePreflight.ok, true);
 
 console.log("check-data-storage helpers passed");

@@ -29,12 +29,19 @@ D:\GamesMcp\data\upstream\   # AnimeGameData checkout
    ```
 
    不要同时设置一个指向 `C:` 的 `DATA_ROOT`；如果存在旧配置，应删除或改成同一个 `D:` 数据根。
+   如果 Docker Desktop 的数据目录也已经迁移到 `D:`，可以同时设置：
+
+   ```text
+   STORAGE_RUNTIME_VOLUME_PATH=D:/
+   ```
+
+   这样预检会检查 `D:` 作为运行卷，而不是要求 `C:` 系统盘满足 10 GiB 运行余量。只有在 Docker/运行缓存确实已迁移时才应设置它。
 
 5. 确认 Docker Desktop 已启动，并允许访问仓库所在的 `D:` 盘。
 6. 在仓库目录执行 `pnpm install` 和 `pnpm build`，然后依次执行 `pnpm db:up`、`pnpm db:migrate`、`pnpm db:seed`。
 7. 执行 `pnpm dev`，Web 默认地址为 `http://127.0.0.1:4173`。
 
-启动前的存储预检会确认数据盘存在、文件系统为 NTFS 或 ReFS、目录可写、剩余空间不少于 50 GiB，并确认数据盘不是系统盘。检查失败时程序会停止，不会偷偷改用 `C:`。
+启动前的存储预检会确认数据盘存在、文件系统为 NTFS 或 ReFS、目录可写、剩余空间不少于 50 GiB，并确认数据盘不是系统盘。默认还会确认系统盘有至少 10 GiB 运行余量；设置 `STORAGE_RUNTIME_VOLUME_PATH` 后，改为检查指定运行卷。检查失败时程序会停止，不会偷偷改用 `C:`。
 
 ## 任务剧情转换
 

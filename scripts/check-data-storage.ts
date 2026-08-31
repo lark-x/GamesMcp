@@ -120,6 +120,11 @@ const systemDataPathEnvironmentVariables = [
   "SYSTEM_DATA_VOLUME_PATH",
 ] as const;
 
+const runtimeVolumePathEnvironmentVariables = [
+  "STORAGE_RUNTIME_VOLUME_PATH",
+  "DOCKER_DATA_VOLUME_PATH",
+] as const;
+
 const dataRootEnvironmentVariables = ["STORAGE_DATA_ROOT", "DATA_ROOT", "DATA_DIR"] as const;
 
 export type Environment = Record<string, string | undefined>;
@@ -129,6 +134,7 @@ export type StorageConfig = {
   externalVolumePath: string;
   dataRoot: string;
   systemDataVolumePath: string;
+  systemDataCheckKind: "system" | "external_runtime";
   externalMinFreeGiB: number;
   externalMinFreeBytes: number;
   systemDataMinFreeGiB: number;
@@ -258,8 +264,10 @@ export function resolveStorageConfig(
           : pathApi(platform).parse(dataRoot).root),
     platform,
   );
+  const runtimeVolumePath = firstEnvironmentValue(env, runtimeVolumePathEnvironmentVariables);
   const systemDataVolumePath = normalizePathForPlatform(
-    firstEnvironmentValue(env, systemDataPathEnvironmentVariables) ??
+    runtimeVolumePath ??
+      firstEnvironmentValue(env, systemDataPathEnvironmentVariables) ??
       (platform === "darwin"
         ? DEFAULT_SYSTEM_DATA_VOLUME_PATH
         : platform === "win32"
@@ -286,6 +294,7 @@ export function resolveStorageConfig(
     externalVolumePath,
     dataRoot,
     systemDataVolumePath,
+    systemDataCheckKind: runtimeVolumePath ? "external_runtime" : "system",
     externalMinFreeGiB: externalThreshold.gib,
     externalMinFreeBytes: externalThreshold.bytes,
     systemDataMinFreeGiB: systemThreshold.gib,
@@ -639,9 +648,14 @@ export async function inspectVolume(
 export function validateVolume(
   inspection: VolumeInspection,
   config: StorageConfig,
-  kind: "external" | "system",
+  kind: "external" | "system" | "external_runtime",
 ): string[] {
-  const label = kind === "external" ? "external volume" : "system data volume";
+  const label =
+    kind === "external"
+      ? "external volume"
+      : kind === "external_runtime"
+        ? "external runtime volume"
+        : "system data volume";
   const expectedPath =
     kind === "external" ? config.externalVolumePath : config.systemDataVolumePath;
   const minimumBytes =
@@ -655,7 +669,7 @@ export function validateVolume(
   )
     errors.push(`${label} is not mounted at ${expectedPath}; refusing any system-disk fallback`);
 
-  if (kind === "external") {
+  if (kind === "external" || kind === "external_runtime") {
     const filesystem = inspection.filesystem?.toLowerCase();
     const allowed =
       config.platform === "darwin"
@@ -741,14 +755,15 @@ export async function runStoragePreflight(
   ]);
   const errors = [
     ...validateVolume(external, config, "external"),
-    ...validateVolume(systemData, config, "system"),
+    ...validateVolume(systemData, config, config.systemDataCheckKind),
   ];
 
   if (
-    samePath(config.externalVolumePath, config.systemDataVolumePath, platform) ||
-    (platform !== "linux" &&
-      (isPathInside(config.externalVolumePath, config.systemDataVolumePath, platform) ||
-        isPathInside(config.systemDataVolumePath, config.externalVolumePath, platform)))
+    config.systemDataCheckKind === "system" &&
+    (samePath(config.externalVolumePath, config.systemDataVolumePath, platform) ||
+      (platform !== "linux" &&
+        (isPathInside(config.externalVolumePath, config.systemDataVolumePath, platform) ||
+          isPathInside(config.systemDataVolumePath, config.externalVolumePath, platform))))
   )
     errors.push(`external and system data volume paths overlap; refusing a system-disk fallback`);
 
@@ -777,7 +792,9 @@ function printResult(result: StoragePreflightResult): void {
       `  数据磁盘：${result.external.filesystem?.toUpperCase() ?? "未知文件系统"}，可用 ${formatGiB(result.external.availableBytes)}（最低要求 ${result.config.externalMinFreeGiB} GiB）`,
     );
     console.log(
-      `  系统磁盘：可用 ${formatGiB(result.systemData.availableBytes)}（最低要求 ${result.config.systemDataMinFreeGiB} GiB）`,
+      `  ${
+        result.config.systemDataCheckKind === "external_runtime" ? "运行磁盘" : "系统磁盘"
+      }：可用 ${formatGiB(result.systemData.availableBytes)}（最低要求 ${result.config.systemDataMinFreeGiB} GiB）`,
     );
     return;
   }

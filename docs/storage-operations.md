@@ -28,7 +28,17 @@ Compose 使用 `.env` 中 `DATA_DIR` 提供的 host path（仓库位于默认目
 node --import tsx scripts/check-data-storage.ts
 ```
 
-macOS 预检会确认 `/Volumes/Lark` 是实际挂载点且文件系统为 APFS；Windows 预检通过 PowerShell 确认数据盘为 NTFS 或 ReFS。两者都会确认数据根可写，并检查可用空间：外置卷至少 50 GiB，系统卷至少 10 GiB。默认阈值可为测试覆盖：
+macOS 预检会确认 `/Volumes/Lark` 是实际挂载点且文件系统为 APFS；Windows 预检通过 PowerShell 确认数据盘为 NTFS 或 ReFS。两者都会确认数据根可写，并检查可用空间：外置数据卷至少 50 GiB。
+
+默认还会检查系统数据卷至少 10 GiB，因为 Docker Desktop、OrbStack、Node 缓存或临时构建缓存通常仍会消耗系统盘。如果你已经把 Docker Desktop/OrbStack 的数据目录或运行缓存迁移到外置盘，可以在 `.env` 中设置运行卷：
+
+```bash
+STORAGE_RUNTIME_VOLUME_PATH=/Volumes/Lark
+```
+
+设置后，预检会把这块外置运行卷当作 10 GiB 门禁对象，并显示为“运行磁盘”；它不再要求系统数据卷满足 10 GiB。该路径仍必须是受支持的持久化文件系统，macOS 为 APFS，Windows 为 NTFS/ReFS。
+
+默认阈值可为测试覆盖：
 
 ```bash
 STORAGE_MIN_EXTERNAL_GIB=0 \
@@ -36,7 +46,7 @@ STORAGE_MIN_SYSTEM_DATA_GIB=0 \
 node --import tsx scripts/check-data-storage.ts
 ```
 
-阈值低于默认值只适用于隔离测试；生产预检应使用默认值。路径覆盖（`STORAGE_EXTERNAL_VOLUME_PATH`、`STORAGE_SYSTEM_DATA_VOLUME_PATH`、`STORAGE_DATA_ROOT`）也只能用于测试，并且数据根必须仍是外置卷的子目录。
+阈值低于默认值只适用于隔离测试；生产预检应使用默认值。路径覆盖（`STORAGE_EXTERNAL_VOLUME_PATH`、`STORAGE_SYSTEM_DATA_VOLUME_PATH`、`STORAGE_DATA_ROOT`）也只能用于测试，并且数据根必须仍是外置卷的子目录。`STORAGE_RUNTIME_VOLUME_PATH` 是生产可用配置，但前提是 Docker/运行缓存确实已经迁移到该外置卷；否则它只会改变预检口径，不能减少系统盘实际占用。
 
 预检失败时退出码为非零，并明确拒绝系统盘 fallback；脚本不会创建替代目录、改写 Compose 配置或启动容器。任何失败都应先修复挂载、权限或空间问题，再继续。
 
