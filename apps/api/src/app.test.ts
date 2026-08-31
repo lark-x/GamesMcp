@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -454,9 +453,9 @@ describe("API", () => {
         checkedLocale: "zh-CN",
       },
     });
-    expect(run.statusCode).toBe(200);
-    expect(response.statusCode).toBe(200);
-    expect(update).toMatchObject({ itemId, status: "exact_match", channel: "game_client" });
+    expect(run.statusCode).toBe(410);
+    expect(response.statusCode).toBe(410);
+    expect(update).toBeUndefined();
     await app.close();
   });
 
@@ -575,6 +574,332 @@ describe("API", () => {
     await app.close();
   });
 
+  it("exposes the release-candidate build and promotion contract", async () => {
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const buildId = "00000000-0000-0000-0000-000000000041";
+    const batchId = "00000000-0000-0000-0000-000000000042";
+    const checksum = "a".repeat(64);
+    const now = new Date("2026-08-30T00:00:00Z");
+    const candidate = {
+      id: candidateId,
+      gameId,
+      name: "RC 7.0",
+      baseRevisionId: revisionId,
+      importBatchIds: [batchId],
+      status: "preview_ready" as const,
+      currentBuildId: buildId,
+      promotedRevisionId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    let promotionInput: Record<string, unknown> | undefined;
+    const app = appWith({
+      createReleaseCandidate: async (input) => ({ ...candidate, ...input, status: "draft" }),
+      listReleaseCandidates: async () => [candidate],
+      getReleaseCandidate: async () => ({ ...candidate, builds: [] }),
+      buildReleaseCandidate: async () => ({
+        id: buildId,
+        candidateId,
+        buildNumber: 1,
+        status: "ready",
+        contentChecksum: checksum,
+        recordCount: 12,
+        createdAt: now,
+      }),
+      getReleaseCandidateReadiness: async () => ({
+        candidateId,
+        buildId,
+        contentChecksum: checksum,
+        ready: true,
+        blockingReasons: [],
+      }),
+      promoteReleaseCandidate: async (input) => {
+        promotionInput = input;
+        return {
+          id: revisionId,
+          gameId,
+          revisionNumber: 2,
+          sourceBatchId: batchId,
+          releaseNote: input.releaseNote,
+          publishedAt: now,
+          isCurrent: true,
+          indexStatus: "pending",
+          lifecycleStatus: "published",
+        };
+      },
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/admin/release-candidates",
+      payload: { gameId, name: "RC 7.0", importBatchIds: [batchId] },
+    });
+    const built = await app.inject({
+      method: "POST",
+      url: `/api/admin/release-candidates/${candidateId}/builds`,
+    });
+    const readiness = await app.inject({
+      method: "GET",
+      url: `/api/admin/release-candidates/${candidateId}/readiness`,
+    });
+    const promoted = await app.inject({
+      method: "POST",
+      url: `/api/admin/release-candidates/${candidateId}/promote`,
+      payload: {
+        buildId,
+        contentChecksum: checksum,
+        expectedCurrentRevisionId: revisionId,
+        releaseNote: "release 7.0",
+        idempotencyKey: "promote-rc-7.0-build-1",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(built.statusCode).toBe(201);
+    expect(readiness.json().ready).toBe(true);
+    expect(promoted.statusCode).toBe(200);
+    expect(promotionInput).toMatchObject({ candidateId, buildId, contentChecksum: checksum });
+    await app.close();
+  });
+
+  it("validates candidate checksums before invoking promotion", async () => {
+    let called = false;
+    const app = appWith({
+      promoteReleaseCandidate: async () => {
+        called = true;
+        throw new Error("must not be called");
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/release-candidates/00000000-0000-0000-0000-000000000040/promote",
+      payload: {
+        buildId: "00000000-0000-0000-0000-000000000041",
+        contentChecksum: "not-a-checksum",
+        idempotencyKey: "promote-invalid",
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(called).toBe(false);
+    await app.close();
+  });
+
+  it("creates a patch and immediately returns the immutable successor Build", async () => {
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const issueId = "00000000-0000-0000-0000-000000000042";
+    const buildId = "00000000-0000-0000-0000-000000000043";
+    const now = new Date("2026-08-31T00:00:00Z");
+    let built = false;
+    const app = appWith({
+      createCandidatePatch: async (input) => ({
+        id: "00000000-0000-0000-0000-000000000044",
+        candidateId,
+        issueId: input.issueId,
+        canonicalKey: input.canonicalKey,
+        action: input.action,
+        createdAt: now,
+      }),
+      buildReleaseCandidate: async () => {
+        built = true;
+        return {
+          id: buildId,
+          candidateId,
+          buildNumber: 2,
+          status: "ready",
+          contentChecksum: "a".repeat(64),
+          recordCount: 1,
+          createdAt: now,
+        };
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/admin/release-candidates/${candidateId}/patches`,
+      payload: {
+        issueId,
+        canonicalKey: "character/amber",
+        action: "use_incoming",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().patch.issueId).toBe(issueId);
+    expect(response.json().build).toMatchObject({ id: buildId, buildNumber: 2 });
+    expect(built).toBe(true);
+    await app.close();
+  });
+
+  it("serves isolated preview entities and documents for a candidate build", async () => {
+    const buildId = "00000000-0000-0000-0000-000000000041";
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const app = appWith({
+      getReleaseCandidateBuild: async () => ({
+        id: buildId,
+        candidateId,
+        buildNumber: 1,
+        status: "ready",
+        contentChecksum: "a".repeat(64),
+        recordCount: 2,
+        createdAt: new Date("2026-08-30T00:00:00Z"),
+        gameId,
+        normalizedRecords: [
+          {
+            sourceKey: "genshin-db/characters/traveler",
+            recordType: "entity",
+            entityType: "character",
+            title: "旅行者",
+            body: "从世界之外来到提瓦特的旅行者。",
+            metadata: { element: "variable" },
+            contentHash: "hash-traveler",
+            parserVersion: "1.0.0",
+          },
+          {
+            sourceKey: "lore/first-steps",
+            recordType: "document",
+            documentType: "lore",
+            title: "踏入提瓦特",
+            body: "旅行者在提瓦特寻找失散的血亲。",
+            metadata: {},
+            contentHash: "hash-lore",
+            parserVersion: "1.0.0",
+          },
+        ],
+      }),
+    });
+    const entityRes = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/entities`,
+    });
+    const docRes = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/documents`,
+    });
+    expect(entityRes.statusCode).toBe(200);
+    expect(entityRes.json().entities).toHaveLength(1);
+    expect(entityRes.json().entities[0].name).toBe("旅行者");
+    expect(docRes.statusCode).toBe(200);
+    expect(docRes.json().documents).toHaveLength(1);
+    expect(docRes.json().documents[0].title).toBe("踏入提瓦特");
+    const filteredRes = await app.inject({
+      method: "GET",
+      url: `/api/admin/previews/${buildId}/records?category=characters&q=traveler&limit=50`,
+    });
+    expect(filteredRes.statusCode).toBe(200);
+    expect(filteredRes.json().total).toBe(1);
+    expect(filteredRes.json().records[0].sourceKey).toBe("genshin-db/characters/traveler");
+    await app.close();
+  });
+
+  it("lists review issues across release candidates for the issue workbench", async () => {
+    const candidateId = "00000000-0000-0000-0000-000000000040";
+    const issueId = "00000000-0000-0000-0000-000000000042";
+    const now = new Date("2026-08-31T00:00:00Z");
+    const app = appWith({
+      listReleaseCandidates: async () => [
+        {
+          id: candidateId,
+          gameId,
+          name: "RC 1",
+          importBatchIds: [],
+          status: "preview_ready",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      listReviewIssues: async (requestedCandidateId) =>
+        requestedCandidateId === candidateId
+          ? [
+              {
+                id: issueId,
+                gameId,
+                candidateId,
+                canonicalKey: "character/amber",
+                kind: "content_error",
+                status: "open",
+                blocking: true,
+                fingerprint: "fingerprint",
+                summary: "文本错误",
+                details: {},
+                createdAt: now,
+                updatedAt: now,
+              },
+            ]
+          : [],
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/review-issues?status=open",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().issues).toHaveLength(1);
+    expect(response.json().issues[0]).toMatchObject({ id: issueId, candidateId });
+    await app.close();
+  });
+
+  it("accepts review screenshots only with provenance metadata and matching image bytes", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "gip-review-evidence-"));
+    const issueId = "00000000-0000-0000-0000-000000000042";
+    let stored: Record<string, unknown> | undefined;
+    const app = appWith(
+      {
+        addReviewEvidence: async (input) => {
+          stored = input;
+          return {
+            id: "00000000-0000-0000-0000-000000000045",
+            ...input,
+            createdAt: new Date("2026-08-31T00:00:00Z"),
+          };
+        },
+      },
+      { ...testConfig, dataDir },
+    );
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const missingNote = await app.inject({
+      method: "POST",
+      url: `/api/admin/review-issues/${issueId}/evidence`,
+      payload: {
+        mimeType: "image/png",
+        dataBase64: png,
+        checkedGameVersion: "7.0",
+        checkedLocale: "zh-CN",
+        note: "",
+      },
+    });
+    expect(missingNote.statusCode).toBe(400);
+    const mismatchedBytes = await app.inject({
+      method: "POST",
+      url: `/api/admin/review-issues/${issueId}/evidence`,
+      payload: {
+        mimeType: "image/jpeg",
+        dataBase64: png,
+        checkedGameVersion: "7.0",
+        checkedLocale: "zh-CN",
+        note: "客户端角色详情截图",
+      },
+    });
+    expect(mismatchedBytes.statusCode).toBe(400);
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/admin/review-issues/${issueId}/evidence`,
+      payload: {
+        mimeType: "image/png",
+        dataBase64: png,
+        checkedGameVersion: "7.0",
+        checkedLocale: "zh-CN",
+        note: "客户端角色详情截图",
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(stored).toMatchObject({
+      issueId,
+      mimeType: "image/png",
+      checkedGameVersion: "7.0",
+      checkedLocale: "zh-CN",
+      note: "客户端角色详情截图",
+    });
+    expect(String(stored?.sha256)).toMatch(/^[a-f0-9]{64}$/);
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
   it("stores and hashes PNG screenshot evidence under the data directory", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "gip-api-verification-"));
     const itemId = "00000000-0000-0000-0000-000000000028";
@@ -594,14 +919,9 @@ describe("API", () => {
       url: `/api/admin/verification/items/${itemId}/screenshots`,
       payload: { mimeType: "image/png", dataBase64: png },
     });
-    expect(response.statusCode).toBe(200);
-    expect(screenshot).toMatchObject({ itemId, mimeType: "image/png" });
-    const body = Buffer.from(png, "base64");
-    const expectedHash = createHash("sha256").update(body).digest("hex");
-    expect(response.json().sha256).toBe(expectedHash);
-    const saved = await readFile(join(dataDir, response.json().relativePath));
-    expect(saved.equals(body)).toBe(true);
-    expect(response.json().relativePath).toBe(`verification/${itemId}/${expectedHash}.png`);
+    expect(response.statusCode).toBe(410);
+    expect(screenshot).toBeUndefined();
+    expect(response.json().error.code).toBe("legacy_verification_retired");
     await app.close();
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -619,17 +939,12 @@ describe("API", () => {
     );
     const png =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-    const body = Buffer.from(png, "base64");
-    const expectedHash = createHash("sha256").update(body).digest("hex");
     const response = await app.inject({
       method: "POST",
       url: `/api/admin/verification/items/${itemId}/screenshots`,
       payload: { mimeType: "image/png", dataBase64: png },
     });
-    expect(response.statusCode).toBe(500);
-    await expect(
-      readFile(join(dataDir, "verification", itemId, `${expectedHash}.png`)),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(response.statusCode).toBe(410);
     await app.close();
     await rm(dataDir, { recursive: true, force: true });
   });

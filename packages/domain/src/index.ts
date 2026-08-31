@@ -131,9 +131,85 @@ export type DatasetRevision = {
   revisionNumber: number;
   sourceBatchId: Id;
   releaseNote?: string | null;
+  lifecycleStatus: "preparing" | "preview" | "published" | "retired" | "failed";
   publishedAt: Date;
   isCurrent: boolean;
   indexStatus: "pending" | "ready" | "stale" | "failed";
+  manifestId?: Id | null;
+  sourceId?: Id | null;
+  gameVersion?: string | null;
+  locale?: string | null;
+  archivedReason?: string | null;
+  archivedAt?: Date | null;
+};
+
+export type ContentObject = {
+  contentHash: string;
+  recordType: string;
+  schemaVersion: string;
+  payload: Record<string, unknown>;
+  byteLength: number;
+  createdAt: Date;
+};
+export type DatasetManifest = {
+  id: Id;
+  gameId: Id;
+  kind: "preview" | "published";
+  baseRevisionId?: Id | null;
+  rootHash: string;
+  recordCount: number;
+  createdAt: Date;
+};
+export type DatasetManifestEntry = { manifestId: Id; canonicalKey: string; contentHash: string };
+export type ReviewIssue = {
+  id: Id;
+  gameId: Id;
+  candidateId: Id;
+  detectedBuildId?: Id | null;
+  canonicalKey: string;
+  fieldPath?: string | null;
+  kind: string;
+  status: "open" | "resolved" | "reopened";
+  blocking: boolean;
+  fingerprint: string;
+  summary: string;
+  details: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  resolvedAt?: Date | null;
+};
+export type CandidatePatch = {
+  id: Id;
+  candidateId: Id;
+  issueId?: Id | null;
+  canonicalKey: string;
+  fieldPath?: string | null;
+  action: string;
+  manualValue?: unknown;
+  createdAt: Date;
+};
+export type ReviewEvidence = {
+  id: Id;
+  issueId: Id;
+  relativePath: string;
+  sha256: string;
+  bytes: number;
+  mimeType: string;
+  checkedGameVersion: string;
+  checkedLocale: string;
+  note: string;
+  createdAt: Date;
+};
+export type ReleaseCandidateCheck = {
+  id: Id;
+  candidateId: Id;
+  buildId?: Id | null;
+  checkType: string;
+  status: "pending" | "passed" | "blocked" | "failed";
+  message?: string | null;
+  details: Record<string, unknown>;
+  retryable: boolean;
+  checkedAt?: Date | null;
 };
 
 export type Entity = EntitySummary & {
@@ -306,6 +382,75 @@ export type VerificationRun = {
   createdAt: Date;
 };
 
+export type VerificationScreenshot = {
+  id: Id;
+  itemId: Id;
+  relativePath: string;
+  sha256: string;
+  bytes: number;
+  mimeType: string;
+  createdAt: Date;
+};
+export type PublishReadiness = {
+  ready: boolean;
+  blockingReasons: Array<{ code: string; message: string; details?: unknown }>;
+};
+
+export type ReleaseCandidateStatus =
+  "draft" | "preview_ready" | "ready_to_promote" | "promoted" | "withdrawn" | "failed";
+
+/**
+ * A release candidate is administrative state only. It is deliberately not a
+ * DatasetRevision, so preview data can never become visible to MCP readers by
+ * merely creating or building a candidate.
+ */
+export type ReleaseCandidate = {
+  id: Id;
+  gameId: Id;
+  name: string;
+  baseRevisionId?: Id | null;
+  importBatchIds: Id[];
+  status: ReleaseCandidateStatus;
+  currentBuildId?: Id | null;
+  promotedRevisionId?: Id | null;
+  createdAt: Date;
+  updatedAt: Date;
+  sourceId?: Id | null;
+  targetGameVersion?: string | null;
+  archivedReason?: string | null;
+  archivedAt?: Date | null;
+};
+
+export type ReleaseCandidateBuild = {
+  id: Id;
+  candidateId: Id;
+  buildNumber: number;
+  status: "ready" | "failed";
+  contentChecksum: string;
+  recordCount: number;
+  createdAt: Date;
+  manifestId?: Id | null;
+  importBatchId?: Id | null;
+  baseRevisionId?: Id | null;
+  buildKind?: string;
+  indexStatus?: string;
+  sourceId?: Id | null;
+  targetGameVersion?: string | null;
+  locale?: string | null;
+  archivedReason?: string | null;
+  archivedAt?: Date | null;
+};
+
+export type ReleaseCandidateDetail = ReleaseCandidate & {
+  builds: ReleaseCandidateBuild[];
+};
+
+export type ReleaseCandidateReadiness = PublishReadiness & {
+  candidateId: Id;
+  buildId?: Id;
+  contentChecksum?: string;
+};
+
 export type RepositoryHealth = {
   database: "up" | "down";
   currentRevision: "available" | "missing";
@@ -313,6 +458,7 @@ export type RepositoryHealth = {
 };
 
 export type EmbeddingInput = {
+  revisionId: Id;
   targetType: "entity" | "segment";
   targetId: Id;
   text: string;
@@ -439,7 +585,84 @@ export interface KnowledgeRepository {
     note: string | undefined,
     confirmedDeletionKeys: string[],
   ): Promise<ImportBatch>;
-  publishImport(batchId: Id, releaseNote?: string): Promise<DatasetRevision>;
+  publishImport(
+    batchId: Id,
+    releaseNote?: string,
+    options?: { skipManualVerification?: boolean },
+  ): Promise<DatasetRevision>;
+  materializeRevision?(revisionId: Id): Promise<void>;
+  getPublishReadiness?(batchId: Id): Promise<PublishReadiness>;
+  createReleaseCandidate?(input: {
+    gameId: Id;
+    name: string;
+    importBatchIds: Id[];
+  }): Promise<ReleaseCandidate>;
+  listReleaseCandidates?(gameId?: Id): Promise<ReleaseCandidate[]>;
+  getReleaseCandidate?(candidateId: Id): Promise<ReleaseCandidateDetail | null>;
+  buildReleaseCandidate?(candidateId: Id): Promise<ReleaseCandidateBuild>;
+  getReleaseCandidateBuild?(buildId: Id): Promise<
+    | (ReleaseCandidateBuild & {
+        gameId: Id;
+        normalizedRecords: NormalizedRecord[];
+      })
+    | null
+  >;
+  getReleaseCandidateReadiness?(candidateId: Id): Promise<ReleaseCandidateReadiness>;
+  promoteReleaseCandidate?(input: {
+    candidateId: Id;
+    buildId: Id;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: Id | null;
+    releaseNote?: string;
+    idempotencyKey: string;
+  }): Promise<DatasetRevision>;
+  finalizeActivation?(input: {
+    revisionId: Id;
+    candidateId: Id;
+    buildId: Id;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: Id | null;
+  }): Promise<DatasetRevision>;
+  setRevisionIndexStatus?(
+    revisionId: Id,
+    status: "ready" | "failed",
+    error?: string,
+  ): Promise<void>;
+  finalizeActivation?(input: {
+    revisionId: Id;
+    candidateId: Id;
+    buildId: Id;
+    contentChecksum: string;
+    expectedCurrentRevisionId?: Id | null;
+  }): Promise<DatasetRevision>;
+  listReviewIssues?(candidateId: Id): Promise<ReviewIssue[]>;
+  reportReviewIssue?(input: {
+    candidateId: Id;
+    buildId: Id;
+    canonicalKey: string;
+    fieldPath?: string;
+    summary: string;
+    details?: Record<string, unknown>;
+  }): Promise<ReviewIssue>;
+  getReviewIssue?(issueId: Id): Promise<ReviewIssue | null>;
+  resolveReviewIssue?(issueId: Id, action?: string, note?: string): Promise<ReviewIssue>;
+  reopenReviewIssue?(issueId: Id): Promise<ReviewIssue>;
+  listCandidatePatches?(candidateId: Id): Promise<CandidatePatch[]>;
+  createCandidatePatch?(input: {
+    candidateId: Id;
+    issueId?: Id;
+    canonicalKey: string;
+    fieldPath?: string;
+    action: string;
+    manualValue?: unknown;
+    expectedBaseHash?: string;
+    expectedIncomingHash?: string;
+  }): Promise<CandidatePatch>;
+  listReviewEvidence?(issueId: Id): Promise<ReviewEvidence[]>;
+  addReviewEvidence?(input: Omit<ReviewEvidence, "id" | "createdAt">): Promise<ReviewEvidence>;
+  getReviewEvidence?(evidenceId: Id): Promise<ReviewEvidence | null>;
+  deleteReviewEvidence?(evidenceId: Id): Promise<ReviewEvidence | null>;
+  listReleaseCandidateChecks?(candidateId: Id): Promise<ReleaseCandidateCheck[]>;
   ensureAcquisitionReview?(batchId: Id): Promise<void>;
   getVerificationRun?(batchId: Id): Promise<VerificationRun | null>;
   updateVerificationItem?(input: {
@@ -457,6 +680,9 @@ export interface KnowledgeRepository {
     bytes: number;
     mimeType: string;
   }): Promise<void>;
+  listVerificationScreenshots?(itemId: Id): Promise<VerificationScreenshot[]>;
+  getVerificationScreenshot?(screenshotId: Id): Promise<VerificationScreenshot | null>;
+  deleteVerificationScreenshot?(screenshotId: Id): Promise<VerificationScreenshot>;
   reconcileSourceObservationConflicts?(gameId?: Id): Promise<{
     checked: number;
     repairedRaw: number;

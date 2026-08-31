@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import type {
   Citation,
   DocumentSummary,
@@ -13,11 +14,27 @@ import type {
   ConflictDetail,
   DocumentDetail,
   EntityDetail,
-  VerificationItem,
-  VerificationRun,
+  NormalizedRecord,
+  ReleaseCandidate,
+  ReleaseCandidateBuild,
+  ReleaseCandidateDetail,
+  ReleaseCandidateReadiness,
   VerificationChannel,
-  VerificationStatus,
+  VerificationScreenshot,
 } from "@gip/domain";
+import { AdminRoutes } from "./admin/AdminRoutes.js";
+import { VersionSwitcher } from "./versions/VersionSwitcher.js";
+type VerificationStatus = string;
+type VerificationItem = {
+  id: string;
+  status?: string;
+  category?: string;
+  canonicalKey?: string;
+  screenshots?: VerificationScreenshot[];
+  [key: string]: unknown;
+};
+type VerificationRun = { status: string; items: VerificationItem[]; [key: string]: unknown };
+type VerificationScreenshotView = VerificationScreenshot & { id: string; url?: string };
 
 type GameResponse = { games: GameSummary[] };
 type Overview = {
@@ -57,7 +74,9 @@ type AdminRevision = {
   id: string;
   gameId: string;
   revisionNumber: number;
+  sourceBatchId?: string;
   releaseNote?: string | null;
+  publishedAt?: string | Date;
   isCurrent: boolean;
   indexStatus: string;
 };
@@ -114,6 +133,78 @@ type AcquisitionStatus = {
     afterCurrentBatches?: boolean;
   } | null;
 };
+type PublishReadiness = {
+  ready: boolean;
+  blockingReasons?: Array<string | { code: string; message: string; details?: unknown }>;
+  verification?: { status?: string; itemCount?: number } | null;
+  [key: string]: unknown;
+};
+
+type ReleaseGateState = "passed" | "blocked" | "checking" | "unavailable";
+type ReleaseGateItem = {
+  label: string;
+  detail: string;
+  state: ReleaseGateState;
+  action?: { label: string; view: "review" | "verify" | "release" };
+};
+
+type PreviewRoute = {
+  candidateId: string;
+  buildId?: string;
+};
+
+type PreviewRecord = NormalizedRecord & {
+  displayKind: "entity" | "document";
+  displayTitle: string;
+  properties?: Record<string, unknown>;
+  aliases?: Array<{ value: string }>;
+};
+
+const previewCategories = [
+  ["all", "全部"],
+  ["characters", "角色"],
+  ["weapons", "武器"],
+  ["artifacts", "圣遗物"],
+  ["materials", "材料"],
+  ["enemies", "敌人"],
+] as const;
+
+const previewPropertyLabels: Record<string, string> = {
+  rarity: "星级",
+  element: "元素",
+  weaponType: "武器类型",
+  region: "地区",
+  type: "类型",
+};
+
+function parsePreviewRoute(hash = window.location.hash): PreviewRoute | null {
+  const match = /^#preview\/([^/?]+)(?:\/([^/?]+))?/.exec(hash);
+  if (!match?.[1]) return null;
+  return {
+    candidateId: decodeURIComponent(match[1]),
+    buildId: match[2] ? decodeURIComponent(match[2]) : undefined,
+  };
+}
+
+function adminHash(view: "intake" | "preview" | "issues" | "history", params?: URLSearchParams) {
+  const query = params?.toString();
+  return `admin/${view}${query ? `?${query}` : ""}`;
+}
+
+const verificationStatusLabels: Record<VerificationStatus, string> = {
+  not_checked: "未核验",
+  exact_match: "逐字一致",
+  formatting_only: "仅格式差异",
+  mismatch: "内容不一致",
+  unavailable_due_unlock: "尚未解锁",
+  version_mismatch: "版本不一致",
+};
+
+const verificationCategoryLabels: Record<string, string> = {
+  book: "书籍",
+  character_story: "角色故事",
+  item_description: "物品描述",
+};
 
 function reportMayBeStale(status: AcquisitionStatus, batches: AdminBatch[]): boolean {
   const generatedAt = status.generatedAt ? Date.parse(status.generatedAt) : Number.NaN;
@@ -149,7 +240,96 @@ function revisionQuery(revisionId?: string): string {
   return revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : "";
 }
 
+type ArchiveCategory = {
+  id: string;
+  label: string;
+  description: string;
+  marker: string;
+  types: Array<"entity" | "document" | "segment">;
+  entityType?: string;
+  documentType?: string;
+};
+
+const ARCHIVE_CATEGORIES: ArchiveCategory[] = [
+  {
+    id: "all",
+    label: "全部资料",
+    description: "浏览所有已发布内容",
+    marker: "全",
+    types: ["entity", "document", "segment"],
+  },
+  {
+    id: "characters",
+    label: "角色",
+    description: "人物、别名与关系",
+    marker: "角",
+    types: ["entity"],
+    entityType: "character",
+  },
+  {
+    id: "regions",
+    label: "地区与地点",
+    description: "国家、区域与场景",
+    marker: "域",
+    types: ["entity"],
+    entityType: "region",
+  },
+  {
+    id: "factions",
+    label: "阵营",
+    description: "组织与势力关系",
+    marker: "阵",
+    types: ["entity"],
+    entityType: "faction",
+  },
+  {
+    id: "quests",
+    label: "任务剧情",
+    description: "任务文本与剧情片段",
+    marker: "任",
+    types: ["document", "segment"],
+    documentType: "archon_quest",
+  },
+  {
+    id: "books",
+    label: "书籍与设定",
+    description: "书籍、物品和世界设定",
+    marker: "书",
+    types: ["document", "segment"],
+    documentType: "book",
+  },
+];
+
+function entityTypeLabel(type: string): string {
+  return (
+    {
+      character: "角色",
+      faction: "阵营",
+      region: "地区",
+      location: "地点",
+      quest: "任务",
+      concept: "概念",
+    }[type] ?? type
+  );
+}
+
+function documentTypeLabel(type: string): string {
+  return (
+    {
+      lore: "世界设定",
+      archon_quest: "魔神任务",
+      story_quest: "传说任务",
+      world_quest: "世界任务",
+      book: "书籍",
+    }[type] ?? type
+  );
+}
+
 export function App() {
+  const [isAdminRoute, setIsAdminRoute] = useState(() =>
+    window.location.hash.startsWith("#admin/"),
+  );
+  const [previewRoute, setPreviewRoute] = useState<PreviewRoute | null>(() => parsePreviewRoute());
   const [games, setGames] = useState<GameSummary[]>([]);
   const [gameId, setGameId] = useState("");
   const [query, setQuery] = useState("");
@@ -160,8 +340,12 @@ export function App() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<EvidenceAnswer | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState("");
+  const [activeCategory, setActiveCategory] = useState("all");
   const [types, setTypes] = useState<Array<"entity" | "document" | "segment">>([
     "entity",
     "document",
@@ -170,6 +354,8 @@ export function App() {
   const [entityType, setEntityType] = useState("");
   const [documentType, setDocumentType] = useState("");
   const [gameVersion, setGameVersion] = useState("");
+  const [selectedRevision, setSelectedRevision] = useState<string | undefined>();
+  const [selectedRevisionLabel, setSelectedRevisionLabel] = useState<string | undefined>();
   const [sourceId, setSourceId] = useState("");
   const [overview, setOverview] = useState<Overview>({
     ready: null,
@@ -192,6 +378,8 @@ export function App() {
   useEffect(() => {
     if (!gameId) return;
     let cancelled = false;
+    setOverviewLoading(true);
+    setOverviewError("");
     setSearch(null);
     setEntity(null);
     setDocument(null);
@@ -199,33 +387,48 @@ export function App() {
     setActiveSegmentId(undefined);
     setSourceId("");
     const load = async () => {
-      const [ready, documents, entities, sources] = await Promise.all([
-        api<Overview["ready"]>("/api/ready").catch(() => null),
+      const [ready, documents, entities, sources] = await Promise.allSettled([
+        api<Overview["ready"]>("/api/ready"),
         api<{ documents: DocumentSummary[] }>(
-          `/api/games/${gameId}/documents?limit=6&offset=0`,
-        ).catch(() => ({ documents: [] })),
-        api<{ entities: EntitySummary[] }>(`/api/games/${gameId}/entities?limit=6&offset=0`).catch(
-          () => ({ entities: [] }),
+          `/api/games/${gameId}/documents?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`,
         ),
-        api<Pick<Overview, "sources">>(`/api/games/${gameId}/sources`).catch(() => ({
-          sources: [],
-        })),
+        api<{ entities: EntitySummary[] }>(
+          `/api/games/${gameId}/entities?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`,
+        ),
+        api<Pick<Overview, "sources">>(`/api/games/${gameId}/sources`),
       ]);
-      if (!cancelled)
-        setOverview({
-          ready,
-          documents: documents.documents,
-          entities: entities.entities,
-          sources: sources.sources,
-        });
+      if (cancelled) return;
+      setOverview({
+        ready: ready.status === "fulfilled" ? ready.value : null,
+        documents: documents.status === "fulfilled" ? documents.value.documents : [],
+        entities: entities.status === "fulfilled" ? entities.value.entities : [],
+        sources: sources.status === "fulfilled" ? sources.value.sources : [],
+      });
+      if ([ready, documents, entities, sources].some((result) => result.status === "rejected")) {
+        setOverviewError("部分资料暂时无法加载，可以继续检索或稍后刷新页面。");
+      }
+      setOverviewLoading(false);
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [gameId]);
+  }, [gameId, selectedRevision]);
+  useEffect(() => {
+    const onHashChange = () => {
+      setIsAdminRoute(window.location.hash.startsWith("#admin/"));
+      setPreviewRoute(parsePreviewRoute());
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   const currentGame = useMemo(() => games.find((game) => game.id === gameId), [games, gameId]);
+  const visibleRevisionLabel =
+    selectedRevisionLabel ??
+    overview.ready?.currentRevision ??
+    currentGame?.currentRevision ??
+    "未发布";
 
   function clearError() {
     setError("");
@@ -235,7 +438,7 @@ export function App() {
     event.preventDefault();
     if (!gameId || !query.trim()) return;
     setError("");
-    setBusy(true);
+    setSearching(true);
     setEntity(null);
     setDocument(null);
     try {
@@ -245,6 +448,7 @@ export function App() {
         entityTypes: entityType ? [entityType] : undefined,
         documentTypes: documentType ? [documentType] : undefined,
         gameVersions: gameVersion ? [gameVersion] : undefined,
+        revisionId: selectedRevision,
         sourceId: sourceId || undefined,
         limit: 20,
       };
@@ -257,14 +461,14 @@ export function App() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "检索失败");
     } finally {
-      setBusy(false);
+      setSearching(false);
     }
   }
 
-  async function openEntity(id: string, revisionId?: string) {
+  async function openEntity(id: string, revisionId: string | undefined = selectedRevision) {
     if (!gameId) return;
     setError("");
-    setBusy(true);
+    setDetailLoading(true);
     try {
       const result = await api<{ entity: EntityDetail }>(
         `/api/games/${gameId}/entities/${id}${revisionQuery(revisionId)}`,
@@ -275,14 +479,18 @@ export function App() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "实体加载失败");
     } finally {
-      setBusy(false);
+      setDetailLoading(false);
     }
   }
 
-  async function openDocument(id: string, revisionId?: string, segmentId?: string) {
+  async function openDocument(
+    id: string,
+    revisionId: string | undefined = selectedRevision,
+    segmentId?: string,
+  ) {
     if (!gameId) return;
     setError("");
-    setBusy(true);
+    setDetailLoading(true);
     try {
       const result = await api<{ document: DocumentDetail }>(
         `/api/games/${gameId}/documents/${id}${revisionQuery(revisionId)}`,
@@ -293,361 +501,626 @@ export function App() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "文档加载失败");
     } finally {
-      setBusy(false);
+      setDetailLoading(false);
     }
   }
 
   function openCitation(citation: Citation) {
-    void openDocument(citation.documentId, undefined, citation.segmentId);
+    void openDocument(citation.documentId, selectedRevision, citation.segmentId);
   }
 
   async function ask(event: FormEvent) {
     event.preventDefault();
     if (!gameId || !question.trim()) return;
     setError("");
-    setBusy(true);
+    setAsking(true);
     try {
       setAnswer(
         await api<EvidenceAnswer>(`/api/games/${gameId}/qa`, {
           method: "POST",
-          body: JSON.stringify({ question, maxEvidence: 8 }),
+          body: JSON.stringify({ question, maxEvidence: 8, revisionId: selectedRevision }),
         }),
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "问答失败");
     } finally {
-      setBusy(false);
+      setAsking(false);
     }
   }
 
   function toggleType(type: "entity" | "document" | "segment") {
+    setActiveCategory("custom");
     setTypes((current) =>
       current.includes(type) ? current.filter((item) => item !== type) : [...current, type],
     );
   }
 
+  function selectArchiveCategory(category: ArchiveCategory) {
+    setActiveCategory(category.id);
+    setTypes(category.types);
+    setEntityType(category.entityType ?? "");
+    setDocumentType(category.documentType ?? "");
+  }
+
+  if (previewRoute && gameId) {
+    return (
+      <PreviewBrowser
+        gameId={gameId}
+        candidateId={previewRoute.candidateId}
+        initialBuildId={previewRoute.buildId}
+      />
+    );
+  }
+
+  if (isAdminRoute) return <AdminRoutes initialRoute={window.location.hash.slice(1)} />;
+
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <span className="eyebrow">GAME INTELLIGENCE PLATFORM</span>
-          <h1>原神叙事知识库</h1>
+    <div className="app-shell library-shell">
+      <header className="topbar library-topbar">
+        <div className="library-brand">
+          <span className="brand-mark" aria-hidden="true">
+            GI
+          </span>
+          <div>
+            <span className="eyebrow">TEYVAT ARCHIVE</span>
+            <h1>原神叙事知识库</h1>
+          </div>
         </div>
-        <div className="game-picker">
-          <label htmlFor="game">当前游戏</label>
-          <select id="game" value={gameId} onChange={(event) => setGameId(event.target.value)}>
-            {games.map((game) => (
-              <option key={game.id} value={game.id}>
-                {game.name} · {game.currentRevision ?? "未发布"}
-              </option>
-            ))}
-          </select>
+        <div className="library-top-actions">
+          <span className="library-data-state">
+            <i aria-hidden="true" />
+            {overview.ready?.searchIndex === "ready" ? "资料索引可用" : "正在检查资料索引"}
+          </span>
+          <div className="game-picker">
+            <label htmlFor="game">正式版本</label>
+            <select id="game" value={gameId} onChange={(event) => setGameId(event.target.value)}>
+              {games.map((game) => (
+                <option key={game.id} value={game.id}>
+                  {game.name} · {game.currentRevision ?? "未发布"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <VersionSwitcher
+            onPreview={(candidateId, buildId) => {
+              window.location.hash = `preview/${candidateId}${buildId ? `/${buildId}` : ""}`;
+            }}
+            onRevision={(revisionId, revision) => {
+              setSelectedRevision(revisionId);
+              setSelectedRevisionLabel(
+                revision?.revisionNumber
+                  ? `r${revision.revisionNumber}`
+                  : (revision?.version ?? revisionId),
+              );
+              setSearch(null);
+              setEntity(null);
+              setDocument(null);
+            }}
+            onCurrent={() => {
+              setSelectedRevision(undefined);
+              setSelectedRevisionLabel(undefined);
+              setSearch(null);
+              setEntity(null);
+              setDocument(null);
+            }}
+          />
+          <button
+            className="preview-entry-button"
+            onClick={() => (window.location.hash = "admin/preview")}
+          >
+            管理预发布
+          </button>
         </div>
       </header>
-      <main>
+      <main className="library-page">
         {error && (
           <div className="error-banner" role="alert">
             <span>{error}</span>
             <button onClick={clearError}>关闭</button>
           </div>
         )}
-        <section className="hero-card">
-          <div>
-            <span className="eyebrow">EVIDENCE-FIRST LORE SEARCH</span>
-            <h2>从原文出发，查清一个名字、一段剧情或一条关系。</h2>
-            <p>结果带有命中原因、来源和数据版本；问答只引用可定位的片段，没有证据时会明确拒答。</p>
+        <section className="library-search-card" aria-labelledby="library-search-title">
+          <div className="search-heading">
+            <span className="eyebrow">ARCHIVE SEARCH</span>
+            <h2 id="library-search-title">查找提瓦特资料</h2>
+            <p>搜索角色、地区、书籍或剧情原文，结果会标明来源与数据版本。</p>
           </div>
           <form className="search-form" onSubmit={runSearch}>
+            <span className="search-symbol" aria-hidden="true">
+              ⌕
+            </span>
             <input
               aria-label="搜索知识库"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索角色、任务、地区或剧情关键词"
             />
-            <button type="submit" disabled={busy || !gameId}>
-              检索
+            <button type="submit" disabled={searching || !gameId || !query.trim() || !types.length}>
+              {searching ? "检索中…" : "检索"}
             </button>
           </form>
         </section>
 
-        <section className="overview-grid" aria-label="知识库概览">
-          <OverviewCard
-            label="当前版本"
-            value={overview.ready?.currentRevision ?? currentGame?.currentRevision ?? "未发布"}
-          />
-          <OverviewCard label="索引状态" value={overview.ready?.searchIndex ?? "检查中"} />
-          <OverviewCard label="最近文档" value={`${overview.documents.length} 篇`} />
-          <OverviewCard label="常用实体" value={`${overview.entities.length} 个`} />
-        </section>
+        <div className="archive-layout">
+          <aside className="archive-sidebar" aria-label="资料分类和筛选">
+            <section className="sidebar-section">
+              <div className="sidebar-heading">
+                <span>资料分类</span>
+                {activeCategory === "custom" && <small>自定义</small>}
+              </div>
+              <nav className="category-nav" aria-label="资料分类">
+                {ARCHIVE_CATEGORIES.map((category) => (
+                  <button
+                    type="button"
+                    key={category.id}
+                    className={activeCategory === category.id ? "is-active" : ""}
+                    onClick={() => selectArchiveCategory(category)}
+                    aria-pressed={activeCategory === category.id}
+                  >
+                    <span className="category-marker" aria-hidden="true">
+                      {category.marker}
+                    </span>
+                    <span>
+                      <strong>{category.label}</strong>
+                      <small>{category.description}</small>
+                    </span>
+                  </button>
+                ))}
+              </nav>
+            </section>
 
-        <section className="panel filters-panel">
-          <div className="panel-title">
-            <div>
-              <span className="eyebrow">SEARCH SCOPE</span>
-              <h2>检索范围与过滤</h2>
-            </div>
-            <span className="muted small">命中类型可多选</span>
-          </div>
-          <div className="filter-row">
-            {(["entity", "document", "segment"] as const).map((type) => (
-              <label className="check-chip" key={type}>
-                <input
-                  type="checkbox"
-                  checked={types.includes(type)}
-                  onChange={() => toggleType(type)}
-                />
-                {type === "entity" ? "实体" : type === "document" ? "文档" : "片段"}
+            <section className="sidebar-section filter-section">
+              <div className="sidebar-heading">
+                <span>结果范围</span>
+                <small>可多选</small>
+              </div>
+              <div className="scope-options">
+                {(["entity", "document", "segment"] as const).map((type) => (
+                  <label className="scope-option" key={type}>
+                    <input
+                      type="checkbox"
+                      checked={types.includes(type)}
+                      onChange={() => toggleType(type)}
+                    />
+                    <span>
+                      {type === "entity" ? "实体" : type === "document" ? "文档" : "原文片段"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <label className="filter-field">
+                <span>实体类型</span>
+                <select
+                  aria-label="实体类型"
+                  value={entityType}
+                  onChange={(event) => {
+                    setActiveCategory("custom");
+                    setEntityType(event.target.value);
+                  }}
+                >
+                  <option value="">全部实体类型</option>
+                  <option value="character">角色</option>
+                  <option value="faction">阵营</option>
+                  <option value="region">地区</option>
+                  <option value="location">地点</option>
+                  <option value="quest">任务</option>
+                  <option value="concept">概念</option>
+                </select>
               </label>
-            ))}
-            <select
-              aria-label="实体类型"
-              value={entityType}
-              onChange={(event) => setEntityType(event.target.value)}
-            >
-              <option value="">全部实体类型</option>
-              <option value="character">角色</option>
-              <option value="faction">阵营</option>
-              <option value="region">地区</option>
-              <option value="location">地点</option>
-              <option value="quest">任务</option>
-              <option value="concept">概念</option>
-            </select>
-            <select
-              aria-label="文档类型"
-              value={documentType}
-              onChange={(event) => setDocumentType(event.target.value)}
-            >
-              <option value="">全部文档类型</option>
-              <option value="lore">设定</option>
-              <option value="archon_quest">魔神任务</option>
-              <option value="story_quest">传说任务</option>
-              <option value="world_quest">世界任务</option>
-              <option value="book">书籍</option>
-            </select>
-            <input
-              aria-label="游戏版本过滤"
-              value={gameVersion}
-              onChange={(event) => setGameVersion(event.target.value)}
-              placeholder="游戏版本，例如 5.0"
-            />
-            <select
-              aria-label="来源过滤"
-              value={sourceId}
-              onChange={(event) => setSourceId(event.target.value)}
-            >
-              <option value="">全部来源</option>
-              {overview.sources.map((source) => (
-                <option value={source.id} key={source.id}>
-                  {source.name} · {source.type}
-                </option>
-              ))}
-            </select>
-          </div>
-        </section>
+              <label className="filter-field">
+                <span>文档类型</span>
+                <select
+                  aria-label="文档类型"
+                  value={documentType}
+                  onChange={(event) => {
+                    setActiveCategory("custom");
+                    setDocumentType(event.target.value);
+                  }}
+                >
+                  <option value="">全部文档类型</option>
+                  <option value="lore">设定</option>
+                  <option value="archon_quest">魔神任务</option>
+                  <option value="story_quest">传说任务</option>
+                  <option value="world_quest">世界任务</option>
+                  <option value="book">书籍</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>游戏版本</span>
+                <input
+                  aria-label="游戏版本过滤"
+                  value={gameVersion}
+                  onChange={(event) => setGameVersion(event.target.value)}
+                  placeholder="例如 5.0"
+                />
+              </label>
+              <label className="filter-field">
+                <span>资料来源</span>
+                <select
+                  aria-label="来源过滤"
+                  value={sourceId}
+                  onChange={(event) => setSourceId(event.target.value)}
+                >
+                  <option value="">全部来源</option>
+                  {overview.sources.map((source) => (
+                    <option value={source.id} key={source.id}>
+                      {source.name} · {source.type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
 
-        <div className="content-grid">
-          <section className="panel results-panel">
-            <div className="panel-title">
-              <h2>检索结果</h2>
-              {search && (
-                <span>
-                  {search.revision || "暂无版本"} · {search.indexStatus}
-                </span>
+            <section className="sidebar-version" aria-label="资料版本">
+              <span>当前资料版本</span>
+              <strong>{visibleRevisionLabel}</strong>
+              <small>{overview.ready?.searchIndex ?? "索引状态检查中"}</small>
+            </section>
+          </aside>
+
+          <div className="archive-content">
+            <div className="archive-toolbar">
+              <div>
+                <span className="eyebrow">{search ? "SEARCH RESULTS" : "ARCHIVE HOME"}</span>
+                <h2>{search ? `“${query}”的检索结果` : "资料总览"}</h2>
+              </div>
+              {search ? (
+                <div className="result-summary" aria-label="检索结果统计">
+                  <span>{search.entities.length} 实体</span>
+                  <span>{search.documents.length} 文档</span>
+                  <span>{search.segments.length} 片段</span>
+                </div>
+              ) : (
+                <span className="archive-revision">{visibleRevisionLabel}</span>
               )}
             </div>
-            {!search && (
-              <div className="result-empty">
-                <p className="muted">输入关键词开始检索。</p>
-                <div className="quick-links">
-                  {overview.entities.slice(0, 4).map((item) => (
-                    <button
-                      key={item.id}
-                      className="quick-link"
-                      onClick={() => openEntity(item.id)}
-                    >
-                      {item.name}
-                    </button>
-                  ))}
+
+            {overviewError && !search && (
+              <div className="inline-warning" role="status">
+                <strong>部分内容未加载</strong>
+                <span>{overviewError}</span>
+              </div>
+            )}
+
+            <div className="archive-workspace">
+              <section className="archive-feed" aria-busy={searching || overviewLoading}>
+                {searching || (!search && overviewLoading) ? (
+                  <LoadingCards />
+                ) : search ? (
+                  <SearchResultFeed
+                    search={search}
+                    onEntity={openEntity}
+                    onDocument={openDocument}
+                  />
+                ) : (
+                  <ArchiveHome
+                    documents={overview.documents}
+                    entities={overview.entities}
+                    onEntity={openEntity}
+                    onDocument={openDocument}
+                    onCategory={selectArchiveCategory}
+                  />
+                )}
+              </section>
+
+              <section className="panel detail-panel archive-detail" aria-busy={detailLoading}>
+                {detailLoading ? (
+                  <div className="detail-loading" role="status">
+                    <span className="loading-orb" aria-hidden="true" />
+                    <strong>正在读取完整资料</strong>
+                    <small>正在加载正文、出处和关联内容…</small>
+                  </div>
+                ) : entity ? (
+                  <EntityView
+                    entity={entity}
+                    onEntity={openEntity}
+                    onDocument={openDocument}
+                    onCitation={openCitation}
+                  />
+                ) : document ? (
+                  <DocumentView
+                    document={document}
+                    activeSegmentId={activeSegmentId}
+                    onEntity={openEntity}
+                    onCopy={copyCitationText}
+                  />
+                ) : (
+                  <div className="empty-detail">
+                    <span className="detail-mark">✦</span>
+                    <h2>在这里阅读完整资料</h2>
+                    <p>从左侧结果选择实体、文档或原文片段，即可查看正文、出处、版本和关联内容。</p>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <section className="panel qa-panel archive-qa">
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">EVIDENCE QA</span>
+                  <h2>基于资料提问</h2>
                 </div>
+                <span className="muted">答案附带可定位的原文引用</span>
               </div>
-            )}
-            {search && (
-              <>
-                <ResultGroup title="实体" count={search.entities.length}>
-                  {search.entities.map((item) => (
-                    <button
-                      className="result-item"
-                      key={item.id}
-                      onClick={() => openEntity(item.id, search.revisionId)}
-                    >
-                      <strong>{item.name}</strong>
-                      <span>
-                        {item.type} · {item.match ?? "相关"} · {item.aliases.join("、") || "无别名"}
-                      </span>
-                      <small>
-                        {item.sourceKey ?? "无来源键"} · Dataset Revision{" "}
-                        {item.revision ?? search.revision}
-                      </small>
-                    </button>
-                  ))}
-                </ResultGroup>
-                <ResultGroup title="文档" count={search.documents.length}>
-                  {search.documents.map((item) => (
-                    <button
-                      className="result-item"
-                      key={item.id}
-                      onClick={() => openDocument(item.id, search.revisionId)}
-                    >
-                      <strong>{item.title}</strong>
-                      <span>
-                        {item.type} · {item.match ?? "相关"} · {item.gameVersion ?? "版本未知"}
-                      </span>
-                      <small>
-                        {item.sourceKey ?? "无来源键"} · source version {item.sourceVersion ?? "—"}{" "}
-                        · Dataset Revision {item.revision ?? search.revision}
-                      </small>
-                    </button>
-                  ))}
-                </ResultGroup>
-                <ResultGroup title="片段" count={search.segments.length}>
-                  {search.segments.map((item) => (
-                    <button
-                      className="result-item"
-                      key={item.segmentId}
-                      onClick={() => openDocument(item.id, search.revisionId, item.segmentId)}
-                    >
-                      <strong>{item.title}</strong>
-                      <span>{item.snippet}</span>
-                      <small>
-                        {item.match ?? "相关"} · source version {item.sourceVersion ?? "—"} ·{" "}
-                        Dataset Revision {item.revision ?? search.revision}
-                      </small>
-                    </button>
-                  ))}
-                </ResultGroup>
-              </>
-            )}
-          </section>
-          <section className="panel detail-panel">
-            {entity ? (
-              <EntityView
-                entity={entity}
-                onEntity={openEntity}
-                onDocument={openDocument}
-                onCitation={openCitation}
-              />
-            ) : document ? (
-              <DocumentView
-                document={document}
-                activeSegmentId={activeSegmentId}
-                onEntity={openEntity}
-                onCopy={copyCitationText}
-              />
-            ) : (
-              <div className="empty-detail">
-                <span className="detail-mark">✦</span>
-                <h2>选择一个结果</h2>
-                <p>实体页展示关系、文档和主张；文档页支持片段级引用、复制和实体跳转。</p>
-              </div>
-            )}
-          </section>
+              <form className="qa-form" onSubmit={ask}>
+                <textarea
+                  aria-label="问答问题"
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  placeholder="例如：某角色与某阵营有什么关系？"
+                  rows={2}
+                />
+                <button type="submit" disabled={asking || !gameId || !question.trim()}>
+                  {asking ? "查找证据中…" : "基于证据回答"}
+                </button>
+              </form>
+              {answer && (
+                <AnswerView answer={answer} onCitation={openCitation} onEntity={openEntity} />
+              )}
+            </section>
+
+            <section className="admin-toggle library-admin-entry">
+              <span>需要维护资料？管理功能位于独立工作台。</span>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  window.location.hash = "admin/intake";
+                  setIsAdminRoute(true);
+                }}
+              >
+                打开审核工作台
+              </button>
+            </section>
+          </div>
         </div>
-
-        <section className="panel home-lists">
-          <div className="home-list">
-            <div className="panel-title">
-              <h2>最近文档</h2>
-              <span>已发布版本</span>
-            </div>
-            {overview.documents.map((item) => (
-              <button className="link-row" key={item.id} onClick={() => openDocument(item.id)}>
-                {item.title}
-                <span>
-                  {item.type} · {item.gameVersion ?? "版本未知"}
-                </span>
-              </button>
-            ))}
-            {!overview.documents.length && <p className="muted small">暂无文档</p>}
-          </div>
-          <div className="home-list">
-            <div className="panel-title">
-              <h2>常用实体</h2>
-              <span>可进入详情</span>
-            </div>
-            {overview.entities.map((item) => (
-              <button className="link-row" key={item.id} onClick={() => openEntity(item.id)}>
-                {item.name}
-                <span>
-                  {item.type} · {item.aliases.join("、") || "无别名"}
-                </span>
-              </button>
-            ))}
-            {!overview.entities.length && <p className="muted small">暂无实体</p>}
-          </div>
-        </section>
-
-        <section className="panel qa-panel">
-          <div className="panel-title">
-            <div>
-              <span className="eyebrow">EVIDENCE QA</span>
-              <h2>向知识库提问</h2>
-            </div>
-            <span className="muted">答案不会写回正式知识库</span>
-          </div>
-          <form className="qa-form" onSubmit={ask}>
-            <textarea
-              aria-label="问答问题"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="例如：某角色与某阵营有什么关系？"
-              rows={2}
-            />
-            <button type="submit" disabled={busy || !gameId}>
-              基于证据回答
-            </button>
-          </form>
-          {answer && <AnswerView answer={answer} onCitation={openCitation} onEntity={openEntity} />}
-        </section>
-
-        <section className="admin-toggle">
-          <button className="secondary-button" onClick={() => setAdminOpen((value) => !value)}>
-            {adminOpen ? "收起数据管理" : "打开数据管理"}
-          </button>
-          {adminOpen && gameId && <AdminPanel gameId={gameId} />}
-        </section>
       </main>
       <footer>
-        当前部署：{currentGame?.name ?? "加载中"} · 私有本地知识库 · Dataset Revision 由审核后发布
+        {currentGame?.name ?? "加载中"}资料库 · 当前版本 {visibleRevisionLabel} · 内容均可追溯到来源
       </footer>
     </div>
   );
 }
 
-function OverviewCard({ label, value }: { label: string; value: string }) {
+function LoadingCards() {
   return (
-    <div className="overview-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="loading-card-grid" role="status" aria-label="资料加载中">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="loading-card" key={item}>
+          <span />
+          <i />
+          <i />
+        </div>
+      ))}
     </div>
   );
 }
 
-function ResultGroup({
-  title,
-  count,
-  children,
+function ArchiveHome({
+  documents,
+  entities,
+  onEntity,
+  onDocument,
+  onCategory,
 }: {
-  title: string;
-  count: number;
-  children: ReactNode;
+  documents: DocumentSummary[];
+  entities: EntitySummary[];
+  onEntity: (id: string) => void;
+  onDocument: (id: string) => void;
+  onCategory: (category: ArchiveCategory) => void;
 }) {
   return (
-    <div className="result-group">
-      <div className="group-heading">
-        <h3>{title}</h3>
-        <span>{count}</span>
+    <div className="archive-home">
+      <section className="archive-home-section">
+        <div className="section-title-row">
+          <div>
+            <span className="eyebrow">EXPLORE</span>
+            <h3>按主题浏览</h3>
+          </div>
+          <small>选择分类后，可继续输入关键词精确检索</small>
+        </div>
+        <div className="topic-card-grid">
+          {ARCHIVE_CATEGORIES.slice(1).map((category) => (
+            <button
+              type="button"
+              className="topic-card"
+              key={category.id}
+              onClick={() => onCategory(category)}
+            >
+              <span className="topic-marker" aria-hidden="true">
+                {category.marker}
+              </span>
+              <span>
+                <strong>{category.label}</strong>
+                <small>{category.description}</small>
+              </span>
+              <b aria-hidden="true">›</b>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="archive-home-section">
+        <div className="section-title-row">
+          <div>
+            <span className="eyebrow">LATEST DOCUMENTS</span>
+            <h3>最近收录</h3>
+          </div>
+          <small>{documents.length} 篇可浏览文档</small>
+        </div>
+        {documents.length ? (
+          <div className="archive-card-grid">
+            {documents.map((item) => (
+              <DocumentResultCard key={item.id} item={item} onOpen={() => onDocument(item.id)} />
+            ))}
+          </div>
+        ) : (
+          <ArchiveEmpty title="暂无已发布文档" detail="资料发布后会在这里显示最近收录内容。" />
+        )}
+      </section>
+
+      <section className="archive-home-section">
+        <div className="section-title-row">
+          <div>
+            <span className="eyebrow">FEATURED ENTRIES</span>
+            <h3>常用条目</h3>
+          </div>
+          <small>{entities.length} 个可浏览实体</small>
+        </div>
+        {entities.length ? (
+          <div className="archive-card-grid">
+            {entities.map((item) => (
+              <EntityResultCard key={item.id} item={item} onOpen={() => onEntity(item.id)} />
+            ))}
+          </div>
+        ) : (
+          <ArchiveEmpty title="暂无常用条目" detail="可以使用上方搜索框直接查询资料库。" />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SearchResultFeed({
+  search,
+  onEntity,
+  onDocument,
+}: {
+  search: SearchResult;
+  onEntity: (id: string, revisionId?: string) => void;
+  onDocument: (id: string, revisionId?: string, segmentId?: string) => void;
+}) {
+  const total = search.entities.length + search.documents.length + search.segments.length;
+  if (!total) {
+    return (
+      <ArchiveEmpty
+        title="没有找到匹配资料"
+        detail="可以尝试缩短关键词、切换资料分类，或清除版本与来源筛选。"
+      />
+    );
+  }
+  return (
+    <div className="search-result-feed">
+      <div className="search-revision-line">
+        <span>检索基于 {search.revision || "当前版本"}</span>
+        <small>索引状态：{search.indexStatus}</small>
       </div>
-      {count ? children : <p className="muted small">没有匹配结果</p>}
+      {search.entities.length > 0 && (
+        <section className="search-result-group">
+          <div className="section-title-row compact">
+            <h3>实体</h3>
+            <span>{search.entities.length}</span>
+          </div>
+          <div className="archive-card-grid">
+            {search.entities.map((item) => (
+              <EntityResultCard
+                key={item.id}
+                item={item}
+                onOpen={() => onEntity(item.id, search.revisionId)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {search.documents.length > 0 && (
+        <section className="search-result-group">
+          <div className="section-title-row compact">
+            <h3>文档</h3>
+            <span>{search.documents.length}</span>
+          </div>
+          <div className="archive-card-grid">
+            {search.documents.map((item) => (
+              <DocumentResultCard
+                key={item.id}
+                item={item}
+                onOpen={() => onDocument(item.id, search.revisionId)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {search.segments.length > 0 && (
+        <section className="search-result-group">
+          <div className="section-title-row compact">
+            <h3>原文片段</h3>
+            <span>{search.segments.length}</span>
+          </div>
+          <div className="segment-result-list">
+            {search.segments.map((item) => (
+              <button
+                type="button"
+                className="segment-result-card"
+                key={item.segmentId}
+                onClick={() => onDocument(item.id, search.revisionId, item.segmentId)}
+              >
+                <span className="result-type-row">
+                  <b>原文片段</b>
+                  <small>{documentTypeLabel(item.type)}</small>
+                </span>
+                <strong>{item.title}</strong>
+                <p>{item.snippet || "点击查看完整原文与上下文。"}</p>
+                <span className="result-metadata">
+                  <small>{item.match ?? "正文命中"}</small>
+                  <small>{item.gameVersion ?? item.revision ?? search.revision}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function EntityResultCard({ item, onOpen }: { item: EntitySummary; onOpen: () => void }) {
+  return (
+    <button type="button" className="archive-result-card entity-result-card" onClick={onOpen}>
+      <span className="result-card-emblem" aria-hidden="true">
+        {item.name.slice(0, 1)}
+      </span>
+      <span className="result-card-body">
+        <span className="result-type-row">
+          <b>{entityTypeLabel(item.type)}</b>
+          {item.match && <small>{item.match}</small>}
+        </span>
+        <strong>{item.name}</strong>
+        <p>{item.summary || item.aliases.join(" · ") || "点击查看属性、关系和相关文档。"}</p>
+        <span className="result-metadata">
+          <small>{item.aliases.slice(0, 2).join(" · ") || "无其他别名"}</small>
+          <small>{item.revision ?? "当前版本"}</small>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function DocumentResultCard({ item, onOpen }: { item: DocumentSummary; onOpen: () => void }) {
+  return (
+    <button type="button" className="archive-result-card document-result-card" onClick={onOpen}>
+      <span className="result-card-emblem" aria-hidden="true">
+        文
+      </span>
+      <span className="result-card-body">
+        <span className="result-type-row">
+          <b>{documentTypeLabel(item.type)}</b>
+          {item.match && <small>{item.match}</small>}
+        </span>
+        <strong>{item.title}</strong>
+        <p>{item.snippet || "点击阅读完整内容、章节目录和资料出处。"}</p>
+        <span className="result-metadata">
+          <small>{item.gameVersion ?? "游戏版本未知"}</small>
+          <small>{item.revision ?? "当前版本"}</small>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function ArchiveEmpty({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="archive-empty">
+      <span aria-hidden="true">◇</span>
+      <strong>{title}</strong>
+      <p>{detail}</p>
     </div>
   );
 }
@@ -666,7 +1139,7 @@ function EntityView({
   return (
     <article>
       <div className="detail-header">
-        <span className="type-pill">{entity.type}</span>
+        <span className="type-pill">{entityTypeLabel(entity.type)}</span>
         <h2>{entity.name}</h2>
         <p>{entity.summary || "暂无摘要"}</p>
         <div className="chips">
@@ -678,8 +1151,10 @@ function EntityView({
           source key: {entity.sourceKey ?? "—"} · {entity.revision ?? "当前版本"}
         </small>
       </div>
-      <h3>结构化属性</h3>
-      <pre className="properties-box">{JSON.stringify(entity.properties, null, 2)}</pre>
+      <details className="properties-details">
+        <summary>查看结构化属性 JSON</summary>
+        <pre className="properties-box">{JSON.stringify(entity.properties, null, 2)}</pre>
+      </details>
       <h3>关系</h3>
       {entity.relationships.length ? (
         <ul className="relationship-list">
@@ -704,7 +1179,7 @@ function EntityView({
           <button className="link-row" key={doc.id} onClick={() => onDocument(doc.id)}>
             {doc.title}
             <span>
-              {doc.type} · {doc.gameVersion ?? "版本未知"}
+              {documentTypeLabel(doc.type)} · {doc.gameVersion ?? "版本未知"}
             </span>
           </button>
         ))
@@ -769,7 +1244,7 @@ function DocumentView({
   return (
     <article>
       <div className="detail-header">
-        <span className="type-pill">{document.type}</span>
+        <span className="type-pill">{documentTypeLabel(document.type)}</span>
         <h2>{document.title}</h2>
         <p>
           {document.sourceName} · {document.gameVersion ?? "游戏版本未知"} · Dataset Revision{" "}
@@ -927,6 +1402,494 @@ function AnswerView({
   );
 }
 
+function previewRecordsFromPayload(
+  payload: unknown,
+  fallbackKind: "entity" | "document" = "entity",
+): PreviewRecord[] {
+  if (!payload || typeof payload !== "object") return [];
+  const object = payload as Record<string, unknown>;
+  const rows =
+    (Array.isArray(object.records) && object.records) ||
+    (Array.isArray(object.normalizedRecords) && object.normalizedRecords) ||
+    (Array.isArray(object[fallbackKind === "entity" ? "entities" : "documents"]) &&
+      (object[fallbackKind === "entity" ? "entities" : "documents"] as unknown[])) ||
+    [];
+
+  return rows.flatMap((row, index) => {
+    if (!row || typeof row !== "object") return [];
+    const value = row as Record<string, unknown>;
+    const kind = value.displayKind === "document" ? "document" : fallbackKind;
+    const sourceKey = String(value.sourceKey ?? value.id ?? `${kind}-${index}`);
+    const displayTitle = String(value.title ?? value.name ?? sourceKey);
+    const metadata =
+      value.metadata && typeof value.metadata === "object"
+        ? (value.metadata as Record<string, unknown>)
+        : {};
+    return [
+      {
+        sourceKey,
+        recordType: String(value.recordType ?? value.type ?? kind),
+        title: displayTitle,
+        body: String(value.body ?? value.snippet ?? value.summary ?? ""),
+        entityType:
+          kind === "entity" && typeof value.type === "string"
+            ? (value.type as NormalizedRecord["entityType"])
+            : undefined,
+        documentType:
+          kind === "document" && typeof value.type === "string"
+            ? (value.type as NormalizedRecord["documentType"])
+            : undefined,
+        gameVersion: typeof value.gameVersion === "string" ? value.gameVersion : undefined,
+        metadata,
+        properties:
+          value.properties && typeof value.properties === "object"
+            ? (value.properties as Record<string, unknown>)
+            : {},
+        aliases: Array.isArray(value.aliases)
+          ? value.aliases.flatMap((alias) =>
+              alias &&
+              typeof alias === "object" &&
+              typeof (alias as { value?: unknown }).value === "string"
+                ? [{ value: String((alias as { value: string }).value) }]
+                : [],
+            )
+          : [],
+        contentHash: String(value.contentHash ?? ""),
+        parserVersion: String(value.parserVersion ?? "preview"),
+        displayKind: kind,
+        displayTitle,
+      },
+    ];
+  });
+}
+
+async function loadPreviewRecords(
+  buildId: string,
+  adminToken: string,
+  offset: number,
+  limit: number,
+  query = "",
+  category = "all",
+): Promise<{ records: PreviewRecord[]; total: number }> {
+  const suffix = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : "";
+  const payload = await api<unknown>(
+    `/api/admin/previews/${buildId}/records?kind=all&category=${encodeURIComponent(category)}&limit=${limit}&offset=${offset}${suffix}`,
+    {},
+    adminToken,
+  );
+  return {
+    records: previewRecordsFromPayload(payload),
+    total: Number((payload as { total?: number })?.total ?? 0),
+  };
+}
+
+function PreviewBrowser({
+  gameId,
+  candidateId,
+  initialBuildId,
+}: {
+  gameId: string;
+  candidateId: string;
+  initialBuildId?: string;
+}) {
+  const [adminToken, setAdminToken] = useState(
+    () => window.sessionStorage.getItem("gip-admin-token") ?? "",
+  );
+  const [candidates, setCandidates] = useState<ReleaseCandidate[]>([]);
+  const [candidate, setCandidate] = useState<ReleaseCandidateDetail | null>(null);
+  const [buildId, setBuildId] = useState(initialBuildId ?? "");
+  const [records, setRecords] = useState<PreviewRecord[]>([]);
+  const [selectedKey, setSelectedKey] = useState("");
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<"all" | "entity" | "document">("all");
+  const [category, setCategory] = useState("all");
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    window.sessionStorage.setItem("gip-admin-token", adminToken);
+  }, [adminToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    Promise.all([
+      api<{ candidates: ReleaseCandidate[] }>(
+        `/api/admin/release-candidates?gameId=${encodeURIComponent(gameId)}`,
+        {},
+        adminToken,
+      ),
+      api<ReleaseCandidateDetail | { candidate: ReleaseCandidateDetail }>(
+        `/api/admin/release-candidates/${candidateId}`,
+        {},
+        adminToken,
+      ),
+    ])
+      .then(([candidateResponse, detailResponse]) => {
+        if (cancelled) return;
+        const detail = "candidate" in detailResponse ? detailResponse.candidate : detailResponse;
+        setCandidates(candidateResponse.candidates);
+        setCandidate(detail);
+        const nextBuildId =
+          initialBuildId ??
+          detail.currentBuildId ??
+          [...(detail.builds ?? [])].sort((left, right) => right.buildNumber - left.buildNumber)[0]
+            ?.id ??
+          "";
+        setBuildId(nextBuildId);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "预发布候选加载失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adminToken, candidateId, gameId, initialBuildId]);
+
+  useEffect(() => {
+    if (!buildId) {
+      setRecords([]);
+      setSelectedKey("");
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    loadPreviewRecords(buildId, adminToken, page * pageSize, pageSize, query, category)
+      .then(({ records: nextRecords, total: nextTotal }) => {
+        if (cancelled) return;
+        setRecords(nextRecords);
+        setTotal(nextTotal);
+        setSelectedKey((current) =>
+          nextRecords.some((record) => record.sourceKey === current)
+            ? current
+            : (nextRecords[0]?.sourceKey ?? ""),
+        );
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setRecords([]);
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "这个 Build 暂时无法预览，请返回发布页重新构建。",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adminToken, buildId, category, page, query]);
+
+  useEffect(() => setPage(0), [buildId, query, kind, category]);
+
+  const selectedBuild = candidate?.builds.find((build) => build.id === buildId);
+  const visibleRecords = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return records.filter(
+      (record) =>
+        (kind === "all" || record.displayKind === kind) &&
+        (!normalizedQuery ||
+          `${record.displayTitle} ${record.sourceKey} ${record.body ?? ""}`
+            .toLocaleLowerCase()
+            .includes(normalizedQuery)),
+    );
+  }, [kind, query, records]);
+  const selectedRecord =
+    visibleRecords.find((record) => record.sourceKey === selectedKey) ?? visibleRecords[0];
+
+  function openCandidate(nextCandidateId: string) {
+    if (!nextCandidateId) return;
+    window.location.hash = `preview/${encodeURIComponent(nextCandidateId)}`;
+  }
+
+  function openBuild(nextBuildId: string) {
+    setBuildId(nextBuildId);
+    setSelectedKey("");
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}#preview/${encodeURIComponent(candidateId)}/${encodeURIComponent(nextBuildId)}`,
+    );
+  }
+
+  async function reportRecord(record: PreviewRecord) {
+    const params = new URLSearchParams({
+      candidateId,
+      buildId,
+      canonicalKey: record.sourceKey,
+      title: record.displayTitle,
+    });
+    const batchId = candidate?.importBatchIds?.[0];
+    if (batchId) params.set("batchId", batchId);
+    try {
+      await api(
+        `/api/admin/release-candidates/${candidateId}/issues`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            buildId,
+            canonicalKey: record.sourceKey,
+            summary: `预发布资料可能有误：${record.displayTitle}`,
+            details: {
+              title: record.displayTitle,
+              displayKind: record.displayKind,
+              batchId,
+            },
+          }),
+        },
+        adminToken,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "问题创建失败");
+      return;
+    }
+    window.location.hash = adminHash("issues", params);
+  }
+
+  return (
+    <div className="app-shell preview-shell">
+      <header className="preview-topbar">
+        <div className="preview-brand">
+          <span className="preview-badge">PREVIEW</span>
+          <div>
+            <span className="eyebrow">RELEASE CANDIDATE</span>
+            <h1>{candidate?.name ?? "预发布查看"}</h1>
+          </div>
+        </div>
+        <div className="preview-top-actions">
+          <button
+            className="secondary-button"
+            onClick={() => (window.location.hash = "admin/preview")}
+          >
+            返回预发布分支
+          </button>
+          <button className="secondary-button" onClick={() => (window.location.hash = "")}>
+            查看正式资料库
+          </button>
+        </div>
+      </header>
+
+      <div className="preview-warning" role="status">
+        <strong>这是预发布数据，当前正式 MCP 不会读取此 Build</strong>
+        <span>只有在发布管理页明确晋级后，数据才会成为正式 Revision。</span>
+      </div>
+
+      <section className="preview-version-bar" aria-label="预发布版本切换">
+        <label>
+          候选版本
+          <select value={candidateId} onChange={(event) => openCandidate(event.target.value)}>
+            {candidates.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {item.status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          预发布 Build
+          <select value={buildId} onChange={(event) => openBuild(event.target.value)}>
+            <option value="">请选择 Build</option>
+            {candidate?.builds
+              ?.slice()
+              .sort((left, right) => right.buildNumber - left.buildNumber)
+              .map((build) => (
+                <option key={build.id} value={build.id}>
+                  Build {build.buildNumber} · {build.status} · {build.recordCount} 条
+                </option>
+              ))}
+          </select>
+        </label>
+        <div className="preview-build-facts">
+          <span>状态：{selectedBuild?.status ?? "未选择"}</span>
+          <span>校验：{selectedBuild?.contentChecksum?.slice(0, 12) ?? "—"}</span>
+          <span>记录：{selectedBuild?.recordCount ?? 0}</span>
+        </div>
+        <label className="preview-token-field">
+          管理 Token
+          <input
+            type="password"
+            value={adminToken}
+            onChange={(event) => setAdminToken(event.target.value)}
+            placeholder="开发环境可留空"
+          />
+        </label>
+      </section>
+
+      {error && (
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button onClick={() => setError("")}>关闭</button>
+        </div>
+      )}
+
+      <main className="preview-workspace">
+        <aside className="preview-record-list">
+          <div className="preview-search-tools">
+            <input
+              aria-label="搜索预发布资料"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索标题、正文或 Canonical Key"
+            />
+            <div className="preview-kind-filter" aria-label="预发布资料类型">
+              {(["all", "entity", "document"] as const).map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={kind === value ? "is-active" : ""}
+                  onClick={() => setKind(value)}
+                >
+                  {value === "all" ? "全部" : value === "entity" ? "实体" : "文档"}
+                </button>
+              ))}
+            </div>
+            <div className="preview-category-filter" aria-label="预发布资料分类">
+              {previewCategories.map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={category === value ? "is-active" : ""}
+                  onClick={() => setCategory(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="preview-list-heading">
+            <b>当前 Build 资料</b>
+            <span>{visibleRecords.length} 条</span>
+          </div>
+          <div className="preview-record-scroll" aria-busy={loading}>
+            {loading ? (
+              <div className="preview-empty">正在读取隔离的预发布数据…</div>
+            ) : (
+              visibleRecords.map((record) => (
+                <button
+                  type="button"
+                  key={`${record.displayKind}-${record.sourceKey}`}
+                  className={selectedRecord?.sourceKey === record.sourceKey ? "is-active" : ""}
+                  onClick={() => setSelectedKey(record.sourceKey)}
+                >
+                  <span>{record.displayKind === "entity" ? "实体" : "文档"}</span>
+                  <strong>{record.displayTitle}</strong>
+                  <small>{record.sourceKey}</small>
+                </button>
+              ))
+            )}
+            {!loading && !visibleRecords.length && (
+              <div className="preview-empty">
+                <b>没有符合条件的资料</b>
+                <span>可以更换 Build、类型或搜索条件。</span>
+              </div>
+            )}
+          </div>
+          <nav className="preview-pagination" aria-label="预发布资料分页">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={page === 0 || loading}
+              onClick={() => setPage((value) => Math.max(0, value - 1))}
+            >
+              上一页
+            </button>
+            <span>
+              {total
+                ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} / ${total}`
+                : "0 / 0"}
+            </span>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={loading || (page + 1) * pageSize >= total}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              下一页
+            </button>
+          </nav>
+        </aside>
+
+        <section className="preview-record-detail">
+          {selectedRecord ? (
+            <>
+              <header>
+                <div>
+                  <span className="eyebrow">{selectedRecord.displayKind.toUpperCase()}</span>
+                  <h2>{selectedRecord.displayTitle}</h2>
+                  <small>{selectedRecord.sourceKey}</small>
+                </div>
+                <button
+                  className="report-issue-button"
+                  onClick={() => reportRecord(selectedRecord)}
+                >
+                  报告问题
+                </button>
+              </header>
+              <div className="preview-record-meta">
+                <span>游戏版本：{selectedRecord.gameVersion ?? "未标注"}</span>
+                <span>解析器：{selectedRecord.parserVersion}</span>
+                <span>内容哈希：{selectedRecord.contentHash.slice(0, 16) || "未提供"}</span>
+              </div>
+              <article className="preview-record-body">
+                {selectedRecord.body ? (
+                  selectedRecord.body
+                    .split(/\n{2,}/)
+                    .map((paragraph, index) => <p key={index}>{paragraph}</p>)
+                ) : (
+                  <p className="muted">这条资料没有可显示的正文。</p>
+                )}
+              </article>
+              {selectedRecord.properties && Object.keys(selectedRecord.properties).length > 0 && (
+                <section className="preview-properties" aria-label="条目属性">
+                  <h3>基础属性</h3>
+                  <dl>
+                    {Object.entries(selectedRecord.properties).map(([key, value]) => (
+                      <div key={key}>
+                        <dt>{previewPropertyLabels[key] ?? key}</dt>
+                        <dd>{Array.isArray(value) ? value.join("、") : String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
+              <section className="preview-source-card" aria-label="数据来源">
+                <h3>数据来源</h3>
+                <span>{String(selectedRecord.metadata.upstreamSource ?? "未标注")}</span>
+                <span>
+                  上游提交：
+                  {String(selectedRecord.metadata.upstreamCommit ?? "未标注").slice(0, 12)}
+                </span>
+                <span>语言：{String(selectedRecord.metadata.locale ?? "未标注")}</span>
+                <span>许可：{String(selectedRecord.metadata.codeLicense ?? "未标注")}</span>
+              </section>
+              <footer className="preview-evidence-note">
+                <strong>发现内容错误？</strong>
+                <span>点击“报告问题”会定位对应审核项；提交修正时必须上传游戏内截图。</span>
+              </footer>
+            </>
+          ) : (
+            <div className="preview-empty preview-detail-empty">
+              <b>请选择一条资料</b>
+              <span>这里会显示当前预发布 Build 的内容，不会读取正式 MCP 数据。</span>
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
 async function copyCitationText(document: DocumentDetail, segmentId: string, body: string) {
   const text = `[Dataset Revision ${document.revision}] ${document.title} (${document.sourceName}) · source version ${document.sourceVersion ?? "—"} · segment ${segmentId}\n${body}`;
   try {
@@ -936,784 +1899,95 @@ async function copyCitationText(document: DocumentDetail, segmentId: string, bod
   }
 }
 
-function AdminPanel({ gameId }: { gameId: string }) {
-  const [sources, setSources] = useState<AdminSource[]>([]);
-  const [sourceId, setSourceId] = useState("");
-  const [path, setPath] = useState("");
-  const [type, setType] = useState("local_directory");
-  const [name, setName] = useState("本地原神资料");
-  const [adminToken, setAdminToken] = useState("");
-  const [status, setStatus] = useState("");
-  const [batchId, setBatchId] = useState("");
-  const [batches, setBatches] = useState<AdminBatch[]>([]);
-  const [batch, setBatch] = useState<AdminBatch | null>(null);
-  const [diff, setDiff] = useState<ImportDiff | null>(null);
-  const [selectedDeletions, setSelectedDeletions] = useState<string[]>([]);
-  const [releaseNote, setReleaseNote] = useState("Web 管理界面发布");
-  const [rollbackReason, setRollbackReason] = useState("Web 管理界面回滚");
-  const [revisions, setRevisions] = useState<AdminRevision[]>([]);
-  const [jobs, setJobs] = useState<AdminJob[]>([]);
-  const [verification, setVerification] = useState<VerificationRun | null>(null);
-  const [conflicts, setConflicts] = useState<ConflictCase[]>([]);
-  const [conflictDetail, setConflictDetail] = useState<ConflictDetail | null>(null);
-  const [selectedConflictObservationId, setSelectedConflictObservationId] = useState("");
-  const [acquisitionStatus, setAcquisitionStatus] = useState<AcquisitionStatus | null>(null);
-  const verificationSummary = useMemo(() => {
-    if (!verification) return [];
-    const labels: Record<VerificationItem["category"], string> = {
-      book: "书籍",
-      character_story: "角色故事",
-      item_description: "物品描述",
-    };
-    const categories = [...new Set(verification.items.map((item) => item.category))];
-    return categories.map((category) => {
-      const items = verification.items.filter((item) => item.category === category);
-      const exact = items.filter(
-        (item) =>
-          item.status === "exact_match" &&
-          item.channel === "game_client" &&
-          item.checkedGameVersion === verification.expectedGameVersion &&
-          item.checkedLocale === verification.expectedLocale,
-      ).length;
-      const pending = items.filter((item) => item.status === "not_checked").length;
-      return { category, label: labels[category], total: items.length, exact, pending };
-    });
-  }, [verification]);
+function releaseAuditGate(
+  label: string,
+  status: AcquisitionStatus | null,
+  passed: boolean | undefined,
+  detail: string,
+): ReleaseGateItem {
+  return {
+    label,
+    detail: status ? detail : "采集状态报告不可用",
+    state: !status ? "unavailable" : passed ? "passed" : "blocked",
+  };
+}
 
-  async function refreshAdmin() {
-    try {
-      const [
-        sourceResponse,
-        revisionResponse,
-        jobResponse,
-        conflictResponse,
-        importsResponse,
-        statusResponse,
-      ] = await Promise.all([
-        api<{ sources: AdminSource[] }>(`/api/admin/sources?gameId=${gameId}`, {}, adminToken),
-        api<{ revisions: AdminRevision[] }>(
-          `/api/admin/revisions?gameId=${gameId}`,
-          {},
-          adminToken,
-        ),
-        api<{ jobs: AdminJob[] }>("/api/admin/jobs", {}, adminToken),
-        api<{ conflicts: ConflictCase[] }>(
-          `/api/admin/conflicts?gameId=${gameId}&status=open`,
-          {},
-          adminToken,
-        ),
-        api<{ imports: AdminBatch[] }>(`/api/admin/imports?gameId=${gameId}`, {}, adminToken),
-        api<{ status: AcquisitionStatus }>(
-          `/api/admin/acquisition/status?gameId=${gameId}`,
-          {},
-          adminToken,
-        ).catch(() => null),
-      ]);
-      setSources(sourceResponse.sources);
-      setRevisions(revisionResponse.revisions);
-      setJobs(jobResponse.jobs);
-      setConflicts(conflictResponse.conflicts);
-      setBatches(importsResponse.imports);
-      setAcquisitionStatus(statusResponse?.status ?? null);
-      if (!sourceId && sourceResponse.sources[0]) setSourceId(sourceResponse.sources[0].id);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "管理数据加载失败");
-    }
+function releaseGateIcon(state: ReleaseGateState): string {
+  return { passed: "✓", blocked: "!", checking: "…", unavailable: "—" }[state];
+}
+
+function releaseGateLabel(state: ReleaseGateState): string {
+  return { passed: "通过", blocked: "阻塞", checking: "检查中", unavailable: "无法检查" }[state];
+}
+
+function releaseBlockerMessage(code: string): string {
+  const messages: Record<string, string> = {
+    import_has_errors: "导入批次仍包含错误",
+    deletions_unconfirmed: "删除候选尚未全部确认",
+    verification_blocked: "游戏内人工核验尚未通过",
+    staged_data_missing: "暂存数据不存在",
+    source_snapshot_missing: "来源快照不存在",
+    acquisition_review_missing: "采集审核尚未完成",
+    release_backup_missing: "缺少覆盖当前批次的发布前备份",
+  };
+  if (code.startsWith("invalid_status:")) return `批次状态不允许发布：${code.split(":")[1]}`;
+  return messages[code] ?? code.replaceAll("_", " ");
+}
+
+function releaseBlockerAction(code: string): "review" | "verify" | "release" | undefined {
+  if (code.includes("verification")) return "verify";
+  if (
+    code.includes("import") ||
+    code.includes("deletion") ||
+    code.includes("status") ||
+    code.includes("review")
+  )
+    return "review";
+  if (code.includes("conflict") || code.includes("backup")) return "release";
+  return undefined;
+}
+
+function formatReleaseDetails(details: unknown): string {
+  if (typeof details === "string") return details;
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return "存在需要处理的附加信息";
   }
+}
 
-  useEffect(() => {
-    void refreshAdmin();
-  }, [gameId]);
+function formatReleaseDate(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
 
-  useEffect(() => {
-    if (!batchId || !batch || !["pending", "running"].includes(batch.status)) return;
-    const timer = window.setInterval(() => void refreshBatch(false), 1_500);
-    return () => window.clearInterval(timer);
-  }, [batchId, batch?.status]);
-
-  async function createSourceAndImport(event: FormEvent) {
-    event.preventDefault();
-    if (!path.trim()) return;
-    setStatus("正在创建快照并生成 Diff…");
-    try {
-      let activeSourceId = sourceId;
-      if (!activeSourceId) {
-        const source = await api<AdminSource>(
-          "/api/admin/sources",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              gameId,
-              name,
-              type,
-              pathLabel: path.split(/[\\/]/).pop() || path,
-              parserType: "builtin",
-            }),
-          },
-          adminToken,
-        );
-        activeSourceId = source.id;
-        setSourceId(activeSourceId);
-      }
-      const nextBatch = await api<AdminBatch>(
-        "/api/admin/imports",
-        {
-          method: "POST",
-          body: JSON.stringify({ gameId, sourceId: activeSourceId, path }),
-        },
-        adminToken,
-      );
-      setBatchId(nextBatch.id);
-      setBatch(nextBatch);
-      setDiff(nextBatch.diff ?? null);
-      setSelectedDeletions([]);
-      setStatus(`导入批次 ${nextBatch.id}：${nextBatch.status}`);
-      await refreshAdmin();
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "导入失败");
-    }
-  }
-
-  async function refreshBatch(announce = true, selectedBatchId = batchId) {
-    if (!selectedBatchId) return;
-    try {
-      const [batchResponse, diffResponse, verificationResponse] = await Promise.all([
-        api<AdminBatch>(`/api/admin/imports/${selectedBatchId}`, {}, adminToken),
-        api<{ diff: ImportDiff | null }>(
-          `/api/admin/imports/${selectedBatchId}/diff`,
-          {},
-          adminToken,
-        ),
-        api<VerificationRun>(
-          `/api/admin/imports/${selectedBatchId}/verification`,
-          {},
-          adminToken,
-        ).catch((reason) => {
-          if (reason instanceof Error && reason.message.startsWith("verification_run_not_found:"))
-            return null;
-          throw reason;
-        }),
-      ]);
-      setBatch(batchResponse);
-      setBatchId(selectedBatchId);
-      setDiff(diffResponse.diff);
-      setVerification(verificationResponse);
-      if (announce) setStatus(`批次状态：${batchResponse.status}`);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "批次刷新失败");
-    }
-  }
-
-  async function updateVerification(
-    item: VerificationItem,
-    status: VerificationStatus,
-    channel: VerificationChannel = item.channel ?? "game_client",
-    note = item.note ?? "",
-    checkedGameVersion = item.checkedGameVersion ?? verification?.expectedGameVersion ?? "7.0.0",
-    checkedLocale = item.checkedLocale ?? verification?.expectedLocale ?? "zh-CN",
-  ) {
-    try {
-      await api(
-        `/api/admin/verification/items/${item.id}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            status,
-            channel,
-            checkedGameVersion,
-            checkedLocale,
-            note,
-          }),
-        },
-        adminToken,
-      );
-      await refreshBatch(false);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "核验状态提交失败");
-    }
-  }
-
-  async function uploadScreenshot(item: VerificationItem, file?: File) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setStatus("只支持 PNG、JPEG 或 WebP 截图");
-      return;
-    }
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-    try {
-      await api(
-        `/api/admin/verification/items/${item.id}/screenshots`,
-        {
-          method: "POST",
-          body: JSON.stringify({ mimeType: file.type, dataBase64: base64 }),
-        },
-        adminToken,
-      );
-      await refreshBatch(false);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "截图上传失败");
-    }
-  }
-
-  async function resolveConflict(conflict: ConflictCase) {
-    let detail = conflictDetail?.id === conflict.id ? conflictDetail : undefined;
-    let selectedForConflict = detail ? selectedConflictObservationId : "";
-    if (!detail && conflict.observationIds.length > 1) {
-      setStatus("请先查看原文并选择采用的来源观察");
-      return;
-    }
-    try {
-      if (!detail) {
-        const response = await api<{ conflict: ConflictDetail }>(
-          `/api/admin/conflicts/${conflict.id}`,
-          {},
-          adminToken,
-        );
-        detail = response.conflict;
-        setConflictDetail(detail);
-        setSelectedConflictObservationId(
-          detail.selectedObservationId ?? detail.observations[0]?.id ?? "",
-        );
-        selectedForConflict = detail.selectedObservationId ?? detail.observations[0]?.id ?? "";
-      }
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "冲突详情加载失败");
-      return;
-    }
-    const selectedObservationId =
-      selectedForConflict || detail?.selectedObservationId || detail?.observations[0]?.id;
-    if (!selectedObservationId) {
-      setStatus("此冲突没有可供采用的来源观察，无法裁决");
-      return;
-    }
-    const resolution = window.prompt(
-      "请输入裁决理由；请按来源政策选择正式客户端观察，双方原始观察会继续保留",
-    );
-    if (!resolution?.trim()) return;
-    try {
-      await api(
-        `/api/admin/conflicts/${conflict.id}/resolve`,
-        {
-          method: "POST",
-          body: JSON.stringify({ resolution, selectedObservationId }),
-        },
-        adminToken,
-      );
-      await refreshAdmin();
-      if (conflictDetail?.id === conflict.id) setConflictDetail(null);
-      setSelectedConflictObservationId("");
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "冲突裁决失败");
-    }
-  }
-
-  async function inspectConflict(conflict: ConflictCase) {
-    try {
-      const response = await api<{ conflict: ConflictDetail }>(
-        `/api/admin/conflicts/${conflict.id}`,
-        {},
-        adminToken,
-      );
-      setConflictDetail(response.conflict);
-      setSelectedConflictObservationId(
-        response.conflict.selectedObservationId ?? response.conflict.observations[0]?.id ?? "",
-      );
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "冲突详情加载失败");
-    }
-  }
-
-  async function review() {
-    if (!batchId) return;
-    try {
-      const reviewed = await api<AdminBatch>(
-        `/api/admin/imports/${batchId}/review`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            approved: true,
-            note: "Web 管理界面审核通过",
-            confirmedDeletionKeys: selectedDeletions,
-          }),
-        },
-        adminToken,
-      );
-      setBatch(reviewed);
-      setStatus(`审核完成：${reviewed.status}`);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "审核失败");
-    }
-  }
-
-  async function publish() {
-    if (!batchId) return;
-    try {
-      const revision = await api<AdminRevision>(
-        `/api/admin/imports/${batchId}/publish`,
-        {
-          method: "POST",
-          body: JSON.stringify({ releaseNote }),
-        },
-        adminToken,
-      );
-      setStatus(`发布成功：r${revision.revisionNumber}，索引任务已排队`);
-      await refreshAdmin();
-      await refreshBatch(false);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "发布失败");
-    }
-  }
-
-  async function rollback(revisionId: string) {
-    try {
-      const revision = await api<AdminRevision>(
-        `/api/admin/revisions/${revisionId}/rollback`,
-        {
-          method: "POST",
-          body: JSON.stringify({ reason: rollbackReason }),
-        },
-        adminToken,
-      );
-      setStatus(`已回滚到 r${revision.revisionNumber}，等待索引任务完成`);
-      await refreshAdmin();
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "回滚失败");
-    }
-  }
-
-  function downloadVerificationChecklist() {
-    if (!verification) return;
-    const blob = new Blob([JSON.stringify(verification, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `verification-${verification.batchId}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
+function releaseIndexStatusLabel(status: string): string {
   return (
-    <div className="admin-panel">
-      <div className="panel-title">
-        <div>
-          <span className="eyebrow">ADMIN WORKFLOW</span>
-          <h2>数据管理</h2>
-        </div>
-        <span>本地路径只用于导入，不在结果中回显</span>
-      </div>
-      <div className="admin-auth-row">
-        <label>
-          生产管理 Token
-          <input
-            type="password"
-            value={adminToken}
-            onChange={(event) => setAdminToken(event.target.value)}
-            placeholder="开发环境可留空"
-          />
-        </label>
-        <button className="secondary-button" onClick={() => void refreshAdmin()}>
-          刷新管理状态
-        </button>
-      </div>
-      {acquisitionStatus && (
-        <AcquisitionStatusPanel
-          status={acquisitionStatus}
-          stale={reportMayBeStale(acquisitionStatus, batches)}
-        />
-      )}
-      <form className="admin-form" onSubmit={createSourceAndImport}>
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="新来源名称"
-        />
-        <select
-          value={sourceId}
-          onChange={(event) => setSourceId(event.target.value)}
-          aria-label="已有来源"
-        >
-          <option value="">新建来源</option>
-          {sources.map((source) => (
-            <option key={source.id} value={source.id}>
-              {source.name} · {source.type}
-            </option>
-          ))}
-        </select>
-        {!sourceId && (
-          <select
-            value={type}
-            onChange={(event) => setType(event.target.value)}
-            aria-label="来源类型"
-          >
-            <option value="local_directory">本地目录</option>
-            <option value="local_json">JSON 文件</option>
-            <option value="local_markdown">Markdown 文件</option>
-            <option value="local_text">文本文件</option>
-          </select>
-        )}
-        <input
-          value={path}
-          onChange={(event) => setPath(event.target.value)}
-          placeholder="本地文件或目录路径"
-          required
-        />
-        <button type="submit">导入并生成 Diff</button>
-      </form>
-      {status && (
-        <p className="status-line" role="status">
-          {status}
-        </p>
-      )}
-      {batch && (
-        <section className="admin-section">
-          <div className="section-heading">
-            <h3>当前批次</h3>
-            <button className="secondary-button" onClick={() => void refreshBatch()}>
-              刷新批次
-            </button>
-          </div>
-          <p className="muted small">
-            {batch.id} · {batch.status} · 成功 {batch.successCount} · 失败 {batch.failureCount}
-          </p>
-          {batch.errors.length > 0 && (
-            <div className="admin-errors">
-              {batch.errors.map((item) => (
-                <span key={`${item.code}-${item.message}`}>
-                  ✕ {item.code}: {item.message}
-                </span>
-              ))}
-            </div>
-          )}
-          {diff && (
-            <DiffView
-              diff={diff}
-              selected={selectedDeletions}
-              onToggle={(key) =>
-                setSelectedDeletions((current) =>
-                  current.includes(key)
-                    ? current.filter((item) => item !== key)
-                    : [...current, key],
-                )
-              }
-            />
-          )}
-          <div className="admin-actions">
-            <button onClick={() => void review()}>审核当前 Diff</button>
-            <input
-              value={releaseNote}
-              onChange={(event) => setReleaseNote(event.target.value)}
-              placeholder="发布说明"
-            />
-            <button onClick={() => void publish()}>发布版本</button>
-          </div>
-        </section>
-      )}
-      <label className="batch-picker">
-        选择已有导入批次
-        <select
-          value={batchId}
-          onChange={(event) => {
-            const nextId = event.target.value;
-            setBatchId(nextId);
-            setSelectedDeletions([]);
-            if (nextId) void refreshBatch(true, nextId);
-            else {
-              setBatch(null);
-              setDiff(null);
-              setVerification(null);
-            }
-          }}
-        >
-          <option value="">请选择批次</option>
-          {batches.map((item) => (
-            <option value={item.id} key={item.id}>
-              {item.id.slice(0, 8)} · {item.status} · {item.successCount} 条
-            </option>
-          ))}
-        </select>
-      </label>
-      {verification && (
-        <section className="admin-section">
-          <div className="section-heading">
-            <div>
-              <h3>游戏内核验台</h3>
-              <span className="muted small">
-                {verification.expectedGameVersion} · {verification.expectedLocale} ·{" "}
-                {verification.status}
-              </span>
-            </div>
-            <button className="secondary-button" onClick={downloadVerificationChecklist}>
-              导出核验清单
-            </button>
-          </div>
-          <div className="verification-summary" aria-label="核验门禁进度">
-            {verificationSummary.map((summary) => (
-              <div className="verification-summary-card" key={summary.category}>
-                <b>{summary.label}</b>
-                <span>
-                  游戏内逐字一致 {summary.exact}/10 · 当前样本 {summary.total}
-                </span>
-                <small>{summary.pending} 条待处理</small>
-              </div>
-            ))}
-          </div>
-          <p className="muted small verification-hint">
-            “尚未解锁”会自动补抽同类别替代记录；内容不一致、版本不一致和未解锁项必须上传截图。
-          </p>
-          <div className="verification-list">
-            {verification.items.map((item) => (
-              <div className="verification-row" key={item.id}>
-                <span>
-                  {item.category} · {item.title}
-                </span>
-                <small>
-                  {item.canonicalKey} · 截图 {item.screenshotCount}
-                </small>
-                <select
-                  value={item.status}
-                  aria-label={`${item.canonicalKey}核验状态`}
-                  onChange={(event) =>
-                    void updateVerification(
-                      item,
-                      event.target.value as VerificationStatus,
-                      item.channel ?? "game_client",
-                    )
-                  }
-                >
-                  <option value="not_checked">未核验</option>
-                  <option value="exact_match">逐字一致</option>
-                  <option value="formatting_only">仅格式差异</option>
-                  <option value="mismatch">内容不一致</option>
-                  <option value="unavailable_due_unlock">尚未解锁</option>
-                  <option value="version_mismatch">版本不一致</option>
-                </select>
-                <select
-                  value={item.channel ?? "game_client"}
-                  aria-label={`${item.canonicalKey}核验渠道`}
-                  onChange={(event) =>
-                    void updateVerification(
-                      item,
-                      item.status,
-                      event.target.value as VerificationChannel,
-                    )
-                  }
-                >
-                  <option value="game_client">游戏客户端</option>
-                  <option value="hoyowiki">HoYoWiki 辅助</option>
-                </select>
-                <label className="verification-meta-field">
-                  <span>核验版本</span>
-                  <input
-                    defaultValue={item.checkedGameVersion ?? verification.expectedGameVersion}
-                    aria-label={`${item.canonicalKey}核验版本`}
-                    placeholder="例如 7.0.0"
-                    onBlur={(event) =>
-                      void updateVerification(
-                        item,
-                        item.status,
-                        item.channel ?? "game_client",
-                        item.note ?? "",
-                        event.target.value,
-                        item.checkedLocale ?? verification.expectedLocale,
-                      )
-                    }
-                  />
-                </label>
-                <label className="verification-meta-field">
-                  <span>核验语言</span>
-                  <input
-                    defaultValue={item.checkedLocale ?? verification.expectedLocale}
-                    aria-label={`${item.canonicalKey}核验语言`}
-                    placeholder="例如 zh-CN"
-                    onBlur={(event) =>
-                      void updateVerification(
-                        item,
-                        item.status,
-                        item.channel ?? "game_client",
-                        item.note ?? "",
-                        item.checkedGameVersion ?? verification.expectedGameVersion,
-                        event.target.value,
-                      )
-                    }
-                  />
-                </label>
-                <input
-                  defaultValue={item.note ?? ""}
-                  aria-label={`${item.canonicalKey}核验备注`}
-                  placeholder="备注（可选）"
-                  onBlur={(event) =>
-                    void updateVerification(
-                      item,
-                      item.status,
-                      item.channel ?? "game_client",
-                      event.target.value,
-                    )
-                  }
-                />
-                <label className="secondary-button screenshot-button">
-                  上传截图
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(event) => void uploadScreenshot(item, event.target.files?.[0])}
-                  />
-                </label>
-                <VerificationProvenance
-                  item={item}
-                  datasetRevision={verification.datasetRevision}
-                  upstreamCommit={verification.upstreamCommit}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-      <section className="admin-section">
-        <div className="section-heading">
-          <h3>待裁决冲突</h3>
-          <span className="muted small">{conflicts.length} 项会阻止发布</span>
-        </div>
-        <p className="muted small verification-hint">
-          裁决时请选择采用的来源观察：同版本游戏客户端原文优先于社区转储；官方公告只裁决版本或活动事实；HoYoWiki
-          仅作辅助。双方原文和出处会永久保留。
-        </p>
-        <div className="verification-list">
-          {conflicts.map((conflict) => (
-            <div className="verification-row" key={conflict.id}>
-              <span>{conflict.canonicalKey}</span>
-              <small>
-                {conflict.kind} · {conflict.gameVersion} · {conflict.locale} ·{" "}
-                {conflict.observationIds.length} 个来源观察
-              </small>
-              <button className="secondary-button" onClick={() => void inspectConflict(conflict)}>
-                查看原文
-              </button>
-              <button className="secondary-button" onClick={() => void resolveConflict(conflict)}>
-                记录人工裁决
-              </button>
-            </div>
-          ))}
-          {!conflicts.length && <p className="muted small">没有未解决冲突</p>}
-        </div>
-        {conflictDetail && (
-          <div className="conflict-detail" role="region" aria-label="冲突原文详情">
-            <div className="section-heading">
-              <h4>
-                {conflictDetail.canonicalKey} · {conflictDetail.kind}
-              </h4>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  setConflictDetail(null);
-                  setSelectedConflictObservationId("");
-                }}
-              >
-                收起
-              </button>
-            </div>
-            {conflictDetail.observations.length > 0 && (
-              <label className="conflict-selection">
-                <span>采用的标准来源观察</span>
-                <select
-                  value={
-                    selectedConflictObservationId ||
-                    conflictDetail.selectedObservationId ||
-                    conflictDetail.observations[0]?.id ||
-                    ""
-                  }
-                  onChange={(event) => setSelectedConflictObservationId(event.target.value)}
-                >
-                  {conflictDetail.observations.map((observation, index) => (
-                    <option value={observation.id} key={observation.id}>
-                      {index + 1} · {observation.sourceId.slice(0, 8)} · {observation.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <div className="conflict-observations">
-              {conflictDetail.observations.map((observation) => (
-                <article key={observation.id} className="conflict-observation">
-                  <b>来源观察 {observation.id.slice(0, 8)}</b>
-                  <small>
-                    source {observation.sourceId.slice(0, 8)} · snapshot{" "}
-                    {observation.sourceSnapshotId.slice(0, 8)} · {observation.gameVersion} ·{" "}
-                    {observation.locale}
-                  </small>
-                  <strong>{observation.title}</strong>
-                  <pre>{observation.body}</pre>
-                  <small>
-                    raw {observation.rawContentHash.slice(0, 16)}… · normalized{" "}
-                    {observation.normalizedContentHash.slice(0, 16)}…
-                  </small>
-                  {observation.provenance?.upstreamCommit && (
-                    <small>
-                      commit {observation.provenance.upstreamCommit} · files{" "}
-                      {(observation.provenance.sourceFiles ?? []).join(", ") || "未提供"}
-                    </small>
-                  )}
-                </article>
-              ))}
-            </div>
-          </div>
-        )}
-      </section>
-      <section className="admin-section">
-        <div className="section-heading">
-          <h3>Dataset Revisions</h3>
-          <input
-            value={rollbackReason}
-            onChange={(event) => setRollbackReason(event.target.value)}
-            placeholder="回滚原因"
-          />
-        </div>
-        <div className="revision-list">
-          {revisions.map((revision) => (
-            <div className="revision-row" key={revision.id}>
-              <span>
-                r{revision.revisionNumber} · {revision.indexStatus}
-              </span>
-              <small>{revision.releaseNote ?? "无发布说明"}</small>
-              {revision.isCurrent ? (
-                <b>当前</b>
-              ) : (
-                <button className="secondary-button" onClick={() => void rollback(revision.id)}>
-                  回滚到此版本
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        {!revisions.length && <p className="muted small">暂无已发布版本</p>}
-      </section>
-      <section className="admin-section">
-        <div className="section-heading">
-          <h3>后台任务</h3>
-          <span className="muted small">任务保存在 PostgreSQL，页面刷新后仍可查看</span>
-        </div>
-        <div className="job-list">
-          {jobs.slice(0, 20).map((job) => (
-            <div className="job-row" key={job.id}>
-              <span>{job.type}</span>
-              <b className={`job-${job.status}`}>{job.status}</b>
-              <small>
-                尝试 {job.attempts}
-                {job.error ? ` · ${job.error}` : ""}
-              </small>
-            </div>
-          ))}
-        </div>
-        {!jobs.length && <p className="muted small">暂无任务</p>}
-      </section>
-    </div>
+    { ready: "索引就绪", pending: "等待索引", rebuilding: "正在重建", failed: "索引失败" }[
+      status
+    ] ?? status
   );
+}
+
+function releaseJobTypeLabel(type: string): string {
+  return { rebuild_search: "重建搜索索引", generate_embeddings: "生成 Embeddings" }[type] ?? type;
+}
+
+function releaseJobStatusLabel(status: string): string {
+  return (
+    { completed: "已完成", running: "执行中", failed: "失败", pending: "等待中" }[status] ?? status
+  );
+}
+
+function releaseJobIcon(status: string): string {
+  return { completed: "✓", running: "↻", failed: "!", pending: "·" }[status] ?? "·";
 }
 
 function AcquisitionStatusPanel({ status, stale }: { status: AcquisitionStatus; stale: boolean }) {
@@ -1828,60 +2102,6 @@ function AcquisitionCheck({ label, ok }: { label: string; ok: boolean }) {
   );
 }
 
-function VerificationProvenance({
-  item,
-  datasetRevision,
-  upstreamCommit,
-}: {
-  item: VerificationItem;
-  datasetRevision?: string | null;
-  upstreamCommit: string;
-}) {
-  const provenance = item.provenance;
-  return (
-    <details className="verification-provenance">
-      <summary>查看正文与完整出处</summary>
-      <div className="provenance-grid">
-        <span>Dataset Revision</span>
-        <b>{datasetRevision ?? "待发布"}</b>
-        <span>Source Snapshot</span>
-        <b>{item.sourceSnapshotId ?? "未关联"}</b>
-        <span>Commit / 版本</span>
-        <b>
-          {provenance?.upstreamCommit ?? upstreamCommit}
-          {provenance?.upstreamVersionLabel ? ` · ${provenance.upstreamVersionLabel}` : ""}
-        </b>
-        <span>游戏版本 / 语言</span>
-        <b>
-          {item.gameVersion ?? "未知"} · {item.locale ?? "未知"}
-        </b>
-        <span>Canonical Key</span>
-        <b>{provenance?.canonicalKey ?? item.canonicalKey}</b>
-        <span>上游 ID</span>
-        <b>{formatProvenanceValue(provenance?.upstreamIds)}</b>
-        <span>相对文件</span>
-        <b>{provenance?.sourceFiles?.join(", ") || "未提供"}</b>
-        <span>字段映射</span>
-        <b>{formatProvenanceValue(provenance?.lineage)}</b>
-        <span>TextMap Hash</span>
-        <b>{formatProvenanceValue(provenance?.textMapHashes)}</b>
-        <span>正文哈希</span>
-        <b>
-          normalized: {provenance?.normalizedContentHash ?? "未提供"}
-          <br />
-          raw: {provenance?.rawContentHash ?? "未提供"}
-        </b>
-        <span>转换步骤</span>
-        <b>{provenance?.transforms?.join("；") || "未提供"}</b>
-      </div>
-      <div className="verification-body-block">
-        <span>当前导入正文</span>
-        <pre>{item.body ?? "来源观察未提供正文"}</pre>
-      </div>
-    </details>
-  );
-}
-
 function formatProvenanceValue(value: unknown): string {
   if (value === undefined || value === null) return "未提供";
   return JSON.stringify(value) ?? "未提供";
@@ -1925,17 +2145,37 @@ function DiffView({
 }
 
 function DiffColumn({ title, values }: { title: string; values: string[] }) {
+  const pageSize = 12;
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(values.length / pageSize));
+  const visible = values.slice(page * pageSize, (page + 1) * pageSize);
+  useEffect(() => {
+    if (page >= pageCount) setPage(0);
+  }, [page, pageCount]);
   return (
     <div>
       <h4>{title}</h4>
       {values.length ? (
         <ul className="key-list">
-          {values.map((value) => (
+          {visible.map((value) => (
             <li key={value}>{value}</li>
           ))}
         </ul>
       ) : (
         <p className="muted small">无</p>
+      )}
+      {pageCount > 1 && (
+        <div className="diff-pagination">
+          <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            上一页
+          </button>
+          <span>
+            {page + 1} / {pageCount}
+          </span>
+          <button disabled={page + 1 === pageCount} onClick={() => setPage((p) => p + 1)}>
+            下一页
+          </button>
+        </div>
       )}
     </div>
   );

@@ -67,11 +67,13 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id, query, entity_type, limit }) => {
       try {
         await domain.requireCapability(game_id, "entity_search");
+        const revisionId = await requirePublicRevision(repository, game_id);
         const result = await repository.search(game_id, {
           query,
           types: ["entity"],
           entityTypes: entity_type ? [entity_type] : undefined,
           limit,
+          revisionId,
           debug: false,
         });
         return result.revision
@@ -90,7 +92,8 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id, entity_id }) => {
       try {
         await domain.requireCapability(game_id, "entity_search");
-        return textResult({ entity: await domain.getEntity(game_id, entity_id) });
+        const revisionId = await requirePublicRevision(repository, game_id);
+        return textResult({ entity: await domain.getEntity(game_id, entity_id, revisionId) });
       } catch (error) {
         return errorResultFrom(error, "entity_not_found", "Entity was not found");
       }
@@ -109,11 +112,13 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id, query, document_type, limit }) => {
       try {
         await domain.requireCapability(game_id, "lore_search");
+        const revisionId = await requirePublicRevision(repository, game_id);
         const result = await repository.search(game_id, {
           query,
           types: ["document", "segment"],
           documentTypes: document_type ? [document_type] : undefined,
           limit,
+          revisionId,
           debug: false,
         });
         return result.revision
@@ -137,7 +142,8 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id, document_id, segment_id, max_chars }) => {
       try {
         await domain.requireCapability(game_id, "lore_search");
-        const document = await domain.getDocument(game_id, document_id);
+        const revisionId = await requirePublicRevision(repository, game_id);
+        const document = await domain.getDocument(game_id, document_id, revisionId);
         if (segment_id && !document.segments.some((segment) => segment.id === segment_id))
           throw new DomainError("segment_not_found", "Segment was not found", undefined, 404);
         return textResult({ document: truncateDocument(document, segment_id, max_chars) });
@@ -159,13 +165,15 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id, entity_id, predicate, limit }) => {
       try {
         await domain.requireCapability(game_id, "relationships");
-        await domain.getEntity(game_id, entity_id);
+        const revisionId = await requirePublicRevision(repository, game_id);
+        await domain.getEntity(game_id, entity_id, revisionId);
         return textResult({
           game_id,
           entity_id,
           relationships: await repository.getRelationships(game_id, entity_id, {
             predicate,
             limit,
+            revisionId,
           }),
         });
       } catch (error) {
@@ -180,13 +188,18 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async (uri, variables) => {
       try {
         const id = String(variables.game_id);
+        const revisionId = await requirePublicRevision(repository, id);
         const game = await repository.getGame(id);
         return {
           contents: [
             {
               uri: uri.href,
               mimeType: "application/json",
-              text: JSON.stringify(game ?? { error: { code: "game_not_found" } }),
+              text: JSON.stringify(
+                game
+                  ? { ...game, currentRevision: revisionId }
+                  : { error: { code: "game_not_found" } },
+              ),
             },
           ],
         };
@@ -200,9 +213,11 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     new ResourceTemplate("entity://{game_id}/{entity_id}", { list: undefined }),
     async (uri, variables) => {
       try {
+        const revisionId = await requirePublicRevision(repository, String(variables.game_id));
         const entity = await domain.getEntity(
           String(variables.game_id),
           String(variables.entity_id),
+          revisionId,
         );
         return {
           contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(entity) }],
@@ -217,9 +232,11 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     new ResourceTemplate("document://{game_id}/{document_id}", { list: undefined }),
     async (uri, variables) => {
       try {
+        const revisionId = await requirePublicRevision(repository, String(variables.game_id));
         const document = await domain.getDocument(
           String(variables.game_id),
           String(variables.document_id),
+          revisionId,
         );
         return {
           contents: [
@@ -246,7 +263,14 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
             {
               uri: uri.href,
               mimeType: "application/json",
-              text: JSON.stringify(revisions.find((revision) => revision.isCurrent) ?? null),
+              text: JSON.stringify(
+                revisions.find(
+                  (revision) =>
+                    revision.isCurrent &&
+                    revision.lifecycleStatus === "published" &&
+                    revision.indexStatus === "ready",
+                ) ?? null,
+              ),
             },
           ],
         };
@@ -256,6 +280,26 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     },
   );
   return server;
+}
+
+/** Snapshot the public read boundary once per request. Preview, retired, stale and
+ * unindexed revisions are intentionally invisible to MCP. */
+async function requirePublicRevision(repository: KnowledgeRepository, gameId: string) {
+  const revision = (await repository.listRevisions(gameId)).find(
+    (item) =>
+      item.isCurrent &&
+      item.lifecycleStatus === "published" &&
+      item.indexStatus === "ready" &&
+      Boolean(item.manifestId),
+  );
+  if (!revision)
+    throw new DomainError(
+      "index_not_ready",
+      "No searchable Dataset Revision is ready",
+      undefined,
+      503,
+    );
+  return revision.id;
 }
 
 function truncateDocument(

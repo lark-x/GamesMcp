@@ -327,6 +327,7 @@ function parseScaledBytes(raw: string, multiplier: number): number | undefined {
 export function parseDfOutput(
   output: string,
   expectedMountPath?: string,
+  platform: NodeJS.Platform = process.platform,
 ): VolumeEvidence | undefined {
   const lines = output
     .split(/\r?\n/)
@@ -334,7 +335,7 @@ export function parseDfOutput(
     .filter(Boolean);
   const header = lines.find((line) => /\bFilesystem\b/i.test(line) && /blocks/i.test(line));
   const multiplier = header && /512-blocks/i.test(header) ? 512 : 1024;
-  const expected = expectedMountPath ? normalizePath(expectedMountPath) : undefined;
+  const expected = expectedMountPath ? normalizePath(expectedMountPath, platform) : undefined;
 
   for (const line of [...lines].reverse()) {
     if (/^Filesystem\b/i.test(line.trim())) continue;
@@ -352,7 +353,7 @@ export function parseDfOutput(
     const parsedMountPoint = mountPoint ?? fields.slice(5).join(" ");
     if (!parsedMountPoint) continue;
     return {
-      mountPoint: normalizePath(parsedMountPoint),
+      mountPoint: normalizePath(parsedMountPoint, platform),
       filesystem,
       totalBytes: parseScaledBytes(totalBlocks, multiplier),
       availableBytes: parseScaledBytes(availableBlocks, multiplier),
@@ -380,15 +381,16 @@ function mountOptions(options: string | undefined): { readOnly: boolean; filesys
 export function parseMountOutput(
   output: string,
   expectedMountPath: string,
+  platform: NodeJS.Platform = process.platform,
 ): VolumeEvidence | undefined {
-  const expected = normalizePath(expectedMountPath);
+  const expected = normalizePath(expectedMountPath, platform);
   for (const rawLine of output.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
 
     const linuxMatch = /^.+?\s+on\s+(.+?)\s+type\s+(\S+)(?:\s+\(([^)]*)\))?\s*$/.exec(line);
     if (linuxMatch) {
-      const mountPoint = normalizePath(decodeMountPath(linuxMatch[1] ?? ""));
+      const mountPoint = normalizePath(decodeMountPath(linuxMatch[1] ?? ""), platform);
       if (mountPoint !== expected) continue;
       const options = mountOptions(linuxMatch[3]);
       return {
@@ -400,7 +402,7 @@ export function parseMountOutput(
 
     const macMatch = /^.+?\s+on\s+(.+?)\s+\(([^)]*)\)\s*$/.exec(line);
     if (!macMatch) continue;
-    const mountPoint = normalizePath(decodeMountPath(macMatch[1] ?? ""));
+    const mountPoint = normalizePath(decodeMountPath(macMatch[1] ?? ""), platform);
     if (mountPoint !== expected) continue;
     const options = mountOptions(macMatch[2]);
     return { mountPoint, filesystem: options.filesystem, readOnly: options.readOnly };
@@ -606,9 +608,9 @@ export async function inspectVolume(
   if (platform === "win32") return inspectWindowsVolume(path, runner);
   const normalizedPath = normalizePath(path, platform);
   const dfOutput = await optionalCommandOutput(runner, "df", ["-Pk", normalizedPath]);
-  const df = dfOutput ? parseDfOutput(dfOutput, normalizedPath) : undefined;
+  const df = dfOutput ? parseDfOutput(dfOutput, normalizedPath, platform) : undefined;
   const mountOutput = await optionalCommandOutput(runner, "mount", []);
-  const mount = mountOutput ? parseMountOutput(mountOutput, normalizedPath) : undefined;
+  const mount = mountOutput ? parseMountOutput(mountOutput, normalizedPath, platform) : undefined;
   const diskutilOutput =
     mount === undefined
       ? await optionalCommandOutput(runner, "diskutil", ["info", normalizedPath])
@@ -769,17 +771,17 @@ export async function runStoragePreflight(
 
 function printResult(result: StoragePreflightResult): void {
   if (result.ok) {
-    console.log("Data storage preflight passed.");
-    console.log(`  data root: ${result.config.dataRoot}`);
+    console.log("数据存储检查通过。");
+    console.log(`  数据目录：${result.config.dataRoot}`);
     console.log(
-      `  external volume: ${result.external.filesystem?.toUpperCase() ?? "unknown"}, ${formatGiB(result.external.availableBytes)} available (minimum ${result.config.externalMinFreeGiB} GiB)`,
+      `  数据磁盘：${result.external.filesystem?.toUpperCase() ?? "未知文件系统"}，可用 ${formatGiB(result.external.availableBytes)}（最低要求 ${result.config.externalMinFreeGiB} GiB）`,
     );
     console.log(
-      `  system data volume: ${formatGiB(result.systemData.availableBytes)} available (minimum ${result.config.systemDataMinFreeGiB} GiB)`,
+      `  系统磁盘：可用 ${formatGiB(result.systemData.availableBytes)}（最低要求 ${result.config.systemDataMinFreeGiB} GiB）`,
     );
     return;
   }
-  console.error("Data storage preflight failed; no system-disk fallback is permitted.");
+  console.error("数据存储检查失败；为保护数据，不允许自动改用系统盘。");
   for (const error of result.errors) console.error(`  - ${error}`);
 }
 
@@ -789,7 +791,7 @@ export async function main(options: StoragePreflightOptions = {}): Promise<numbe
     printResult(result);
     return result.ok ? 0 : 1;
   } catch (error) {
-    console.error("Data storage preflight failed; no system-disk fallback is permitted.");
+    console.error("数据存储检查失败；为保护数据，不允许自动改用系统盘。");
     console.error(`  - ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }

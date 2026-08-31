@@ -19,6 +19,7 @@ describe("ingestion", () => {
       payload: {
         title: "序章",
         body: "旅行者来到蒙德",
+        parserVersion: "source-adapter-v2",
         entities: [
           { sourceKey: "traveler", name: "旅行者", entityType: "character", aliases: ["Traveler"] },
         ],
@@ -27,6 +28,7 @@ describe("ingestion", () => {
     });
     expect(record.sourceKey).toBe("quests/intro");
     expect(record.entities?.[0]?.name).toBe("旅行者");
+    expect(record.parserVersion).toBe("source-adapter-v2");
     expect(record.contentHash).toHaveLength(64);
   });
 

@@ -19,7 +19,7 @@ curl http://127.0.0.1:4100/api/ready/search
 curl http://127.0.0.1:4100/api/ready/worker
 ```
 
-如果 4100 或 4173 已被本机其他项目占用，可以同时改 API 端口、Web 端口和 Vite 代理：
+开发启动脚本会自动检测端口；如果 4100 或 4173 被占用，会在附近寻找空闲端口，并在启动日志中打印实际地址。也可以手动指定端口：
 
 ```bash
 API_PORT=14100 WEB_PORT=14173 pnpm dev
@@ -32,7 +32,7 @@ API_PORT=14100 WEB_PORT=14173 pnpm dev
 3. Worker 领取任务并更新为 `running`，创建不可变快照、标准化记录、校验结果和 Diff。
 4. 在 Diff 页面检查新增、修改、未变化、冲突、未解析和删除候选；删除候选默认不删除线上数据。刷新页面后可从“已有导入批次”选择之前的批次继续处理。
 5. 审核时填写审核说明，只勾选确实确认删除的 `deletionCandidates`；批次变为 `review_required`。
-6. 对 AnimeGameData 等带字段级出处的采集批次，先执行 `pnpm data:backup`；系统会校验备份清单后才允许发布。发布后创建新的 Dataset Revision，事务完成后才切换当前指针；全文重建和 Embedding 任务异步执行。
+6. 对 AnimeGameData 等带字段级出处的采集批次，先执行 `pnpm data:backup`；系统会校验备份清单和人工核验门禁后才允许发布。发布后创建新的 Dataset Revision，事务完成后才切换当前指针；全文重建和 Embedding 任务异步执行。
 7. 在后台任务列表和 `/api/ready/search` 确认索引状态。刷新 Web 不会丢失批次或任务状态。
 
 重复导入相同内容不会重复创建同一来源的 Snapshot；无变化批次发布为幂等操作，不创建新的 Dataset Revision。

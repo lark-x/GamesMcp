@@ -19,7 +19,6 @@ import {
   rollbackRequestSchema,
   searchRequestSchema,
   screenshotUploadSchema,
-  publishRequestSchema,
   updateVerificationItemSchema,
 } from "@gip/contracts";
 import {
@@ -52,7 +51,12 @@ function parseIdParams(request: FastifyRequest): {
   batchId?: string;
   revisionId?: string;
   itemId?: string;
+  screenshotId?: string;
+  issueId?: string;
+  evidenceId?: string;
   conflictId?: string;
+  candidateId?: string;
+  buildId?: string;
 } {
   const params = request.params as {
     gameId?: unknown;
@@ -61,7 +65,12 @@ function parseIdParams(request: FastifyRequest): {
     batchId?: unknown;
     revisionId?: unknown;
     itemId?: unknown;
+    screenshotId?: unknown;
+    issueId?: unknown;
+    evidenceId?: unknown;
     conflictId?: unknown;
+    candidateId?: unknown;
+    buildId?: unknown;
   };
   return {
     gameId: params.gameId === undefined ? "" : gameIdSchema.parse(params.gameId),
@@ -72,8 +81,16 @@ function parseIdParams(request: FastifyRequest): {
     revisionId:
       params.revisionId === undefined ? undefined : revisionIdSchema.parse(params.revisionId),
     itemId: params.itemId === undefined ? undefined : z.string().uuid().parse(params.itemId),
+    screenshotId:
+      params.screenshotId === undefined ? undefined : z.string().uuid().parse(params.screenshotId),
+    issueId: params.issueId === undefined ? undefined : z.string().uuid().parse(params.issueId),
+    evidenceId:
+      params.evidenceId === undefined ? undefined : z.string().uuid().parse(params.evidenceId),
     conflictId:
       params.conflictId === undefined ? undefined : z.string().uuid().parse(params.conflictId),
+    candidateId:
+      params.candidateId === undefined ? undefined : z.string().uuid().parse(params.candidateId),
+    buildId: params.buildId === undefined ? undefined : z.string().uuid().parse(params.buildId),
   };
 }
 
@@ -191,6 +208,17 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         );
       }
     }
+    const routePath = request.url.split("?", 1)[0] ?? request.url;
+    if (
+      /^\/api\/admin\/verification(?:\/|$)/.test(routePath) ||
+      /^\/api\/admin\/imports\/[^/]+\/verification(?:\/|$)/.test(routePath)
+    )
+      throw new DomainError(
+        "legacy_verification_retired",
+        "Fixed-sample verification was replaced by issue-driven Candidate review",
+        { replacement: "/api/admin/release-candidates/:candidateId/issues" },
+        410,
+      );
     if (request.method === "POST" && request.url.split("?", 1)[0]?.endsWith("/qa")) {
       const now = Date.now();
       const key = request.ip;
@@ -568,12 +596,62 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     const batch = await repository.getImport(batchId ?? "");
     if (!batch)
       throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
+    const query = z
+      .object({
+        offset: z.coerce.number().int().min(0).default(0),
+        limit: z.coerce.number().int().min(1).max(500).default(500),
+      })
+      .parse(request.query);
+    const diff = batch.diff ?? null;
+    const summary = diff
+      ? Object.fromEntries(
+          Object.entries(diff).map(([key, values]) => [key, (values as string[]).length]),
+        )
+      : {};
+    const pagedDiff = diff
+      ? Object.fromEntries(
+          Object.entries(diff).map(([key, values]) => [
+            key,
+            (values as string[]).slice(query.offset, query.offset + query.limit),
+          ]),
+        )
+      : null;
     return {
       batchId: batch.id,
       status: batch.status,
-      diff: batch.diff ?? null,
+      diff: pagedDiff,
+      summary,
+      offset: query.offset,
+      limit: query.limit,
       errors: batch.errors,
       warnings: batch.warnings,
+    };
+  });
+
+  app.get("/api/admin/imports/:batchId/publish-readiness", async (request) => {
+    const { batchId } = parseIdParams(request);
+    const batch = await repository.getImport(batchId ?? "");
+    if (!batch)
+      throw new DomainError("import_not_found", "Import batch was not found", undefined, 404);
+    if (repository.getPublishReadiness)
+      return { batchId: batch.id, ...(await repository.getPublishReadiness(batch.id)) };
+    const reasons: string[] = [];
+    if (batch.status !== "review_required") reasons.push(`invalid_status:${batch.status}`);
+    if (batch.errors.length) reasons.push("import_has_errors");
+    if (
+      batch.diff?.deletionCandidates.length &&
+      batch.confirmedDeletionKeys.length < batch.diff.deletionCandidates.length
+    )
+      reasons.push("deletions_unconfirmed");
+    const run = repository.getVerificationRun
+      ? await repository.getVerificationRun(batch.id)
+      : null;
+    if (run?.status === "blocked") reasons.push("verification_blocked");
+    return {
+      batchId: batch.id,
+      ready: reasons.length === 0,
+      blockingReasons: reasons,
+      verification: run ? { status: run.status, itemCount: run.items.length } : null,
     };
   });
 
@@ -602,13 +680,532 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
     );
   });
 
-  app.post("/api/admin/imports/:batchId/publish", async (request) => {
-    const { batchId } = parseIdParams(request);
-    const body = publishRequestSchema.parse(request.body ?? {});
-    return repository.publishImport(batchId ?? "", body.releaseNote);
+  app.post("/api/admin/imports/:batchId/publish", async () => {
+    throw new DomainError(
+      "legacy_publish_disabled",
+      "批次直接发布已停用，请先打开预发布分支并通过审核后合入正式版本",
+      undefined,
+      410,
+    );
+  });
+
+  app.post("/api/admin/release-candidates", async (request, reply) => {
+    if (!repository.createReleaseCandidate)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const body = z
+      .object({
+        gameId: z.string().uuid(),
+        name: z.string().trim().min(1).max(120),
+        importBatchIds: z.array(z.string().uuid()).min(1).max(20),
+      })
+      .parse(request.body);
+    const candidate = await repository.createReleaseCandidate(body);
+    return reply.code(201).send({ candidate });
+  });
+
+  app.get("/api/admin/release-candidates", async (request) => {
+    if (!repository.listReleaseCandidates)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const query = z.object({ gameId: z.string().uuid().optional() }).parse(request.query);
+    return { candidates: await repository.listReleaseCandidates(query.gameId) };
+  });
+
+  app.get("/api/admin/release-candidates/:candidateId", async (request) => {
+    if (!repository.getReleaseCandidate)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { candidateId } = parseIdParams(request);
+    const candidate = await repository.getReleaseCandidate(candidateId ?? "");
+    if (!candidate)
+      throw new DomainError(
+        "candidate_not_found",
+        "Release candidate was not found",
+        undefined,
+        404,
+      );
+    return { candidate };
+  });
+
+  app.post("/api/admin/release-candidates/:candidateId/builds", async (request, reply) => {
+    if (!repository.buildReleaseCandidate)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { candidateId } = parseIdParams(request);
+    const build = await repository.buildReleaseCandidate(candidateId ?? "");
+    // Build endpoints return the build resource directly (the web preview contract).
+    return reply.code(201).send(build);
+  });
+
+  app.get("/api/admin/release-candidates/:candidateId/readiness", async (request) => {
+    if (!repository.getReleaseCandidateReadiness)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { candidateId } = parseIdParams(request);
+    return repository.getReleaseCandidateReadiness(candidateId ?? "");
+  });
+
+  app.get("/api/admin/review-issues", async (request) => {
+    if (!repository.listReleaseCandidates || !repository.listReviewIssues)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const query = z
+      .object({
+        gameId: z.string().uuid().optional(),
+        candidateId: z.string().uuid().optional(),
+        status: z.enum(["open", "resolved", "reopened"]).optional(),
+      })
+      .parse(request.query);
+    const candidateIds = query.candidateId
+      ? [query.candidateId]
+      : (await repository.listReleaseCandidates(query.gameId)).map((candidate) => candidate.id);
+    const issues = (await Promise.all(candidateIds.map((id) => repository.listReviewIssues!(id))))
+      .flat()
+      .filter((issue) => !query.status || issue.status === query.status)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+    return { issues };
+  });
+
+  app.get("/api/admin/release-candidates/:candidateId/issues", async (request) => {
+    if (!repository.listReviewIssues)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { candidateId } = parseIdParams(request);
+    return { issues: await repository.listReviewIssues(candidateId ?? "") };
+  });
+  app.post("/api/admin/release-candidates/:candidateId/issues", async (request, reply) => {
+    if (!repository.reportReviewIssue)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { candidateId } = parseIdParams(request);
+    const body = z
+      .object({
+        buildId: z.string().uuid(),
+        canonicalKey: z.string().min(1),
+        fieldPath: z.string().optional(),
+        summary: z.string().min(1),
+        details: z.record(z.unknown()).optional(),
+      })
+      .parse(request.body);
+    const issue = await repository.reportReviewIssue({ candidateId: candidateId ?? "", ...body });
+    return reply.code(201).send({ issue });
+  });
+  app.get("/api/admin/review-issues/:issueId", async (request) => {
+    if (!repository.getReviewIssue)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    const issue = await repository.getReviewIssue(issueId ?? "");
+    if (!issue)
+      throw new DomainError("issue_not_found", "Review issue was not found", undefined, 404);
+    return { issue };
+  });
+  app.post("/api/admin/review-issues/:issueId/resolve", async (request) => {
+    if (!repository.resolveReviewIssue)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    const body = z
+      .object({ action: z.string().optional(), note: z.string().optional() })
+      .parse(request.body);
+    return repository.resolveReviewIssue(issueId ?? "", body.action, body.note);
+  });
+  app.post("/api/admin/review-issues/:issueId/reopen", async (request) => {
+    if (!repository.reopenReviewIssue)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    return repository.reopenReviewIssue(issueId ?? "");
+  });
+  app.get("/api/admin/release-candidates/:candidateId/patches", async (request) => {
+    if (!repository.listCandidatePatches)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { candidateId } = parseIdParams(request);
+    return { patches: await repository.listCandidatePatches(candidateId ?? "") };
+  });
+  app.post("/api/admin/release-candidates/:candidateId/patches", async (request) => {
+    if (!repository.createCandidatePatch || !repository.buildReleaseCandidate)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { candidateId } = parseIdParams(request);
+    const body = z
+      .object({
+        issueId: z.string().uuid().optional(),
+        canonicalKey: z.string().min(1),
+        fieldPath: z.string().optional(),
+        action: z.enum([
+          "keep_main",
+          "use_incoming",
+          "manual",
+          "not_duplicate",
+          "confirm_delete",
+          "exclude_record",
+        ]),
+        manualValue: z.unknown().optional(),
+        expectedBaseHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+        expectedIncomingHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
+      .parse(request.body);
+    if (body.action === "manual" && !body.fieldPath)
+      throw new DomainError(
+        "patch_field_required",
+        "manual patches require fieldPath",
+        undefined,
+        400,
+      );
+    const patch = await repository.createCandidatePatch({
+      candidateId: candidateId ?? "",
+      ...body,
+    });
+    const build = await repository.buildReleaseCandidate(candidateId ?? "");
+    return { patch, build };
+  });
+  app.get("/api/admin/review-issues/:issueId/evidence", async (request) => {
+    if (!repository.listReviewEvidence)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    return { evidence: await repository.listReviewEvidence(issueId ?? "") };
+  });
+  app.post("/api/admin/review-issues/:issueId/evidence", async (request) => {
+    if (!repository.addReviewEvidence)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { issueId } = parseIdParams(request);
+    const body = z
+      .object({
+        dataBase64: z
+          .string()
+          .min(1)
+          .max(7_000_000)
+          .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+        mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+        checkedGameVersion: z.string().min(1),
+        checkedLocale: z.string().min(1),
+        note: z.string().trim().min(1),
+      })
+      .parse(request.body);
+    const bytes = Buffer.from(body.dataBase64, "base64");
+    if (!bytes.length || bytes.length > 5_000_000)
+      throw new DomainError("invalid_evidence", "Evidence must be between 1 byte and 5 MB");
+    const signatures: Record<string, (buffer: Buffer) => boolean> = {
+      "image/png": (buffer) => buffer.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")),
+      "image/jpeg": (buffer) => buffer.subarray(0, 3).equals(Buffer.from("ffd8ff", "hex")),
+      "image/webp": (buffer) =>
+        buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+        buffer.subarray(8, 12).toString("ascii") === "WEBP",
+    };
+    if (!signatures[body.mimeType]?.(bytes))
+      throw new DomainError(
+        "invalid_evidence",
+        "Evidence bytes do not match the declared image type",
+      );
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const extension =
+      body.mimeType === "image/png" ? "png" : body.mimeType === "image/jpeg" ? "jpg" : "webp";
+    const relativePath = `review-evidence/${issueId}/${sha256}.${extension}`;
+    const absolutePath = join(config.dataDir, ...relativePath.split("/"));
+    await mkdir(join(config.dataDir, "review-evidence", issueId ?? "unknown"), {
+      recursive: true,
+    });
+    let createdFile = false;
+    try {
+      await writeFile(absolutePath, bytes, { flag: "wx" });
+      createdFile = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    try {
+      return await repository.addReviewEvidence({
+        issueId: issueId ?? "",
+        relativePath,
+        sha256,
+        bytes: bytes.length,
+        mimeType: body.mimeType,
+        checkedGameVersion: body.checkedGameVersion,
+        checkedLocale: body.checkedLocale,
+        note: body.note,
+      });
+    } catch (error) {
+      if (createdFile) await unlink(absolutePath).catch(() => undefined);
+      throw error;
+    }
+  });
+  app.get("/api/admin/review-evidence/:evidenceId", async (request, reply) => {
+    if (!repository.getReviewEvidence)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { evidenceId } = parseIdParams(request);
+    const item = await repository.getReviewEvidence(evidenceId ?? "");
+    if (!item)
+      throw new DomainError(
+        "review_evidence_not_found",
+        "Review evidence was not found",
+        undefined,
+        404,
+      );
+    const root = resolve(config.dataDir);
+    const filePath = resolve(root, item.relativePath);
+    if (!filePath.startsWith(`${root}/`) && !filePath.startsWith(`${root}\\`))
+      throw new DomainError("invalid_evidence_path", "Review evidence path is invalid");
+    const file = await readFile(filePath).catch(() => undefined);
+    if (!file)
+      throw new DomainError(
+        "review_evidence_file_missing",
+        "Review evidence file was not found",
+        undefined,
+        404,
+      );
+    return reply.type(item.mimeType).send(file);
+  });
+  app.delete("/api/admin/review-evidence/:evidenceId", async (request) => {
+    if (!repository.getReviewEvidence || !repository.deleteReviewEvidence)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { evidenceId } = parseIdParams(request);
+    const item = await repository.getReviewEvidence(evidenceId ?? "");
+    if (!item)
+      throw new DomainError(
+        "review_evidence_not_found",
+        "Review evidence was not found",
+        undefined,
+        404,
+      );
+    const root = resolve(config.dataDir);
+    const filePath = resolve(root, item.relativePath);
+    if (!filePath.startsWith(`${root}/`) && !filePath.startsWith(`${root}\\`))
+      throw new DomainError("invalid_evidence_path", "Review evidence path is invalid");
+    await unlink(filePath).catch(() => undefined);
+    await repository.deleteReviewEvidence(evidenceId ?? "");
+    return { deleted: true, id: evidenceId };
+  });
+  app.get("/api/admin/release-candidates/:candidateId/checks", async (request) => {
+    if (!repository.listReleaseCandidateChecks)
+      throw new DomainError("review_not_supported", "Review is not supported", undefined, 501);
+    const { candidateId } = parseIdParams(request);
+    return { checks: await repository.listReleaseCandidateChecks(candidateId ?? "") };
+  });
+
+  app.post("/api/admin/release-candidates/:candidateId/promote", async (request) => {
+    if (!repository.promoteReleaseCandidate)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { candidateId } = parseIdParams(request);
+    const body = z
+      .object({
+        buildId: z.string().uuid(),
+        contentChecksum: z.string().regex(/^[a-f0-9]{64}$/),
+        expectedCurrentRevisionId: z.string().uuid().nullable().optional(),
+        releaseNote: z.string().trim().max(2_000).optional(),
+        idempotencyKey: z.string().trim().min(8).max(128),
+      })
+      .parse(request.body);
+    return repository.promoteReleaseCandidate({ candidateId: candidateId ?? "", ...body });
+  });
+
+  app.get("/api/admin/previews/:buildId/entities", async (request) => {
+    if (!repository.getReleaseCandidateBuild)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { buildId } = parseIdParams(request);
+    const build = await repository.getReleaseCandidateBuild(buildId ?? "");
+    if (!build)
+      throw new DomainError("build_not_found", "Preview build was not found", undefined, 404);
+    const query = z
+      .object({
+        limit: z.coerce.number().min(1).max(500).default(50),
+        offset: z.coerce.number().min(0).default(0),
+      })
+      .parse(request.query);
+    const entities = build.normalizedRecords.flatMap((record) => {
+      if (record.entities?.length)
+        return record.entities.map((candidate) => ({
+          sourceKey: candidate.sourceKey,
+          recordSourceKey: record.sourceKey,
+          type: candidate.type,
+          name: candidate.name,
+          summary: candidate.summary ?? "",
+          aliases: candidate.aliases ?? [],
+          properties: candidate.properties ?? {},
+          metadata: record.metadata ?? {},
+          contentHash: record.contentHash,
+          parserVersion: record.parserVersion,
+        }));
+      if (record.recordType !== "entity" && !record.entityType) return [];
+      return [
+        {
+          sourceKey: record.sourceKey,
+          recordSourceKey: record.sourceKey,
+          type: (record.entityType ?? record.recordType) as
+            | "character"
+            | "faction"
+            | "region"
+            | "location"
+            | "item"
+            | "event"
+            | "concept"
+            | "quest"
+            | "book",
+          name: record.title ?? record.sourceKey,
+          summary: record.body ?? "",
+          aliases: [],
+          properties: {},
+          metadata: record.metadata ?? {},
+          contentHash: record.contentHash,
+          parserVersion: record.parserVersion,
+        },
+      ];
+    }) as unknown as Array<Record<string, unknown>>;
+    return {
+      buildId: build.id,
+      candidateId: build.candidateId,
+      entities: entities.slice(query.offset, query.offset + query.limit),
+      total: entities.length,
+    };
+  });
+
+  app.get("/api/admin/previews/:buildId/records", async (request) => {
+    if (!repository.getReleaseCandidateBuild)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { buildId } = parseIdParams(request);
+    const build = await repository.getReleaseCandidateBuild(buildId ?? "");
+    if (!build)
+      throw new DomainError("build_not_found", "Preview build was not found", undefined, 404);
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+        offset: z.coerce.number().int().min(0).default(0),
+        q: z.string().optional(),
+        kind: z.enum(["all", "entity", "document"]).default("all"),
+        category: z.string().trim().min(1).max(60).optional(),
+      })
+      .parse(request.query);
+    const needle = query.q?.trim().toLocaleLowerCase();
+    const records = build.normalizedRecords.flatMap((record) => {
+      const primaryEntity = record.entities?.[0];
+      const isEntity =
+        record.recordType === "entity" ||
+        Boolean(record.entityType) ||
+        Boolean(record.entities?.length);
+      const displayKind = isEntity ? "entity" : "document";
+      if (query.kind !== "all" && query.kind !== displayKind) return [];
+      if (
+        query.category &&
+        query.category !== "all" &&
+        !record.sourceKey.startsWith(`genshin-db/${query.category}/`)
+      )
+        return [];
+      const haystack = `${record.sourceKey} ${record.title ?? ""} ${record.body ?? ""} ${
+        primaryEntity?.name ?? ""
+      } ${(primaryEntity?.aliases ?? []).map((alias) => alias.value).join(" ")} ${JSON.stringify(
+        primaryEntity?.properties ?? {},
+      )}`.toLocaleLowerCase();
+      if (needle && !haystack.includes(needle)) return [];
+      return [
+        {
+          sourceKey: primaryEntity?.sourceKey ?? record.sourceKey,
+          recordSourceKey: record.sourceKey,
+          displayKind,
+          type:
+            primaryEntity?.type ?? record.entityType ?? record.documentType ?? record.recordType,
+          title: primaryEntity?.name ?? record.title ?? record.sourceKey,
+          body: primaryEntity?.summary ?? record.body ?? "",
+          aliases: primaryEntity?.aliases ?? [],
+          properties: primaryEntity?.properties ?? {},
+          metadata: record.metadata ?? {},
+          contentHash: record.contentHash,
+          parserVersion: record.parserVersion,
+        },
+      ];
+    });
+    return {
+      buildId: build.id,
+      candidateId: build.candidateId,
+      records: records.slice(query.offset, query.offset + query.limit),
+      total: records.length,
+      offset: query.offset,
+      limit: query.limit,
+    };
+  });
+
+  app.get("/api/admin/previews/:buildId/documents", async (request) => {
+    if (!repository.getReleaseCandidateBuild)
+      throw new DomainError(
+        "release_candidates_not_supported",
+        "Release candidates are not supported",
+        undefined,
+        501,
+      );
+    const { buildId } = parseIdParams(request);
+    const build = await repository.getReleaseCandidateBuild(buildId ?? "");
+    if (!build)
+      throw new DomainError("build_not_found", "Preview build was not found", undefined, 404);
+    const query = z
+      .object({
+        limit: z.coerce.number().min(1).max(500).default(50),
+        offset: z.coerce.number().min(0).default(0),
+      })
+      .parse(request.query);
+    const documents = build.normalizedRecords
+      .filter(
+        (record) =>
+          record.recordType === "document" ||
+          Boolean(record.documentType) ||
+          (record.recordType !== "entity" && !record.entityType && Boolean(record.body)),
+      )
+      .map((record) => ({
+        sourceKey: record.sourceKey,
+        type: record.documentType ?? record.recordType,
+        title: record.title ?? record.sourceKey,
+        body: record.body ?? "",
+        metadata: record.metadata ?? {},
+        contentHash: record.contentHash,
+        parserVersion: record.parserVersion,
+      }));
+    return {
+      buildId: build.id,
+      candidateId: build.candidateId,
+      documents: documents.slice(query.offset, query.offset + query.limit),
+      total: documents.length,
+    };
   });
 
   app.get("/api/admin/imports/:batchId/verification", async (request) => {
+    throw new DomainError(
+      "legacy_verification_removed",
+      "Legacy verification endpoint has been removed",
+      undefined,
+      410,
+    );
     const { batchId } = parseIdParams(request);
     if (!repository.getVerificationRun)
       throw new DomainError(
@@ -617,7 +1214,7 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         undefined,
         501,
       );
-    const run = await repository.getVerificationRun(batchId ?? "");
+    const run = await repository.getVerificationRun!(batchId ?? "");
     if (!run)
       throw new DomainError(
         "verification_run_not_found",
@@ -629,6 +1226,12 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
   });
 
   app.patch("/api/admin/verification/items/:itemId", async (request) => {
+    throw new DomainError(
+      "legacy_verification_removed",
+      "Legacy verification endpoint has been removed",
+      undefined,
+      410,
+    );
     const { itemId } = parseIdParams(request);
     if (!repository.updateVerificationItem)
       throw new DomainError(
@@ -638,13 +1241,19 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         501,
       );
     const body = updateVerificationItemSchema.parse(request.body);
-    return repository.updateVerificationItem({ itemId: itemId ?? "", ...body });
+    return repository.updateVerificationItem!({ itemId: itemId ?? "", ...body });
   });
 
   app.post(
     "/api/admin/verification/items/:itemId/screenshots",
     { bodyLimit: 8_000_000 },
     async (request) => {
+      throw new DomainError(
+        "legacy_verification_removed",
+        "Legacy verification endpoint has been removed",
+        undefined,
+        410,
+      );
       const { itemId } = parseIdParams(request);
       if (!repository.addVerificationScreenshot)
         throw new DomainError(
@@ -685,7 +1294,7 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
       try {
-        await repository.addVerificationScreenshot({
+        await repository.addVerificationScreenshot!({
           itemId: itemId ?? "",
           relativePath,
           sha256,
@@ -699,6 +1308,66 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
       return { relativePath, sha256, bytes: bytes.length, mimeType: body.mimeType };
     },
   );
+
+  app.get("/api/admin/verification/items/:itemId/screenshots", async (request) => {
+    const { itemId } = parseIdParams(request);
+    if (!repository.listVerificationScreenshots)
+      throw new DomainError(
+        "verification_not_supported",
+        "Verification is not supported",
+        undefined,
+        501,
+      );
+    return { screenshots: await repository.listVerificationScreenshots(itemId ?? "") };
+  });
+
+  app.get("/api/admin/verification/screenshots/:screenshotId", async (request, reply) => {
+    const { screenshotId } = parseIdParams(request);
+    if (!repository.getVerificationScreenshot)
+      throw new DomainError(
+        "verification_not_supported",
+        "Verification is not supported",
+        undefined,
+        501,
+      );
+    const screenshot = await repository.getVerificationScreenshot(screenshotId ?? "");
+    if (!screenshot)
+      throw new DomainError("screenshot_not_found", "Screenshot was not found", undefined, 404);
+    const root = resolve(config.dataDir);
+    const filePath = resolve(root, screenshot.relativePath);
+    if (!filePath.startsWith(`${root}/`) && !filePath.startsWith(`${root}\\`))
+      throw new DomainError("invalid_screenshot_path", "Screenshot path is invalid");
+    const bytes = await readFile(filePath).catch(() => undefined);
+    if (!bytes)
+      throw new DomainError(
+        "screenshot_file_missing",
+        "Screenshot file was not found",
+        undefined,
+        404,
+      );
+    return reply.type(screenshot.mimeType).send(bytes);
+  });
+
+  app.delete("/api/admin/verification/screenshots/:screenshotId", async (request) => {
+    const { screenshotId } = parseIdParams(request);
+    if (!repository.deleteVerificationScreenshot)
+      throw new DomainError(
+        "verification_not_supported",
+        "Verification is not supported",
+        undefined,
+        501,
+      );
+    const screenshot = await repository.getVerificationScreenshot?.(screenshotId ?? "");
+    if (!screenshot)
+      throw new DomainError("screenshot_not_found", "Screenshot was not found", undefined, 404);
+    const root = resolve(config.dataDir);
+    const filePath = resolve(root, screenshot.relativePath);
+    if (!filePath.startsWith(`${root}/`) && !filePath.startsWith(`${root}\\`))
+      throw new DomainError("invalid_screenshot_path", "Screenshot path is invalid");
+    await unlink(filePath).catch(() => undefined);
+    await repository.deleteVerificationScreenshot!(screenshotId ?? "");
+    return { deleted: true, id: screenshot.id };
+  });
 
   app.get("/api/admin/conflicts", async (request) => {
     if (!repository.listConflicts)

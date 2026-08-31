@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import { customType } from "drizzle-orm/pg-core";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -291,14 +293,238 @@ export const datasetRevisions = knowledge.table(
       .notNull()
       .references(() => importBatches.id),
     releaseNote: text("release_note"),
+    lifecycleStatus: text("lifecycle_status").notNull().default("published"),
     publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
     isCurrent: boolean("is_current").notNull().default(false),
     indexStatus: text("index_status").notNull().default("pending"),
     normalizedRecords: jsonb("normalized_records").$type<NormalizedRecord[]>(),
+    manifestId: uuid("manifest_id"),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    activationBuildId: uuid("activation_build_id"),
+    activationCandidateId: uuid("activation_candidate_id"),
+    activationError: jsonb("activation_error").$type<Record<string, unknown>>(),
+    provenance: jsonb("provenance").$type<Record<string, unknown>>(),
+    sourceId: uuid("source_id").references(() => sources.id),
+    gameVersion: text("game_version"),
+    locale: text("locale"),
+    archivedReason: text("archived_reason"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("dataset_revisions_game_number_unique").on(table.gameId, table.revisionNumber),
+    uniqueIndex("dataset_revisions_activation_candidate_unique")
+      .on(table.activationCandidateId)
+      .where(sql`${table.activationCandidateId} IS NOT NULL`),
     index("dataset_revisions_current_index").on(table.gameId, table.isCurrent),
+    index("dataset_revisions_lifecycle_index").on(table.gameId, table.lifecycleStatus),
+    check(
+      "dataset_revisions_lifecycle_valid",
+      sql`${table.lifecycleStatus} IN ('preparing', 'preview', 'published', 'retired', 'failed')`,
+    ),
+    check(
+      "dataset_revisions_current_must_be_published",
+      sql`NOT ${table.isCurrent} OR ${table.lifecycleStatus} = 'published'`,
+    ),
+  ],
+);
+
+export const releaseCandidates = knowledge.table(
+  "release_candidates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id),
+    name: text("name").notNull(),
+    baseRevisionId: uuid("base_revision_id").references(() => datasetRevisions.id),
+    importBatchIds: jsonb("import_batch_ids").$type<string[]>().notNull(),
+    status: text("status").notNull().default("draft"),
+    currentBuildId: uuid("current_build_id"),
+    promotedRevisionId: uuid("promoted_revision_id").references(() => datasetRevisions.id),
+    promotionIdempotencyKey: text("promotion_idempotency_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    sourceId: uuid("source_id"),
+    targetGameVersion: text("target_game_version"),
+    archivedReason: text("archived_reason"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("release_candidates_game_status_index").on(table.gameId, table.status),
+    uniqueIndex("release_candidates_promotion_key_unique").on(table.promotionIdempotencyKey),
+  ],
+);
+
+export const releaseCandidateBuilds = knowledge.table(
+  "release_candidate_builds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    candidateId: uuid("candidate_id")
+      .notNull()
+      .references(() => releaseCandidates.id, { onDelete: "cascade" }),
+    buildNumber: integer("build_number").notNull(),
+    status: text("status").notNull().default("ready"),
+    contentChecksum: text("content_checksum").notNull(),
+    normalizedRecords: jsonb("normalized_records").$type<NormalizedRecord[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    importBatchId: uuid("import_batch_id"),
+    baseRevisionId: uuid("base_revision_id"),
+    manifestId: uuid("manifest_id"),
+    buildKind: text("build_kind").notNull().default("import"),
+    indexStatus: text("index_status").notNull().default("pending"),
+    failureDetails: jsonb("failure_details").$type<Record<string, unknown>>(),
+    sourceId: uuid("source_id").references(() => sources.id),
+    targetGameVersion: text("target_game_version"),
+    locale: text("locale"),
+    archivedReason: text("archived_reason"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("release_candidate_builds_number_unique").on(table.candidateId, table.buildNumber),
+    index("release_candidate_builds_candidate_index").on(table.candidateId),
+  ],
+);
+
+export const contentObjects = knowledge.table("content_objects", {
+  contentHash: text("content_hash").primaryKey(),
+  recordType: text("record_type").notNull(),
+  schemaVersion: text("schema_version").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  byteLength: integer("byte_length").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const datasetManifests = knowledge.table("dataset_manifests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gameId: uuid("game_id")
+    .notNull()
+    .references(() => games.id),
+  kind: text("kind").notNull(),
+  baseRevisionId: uuid("base_revision_id"),
+  rootHash: text("root_hash").notNull(),
+  recordCount: integer("record_count").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const datasetManifestEntries = knowledge.table(
+  "dataset_manifest_entries",
+  {
+    manifestId: uuid("manifest_id")
+      .notNull()
+      .references(() => datasetManifests.id, { onDelete: "cascade" }),
+    canonicalKey: text("canonical_key").notNull(),
+    contentHash: text("content_hash")
+      .notNull()
+      .references(() => contentObjects.contentHash),
+  },
+  (table) => [
+    primaryKey({ columns: [table.manifestId, table.canonicalKey] }),
+    index("dataset_manifest_entries_content_index").on(table.contentHash),
+  ],
+);
+
+export const reviewIssues = knowledge.table(
+  "review_issues",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id),
+    candidateId: uuid("candidate_id")
+      .notNull()
+      .references(() => releaseCandidates.id, { onDelete: "cascade" }),
+    detectedBuildId: uuid("detected_build_id").references(() => releaseCandidateBuilds.id),
+    canonicalKey: text("canonical_key").notNull(),
+    fieldPath: text("field_path"),
+    kind: text("kind").notNull(),
+    status: text("status").notNull().default("open"),
+    blocking: boolean("blocking").notNull().default(true),
+    fingerprint: text("fingerprint").notNull(),
+    baseContentHash: text("base_content_hash"),
+    mainContentHash: text("main_content_hash"),
+    incomingContentHash: text("incoming_content_hash"),
+    summary: text("summary").notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+    resolutionAction: text("resolution_action"),
+    resolutionNote: text("resolution_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("review_issues_candidate_fingerprint_unique").on(
+      table.candidateId,
+      table.fingerprint,
+    ),
+    index("review_issues_queue_index").on(
+      table.gameId,
+      table.candidateId,
+      table.status,
+      table.blocking,
+    ),
+  ],
+);
+
+export const candidatePatches = knowledge.table(
+  "candidate_patches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    candidateId: uuid("candidate_id")
+      .notNull()
+      .references(() => releaseCandidates.id, { onDelete: "cascade" }),
+    issueId: uuid("issue_id").references(() => reviewIssues.id, { onDelete: "set null" }),
+    canonicalKey: text("canonical_key").notNull(),
+    fieldPath: text("field_path"),
+    action: text("action").notNull(),
+    manualValue: jsonb("manual_value"),
+    expectedBaseHash: text("expected_base_hash"),
+    expectedIncomingHash: text("expected_incoming_hash"),
+    appliedBuildId: uuid("applied_build_id").references(() => releaseCandidateBuilds.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("candidate_patches_candidate_index").on(table.candidateId, table.createdAt)],
+);
+
+export const reviewEvidence = knowledge.table(
+  "review_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    issueId: uuid("issue_id")
+      .notNull()
+      .references(() => reviewIssues.id, { onDelete: "cascade" }),
+    relativePath: text("relative_path").notNull(),
+    sha256: text("sha256").notNull(),
+    bytes: integer("bytes").notNull(),
+    mimeType: text("mime_type").notNull(),
+    checkedGameVersion: text("checked_game_version").notNull(),
+    checkedLocale: text("checked_locale").notNull(),
+    note: text("note").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("review_evidence_issue_hash_unique").on(table.issueId, table.sha256)],
+);
+
+export const releaseCandidateChecks = knowledge.table(
+  "release_candidate_checks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    candidateId: uuid("candidate_id")
+      .notNull()
+      .references(() => releaseCandidates.id, { onDelete: "cascade" }),
+    buildId: uuid("build_id").references(() => releaseCandidateBuilds.id, { onDelete: "cascade" }),
+    checkType: text("check_type").notNull(),
+    status: text("status").notNull().default("pending"),
+    message: text("message"),
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+    retryable: boolean("retryable").notNull().default(true),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("release_candidate_checks_unique").on(
+      table.candidateId,
+      table.buildId,
+      table.checkType,
+    ),
   ],
 );
 
@@ -520,6 +746,9 @@ export const embeddings = knowledge.table(
   "embeddings",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
     targetType: text("target_type").notNull(),
     targetId: uuid("target_id").notNull(),
     spaceId: text("space_id").notNull(),
@@ -531,11 +760,13 @@ export const embeddings = knowledge.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("embeddings_target_space_unique").on(
+    uniqueIndex("embeddings_target_revision_space_unique").on(
+      table.revisionId,
       table.targetType,
       table.targetId,
       table.spaceId,
     ),
+    index("embeddings_revision_index").on(table.revisionId),
   ],
 );
 

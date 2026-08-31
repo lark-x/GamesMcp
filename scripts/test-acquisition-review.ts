@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
 import { createDatabase, createPool } from "../packages/database/src/client.ts";
 import { SqlKnowledgeRepository } from "../packages/database/src/repository.ts";
@@ -13,11 +12,7 @@ if (!databaseUrl) {
   );
 }
 
-const migrationPaths = [
-  new URL("../packages/database/src/migrations/0000_initial.sql", import.meta.url),
-  new URL("../packages/database/src/migrations/0001_acquisition_verification.sql", import.meta.url),
-  new URL("../packages/database/src/migrations/0002_conflict_selection.sql", import.meta.url),
-];
+const { applyMigrations } = await import("../packages/database/src/migration-runner.ts");
 
 const upstreamCommit = "26df1dfbdf05a82bbb1d97506859f3e1c40718d8";
 const expectedVersion = "7.0.0";
@@ -123,10 +118,7 @@ async function main() {
   const pool = createPool(databaseUrl);
   const db = createDatabase(pool);
   try {
-    for (const migrationPath of migrationPaths) {
-      const migration = await readFile(migrationPath, "utf8");
-      await pool.query(migration);
-    }
+    await applyMigrations(pool);
     await pool.query("TRUNCATE platform.games, platform.jobs, platform.audit_log CASCADE");
     const gameId = randomUUID();
     const [game] = await db
