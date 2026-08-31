@@ -99,6 +99,19 @@ test("预览搜索过滤会发送 q 参数", async ({ page }) => {
   await expect.poll(() => requested).toContain("q=amber");
 });
 
+test("从预发布详情报告问题并进入问题工作台", async ({ page }) => {
+  await mockApi(page);
+  let issueBody = "";
+  await page.route("**/api/admin/release-candidates/c1/issues", async (route) => {
+    issueBody = route.request().postData() ?? "";
+    await route.fulfill({ json: { issue: { id: "i1" } } });
+  });
+  await page.goto("/#preview/c1");
+  await page.getByRole("button", { name: "报告问题" }).click();
+  await expect.poll(() => issueBody).toContain("canonicalKey");
+  await expect(page).toHaveURL(/#admin\/issues\?/);
+});
+
 test("导入提交显示自动 Candidate 说明", async ({ page }) => {
   await mockApi(page);
   await page.goto("/#admin/intake");
@@ -119,10 +132,16 @@ test("问题页上传证据并创建 Patch", async ({ page }) => {
   });
   await page.route("**/patches", async (route) => {
     patchBody = route.request().postData() ?? "";
-    await route.fulfill({ json: {} });
+    await route.fulfill({
+      json: {
+        patch: { id: "p1" },
+        build: { id: "b2", buildNumber: 2, status: "ready", recordCount: 51 },
+      },
+    });
   });
   await page.goto("/#admin/issues");
   await page.getByLabel("说明 k1").fill("verified");
+  await page.getByLabel("核对版本 k1").fill("7.0");
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: "evidence.png", mimeType: "image/png", buffer: Buffer.from("png") });
@@ -130,7 +149,7 @@ test("问题页上传证据并创建 Patch", async ({ page }) => {
   await expect.poll(() => evidenceBody).toContain("dataBase64");
   await page.getByRole("button", { name: "创建 Patch 并生成 Build N+1" }).click();
   await expect.poll(() => patchBody).toContain("issueId");
-  await expect(page.getByText(/已创建 Patch/)).toBeVisible();
+  await expect(page).toHaveURL(/#preview\/c1\/b2/);
 });
 
 test("历史页回滚提交原因", async ({ page }) => {

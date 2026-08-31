@@ -90,7 +90,13 @@ export const api = {
     }),
   uploadEvidence: (
     itemId: string,
-    input: { mimeType: "image/png" | "image/jpeg" | "image/webp"; dataBase64: string },
+    input: {
+      mimeType: "image/png" | "image/jpeg" | "image/webp";
+      dataBase64: string;
+      checkedGameVersion: string;
+      checkedLocale: string;
+      note: string;
+    },
   ) =>
     request(`/api/admin/review-issues/${itemId}/evidence`, {
       method: "POST",

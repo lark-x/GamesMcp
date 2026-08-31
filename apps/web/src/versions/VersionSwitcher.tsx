@@ -2,8 +2,12 @@ import { useEffect, useState } from "react";
 import { api, Revision } from "../api.js";
 export function VersionSwitcher({
   onPreview,
+  onRevision,
+  onCurrent,
 }: {
   onPreview: (candidateId: string, buildId?: string) => void;
+  onRevision?: (revisionId: string) => void;
+  onCurrent?: () => void;
 }) {
   const [candidates, setCandidates] = useState<
     Array<{
@@ -40,8 +44,10 @@ export function VersionSwitcher({
             if (c) onPreview(c, b);
           } else if (v === "current") {
             window.location.hash = "";
+            onCurrent?.();
           } else if (v.startsWith("revision:")) {
-            window.location.hash = `revision/${v.slice(9)}`;
+            const revisionId = v.slice(9);
+            onRevision?.(revisionId);
           }
         }}
       >

@@ -23,6 +23,7 @@ import type {
   VerificationScreenshot,
 } from "@gip/domain";
 import { AdminRoutes } from "./admin/AdminRoutes.js";
+import { VersionSwitcher } from "./versions/VersionSwitcher.js";
 type VerificationStatus = string;
 type VerificationItem = {
   id: string;
@@ -185,14 +186,7 @@ function parsePreviewRoute(hash = window.location.hash): PreviewRoute | null {
   };
 }
 
-function parseAdminView(hash = window.location.hash): "intake" | "review" | "verify" | "release" {
-  const value = hash.replace(/^#admin\//, "").split("?", 1)[0];
-  return (["intake", "review", "verify", "release"] as const).includes(value as never)
-    ? (value as "intake" | "review" | "verify" | "release")
-    : "intake";
-}
-
-function adminHash(view: "intake" | "review" | "verify" | "release", params?: URLSearchParams) {
+function adminHash(view: "intake" | "preview" | "issues" | "history", params?: URLSearchParams) {
   const query = params?.toString();
   return `admin/${view}${query ? `?${query}` : ""}`;
 }
@@ -360,6 +354,7 @@ export function App() {
   const [entityType, setEntityType] = useState("");
   const [documentType, setDocumentType] = useState("");
   const [gameVersion, setGameVersion] = useState("");
+  const [selectedRevision, setSelectedRevision] = useState<string | undefined>();
   const [sourceId, setSourceId] = useState("");
   const [overview, setOverview] = useState<Overview>({
     ready: null,
@@ -393,8 +388,8 @@ export function App() {
     const load = async () => {
       const [ready, documents, entities, sources] = await Promise.allSettled([
         api<Overview["ready"]>("/api/ready"),
-        api<{ documents: DocumentSummary[] }>(`/api/games/${gameId}/documents?limit=6&offset=0`),
-        api<{ entities: EntitySummary[] }>(`/api/games/${gameId}/entities?limit=6&offset=0`),
+        api<{ documents: DocumentSummary[] }>(`/api/games/${gameId}/documents?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`),
+        api<{ entities: EntitySummary[] }>(`/api/games/${gameId}/entities?limit=6&offset=0${selectedRevision ? `&revisionId=${encodeURIComponent(selectedRevision)}` : ""}`),
         api<Pick<Overview, "sources">>(`/api/games/${gameId}/sources`),
       ]);
       if (cancelled) return;
@@ -413,7 +408,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [gameId]);
+  }, [gameId, selectedRevision]);
   useEffect(() => {
     const onHashChange = () => {
       setIsAdminRoute(window.location.hash.startsWith("#admin/"));
@@ -442,7 +437,8 @@ export function App() {
         types,
         entityTypes: entityType ? [entityType] : undefined,
         documentTypes: documentType ? [documentType] : undefined,
-        gameVersions: gameVersion ? [gameVersion] : undefined,
+          gameVersions: gameVersion ? [gameVersion] : undefined,
+          revisionId: selectedRevision,
         sourceId: sourceId || undefined,
         limit: 20,
       };
@@ -571,9 +567,16 @@ export function App() {
               ))}
             </select>
           </div>
+          <VersionSwitcher
+            onPreview={(candidateId, buildId) => {
+              window.location.hash = `preview/${candidateId}${buildId ? `/${buildId}` : ""}`;
+            }}
+            onRevision={(revisionId) => setSelectedRevision(revisionId)}
+            onCurrent={() => setSelectedRevision(undefined)}
+          />
           <button
             className="preview-entry-button"
-            onClick={() => (window.location.hash = "admin/release")}
+            onClick={() => (window.location.hash = "admin/preview")}
           >
             预发布版本
           </button>
@@ -1603,27 +1606,31 @@ function PreviewBrowser({
       canonicalKey: record.sourceKey,
       title: record.displayTitle,
     });
-    const batchId = candidate?.importBatchIds[0];
+    const batchId = candidate?.importBatchIds?.[0];
     if (batchId) params.set("batchId", batchId);
     try {
       await api(
-        "/api/admin/review-issues",
+        `/api/admin/release-candidates/${candidateId}/issues`,
         {
           method: "POST",
           body: JSON.stringify({
-            candidateId,
             buildId,
-            batchId,
             canonicalKey: record.sourceKey,
-            title: record.displayTitle,
+            summary: `预发布资料可能有误：${record.displayTitle}`,
+            details: {
+              title: record.displayTitle,
+              displayKind: record.displayKind,
+              batchId,
+            },
           }),
         },
         adminToken,
       );
-    } catch {
-      // Older API deployments do not expose issue persistence; the queue route remains usable.
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "问题创建失败");
+      return;
     }
-    window.location.hash = adminHash("verify", params);
+    window.location.hash = adminHash("issues", params);
   }
 
   return (
@@ -1639,9 +1646,9 @@ function PreviewBrowser({
         <div className="preview-top-actions">
           <button
             className="secondary-button"
-            onClick={() => (window.location.hash = "admin/release")}
+            onClick={() => (window.location.hash = "admin/preview")}
           >
-            返回发布管理
+            返回预发布分支
           </button>
           <button className="secondary-button" onClick={() => (window.location.hash = "")}>
             查看正式资料库

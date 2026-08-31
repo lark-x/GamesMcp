@@ -29,7 +29,10 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File | null>>({});
   const [evidenceUploaded, setEvidenceUploaded] = useState<Record<string, boolean>>({});
   const [reason, setReason] = useState("");
+  const [games, setGames] = useState<Array<{ id: string; name?: string; currentRevision?: string }>>([]);
+  const [sources, setSources] = useState<Array<{ id: string; name?: string; type?: string; pathLabel?: string }>>([]);
   useEffect(() => {
+    api.games().then((v) => setGames(v.games as Array<{ id: string; name?: string; currentRevision?: string }>)).catch(() => undefined);
     fetch("/api/admin/release-candidates")
       .then((r) => r.json())
       .then((v) => setCandidates(v.candidates ?? []))
@@ -43,6 +46,10 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
       .then((v) => setRevisions(v.revisions ?? []))
       .catch(() => undefined);
   }, []);
+  useEffect(() => {
+    if (!gameId) return;
+    api.sources(gameId).then((v) => setSources(v.sources as Array<{ id: string; name?: string; type?: string; pathLabel?: string }>)).catch(() => setSources([]));
+  }, [gameId]);
   useEffect(() => {
     if (page !== "intake") return;
     const timer = window.setInterval(() => {
@@ -106,20 +113,24 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
             }}
           >
             <label>
-              Game ID{" "}
-              <input
+              游戏{" "}
+              <select
                 required
                 value={gameId}
                 onChange={(e) => setGameId(e.target.value)}
-                placeholder="游戏 UUID"
-              />
-              Source ID{" "}
-              <input
+              >
+                <option value="">选择游戏</option>
+                {games.map((g) => <option key={g.id} value={g.id}>{g.name ?? g.id} {g.currentRevision ? `· ${g.currentRevision}` : ""}</option>)}
+              </select>
+              来源{" "}
+              <select
                 required
                 value={sourceId}
                 onChange={(e) => setSourceId(e.target.value)}
-                placeholder="来源 UUID"
-              />
+              >
+                <option value="">选择来源</option>
+                {sources.map((s) => <option key={s.id} value={s.id}>{s.name ?? s.id} · {s.type ?? "source"}</option>)}
+              </select>
               来源路径{" "}
               <input
                 required
@@ -130,7 +141,7 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
             </label>
             <button type="submit">创建导入任务</button>
           </form>
-          <p>导入完成后 Worker 会自动聚合 Candidate 并生成 Build。</p>
+          <p>导入完成后 Worker 会自动聚合 Candidate 并生成 Build；成功任务可在“预发布分支”继续检查。</p>
         </section>
       )}
       {page === "preview" && (
@@ -194,24 +205,43 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                 </select>
                 <input
                   aria-label={`说明 ${i.canonicalKey}`}
-                  placeholder="处理说明（必填）"
+                  placeholder="截图说明（必填）"
                   onChange={(e) =>
                     setIssueAction((a) => ({ ...a, [`${i.id}:note`]: e.target.value }))
                   }
                 />
-                <button
-                  onClick={async () => {
-                    const note = issueAction[`${i.id}:note`];
-                    if (!note) {
-                      setMessage("请填写处理说明");
-                      return;
-                    }
-                    await api.resolve(i.id, issueAction[i.id] ?? "keep_main", note);
-                    setIssues((all) => all.filter((x) => x.id !== i.id));
-                  }}
-                >
-                  确认处理并生成新 Build
-                </button>
+                <input
+                  aria-label={`核对版本 ${i.canonicalKey}`}
+                  placeholder="核对的游戏版本（必填）"
+                  onChange={(e) =>
+                    setIssueAction((a) => ({ ...a, [`${i.id}:version`]: e.target.value }))
+                  }
+                />
+                <input
+                  aria-label={`核对语言 ${i.canonicalKey}`}
+                  value={issueAction[`${i.id}:locale`] ?? "zh-CN"}
+                  onChange={(e) =>
+                    setIssueAction((a) => ({ ...a, [`${i.id}:locale`]: e.target.value }))
+                  }
+                />
+                {issueAction[i.id] === "manual" && (
+                  <>
+                    <input
+                      aria-label={`修改字段 ${i.canonicalKey}`}
+                      placeholder="字段路径，例如 title"
+                      onChange={(e) =>
+                        setIssueAction((a) => ({ ...a, [`${i.id}:field`]: e.target.value }))
+                      }
+                    />
+                    <textarea
+                      aria-label={`修改内容 ${i.canonicalKey}`}
+                      placeholder="新的字段内容"
+                      onChange={(e) =>
+                        setIssueAction((a) => ({ ...a, [`${i.id}:value`]: e.target.value }))
+                      }
+                    />
+                  </>
+                )}
                 <label>
                   真实截图证据{" "}
                   <input
@@ -227,7 +257,11 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                   />
                 </label>
                 <button
-                  disabled={!evidenceFiles[i.id]}
+                  disabled={
+                    !evidenceFiles[i.id] ||
+                    !issueAction[`${i.id}:version`]?.trim() ||
+                    !issueAction[`${i.id}:note`]?.trim()
+                  }
                   onClick={async () => {
                     const evidence = evidenceFiles[i.id];
                     if (!evidence) return;
@@ -239,6 +273,9 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                     await api.uploadEvidence(i.id, {
                       mimeType: evidence.type as "image/png" | "image/jpeg" | "image/webp",
                       dataBase64: data,
+                      checkedGameVersion: issueAction[`${i.id}:version`] ?? "",
+                      checkedLocale: issueAction[`${i.id}:locale`] ?? "zh-CN",
+                      note: issueAction[`${i.id}:note`] ?? "",
                     });
                     setEvidenceUploaded((uploaded) => ({ ...uploaded, [i.id]: true }));
                     setMessage("证据已上传");
@@ -253,10 +290,26 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                     api
                       .createPatch(i.candidateId, {
                         issueId: i.id,
-                        kind: "manual",
-                        note: issueAction[`${i.id}:note`] ?? "",
+                        canonicalKey: i.canonicalKey,
+                        action: issueAction[i.id] ?? "keep_main",
+                        ...(issueAction[i.id] === "manual"
+                          ? {
+                              fieldPath: issueAction[`${i.id}:field`],
+                              manualValue: issueAction[`${i.id}:value`],
+                            }
+                          : {}),
                       })
-                      .then(() => setMessage("已创建 Patch，下一次 Build 将自动生成"))
+                      .then((result) => {
+                        const build = (result as { build?: { id: string; buildNumber: number } })
+                          .build;
+                        setIssues((all) => all.filter((item) => item.id !== i.id));
+                        setMessage(
+                          build
+                            ? `Patch 已应用，已生成 Build ${build.buildNumber}`
+                            : "Patch 已创建",
+                        );
+                        if (build) window.location.hash = `preview/${i.candidateId}/${build.id}`;
+                      })
                       .catch((e) => setMessage(`创建 Patch 失败：${e.message}`))
                   }
                 >
