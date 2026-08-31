@@ -5,11 +5,13 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { loadConfig } from "../packages/config/src/index.ts";
+import { createPool } from "../packages/database/src/client.ts";
 import { isPathInside, runStoragePreflight } from "./check-data-storage.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LOCALE = "zh-CN";
 const MAX_DUMP_BYTES = 1024 * 1024 * 1024;
+const ANIME_GAME_CATEGORIES = new Set(["book", "character_story", "item_description", "quest"]);
 
 type BackupManifest = {
   createdAt: string;
@@ -20,6 +22,8 @@ type BackupManifest = {
   sourceManifestPath: string;
   sourceManifestSha256: string;
   sourceManifestBytes: number;
+  datasetManifestId?: string;
+  datasetManifestRootHash?: string;
   files: Array<{ path: string; sha256: string; bytes: number }>;
 };
 
@@ -93,13 +97,17 @@ async function resolveOutputRoot(dataDir: string): Promise<string> {
   const explicit = process.env.ANIME_GAME_OUTPUT_DIR?.trim();
   if (explicit) return resolve(explicit);
 
+  const category = process.env.ANIME_GAME_CATEGORY?.trim();
+  if (category && !ANIME_GAME_CATEGORIES.has(category))
+    throw new Error(`Unsupported ANIME_GAME_CATEGORY: ${category}`);
   const locale = process.env.ANIME_GAME_LOCALE?.trim() || DEFAULT_LOCALE;
+  const snapshotLeaf = category === "quest" ? "quests" : locale;
   const upstreamDir = resolve(
     process.env.ANIME_GAME_DATA_DIR ?? join(dataDir, "upstream", "AnimeGameData"),
   );
   const commit = process.env.ANIME_GAME_COMMIT?.trim() || (await checkoutCommit(upstreamDir));
   const parent = resolve(dataDir, "imports", "normalized", "anime-game-data");
-  if (commit) return resolve(parent, commit, locale);
+  if (commit) return resolve(parent, commit, snapshotLeaf);
 
   let entries: Array<{ name: string; isDirectory(): boolean }> = [];
   try {
@@ -113,7 +121,7 @@ async function resolveOutputRoot(dataDir: string): Promise<string> {
   }
   const candidates: string[] = [];
   for (const entry of entries) {
-    const candidate = resolve(parent, entry.name, locale);
+    const candidate = resolve(parent, entry.name, snapshotLeaf);
     try {
       await access(resolve(candidate, "manifest.json"));
       candidates.push(candidate);
@@ -137,6 +145,22 @@ async function createBackup(): Promise<BackupManifest> {
     throw new Error(`AnimeGameData Manifest must stay under the external data root: ${outputRoot}`);
   const sourceManifestAbsolute = resolve(outputRoot, "manifest.json");
   const sourceManifest = await readFileWithHash(sourceManifestAbsolute);
+  const pool = createPool(config.databaseUrl);
+  let datasetManifest: { id: string; rootHash: string } | undefined;
+  try {
+    datasetManifest = (
+      await pool.query<{ id: string; rootHash: string }>(
+        `select dm.id, dm.root_hash as "rootHash"
+           from knowledge.dataset_revisions dr
+           join knowledge.dataset_manifests dm on dm.id = dr.manifest_id
+          where dr.is_current = true
+          order by dr.revision_number desc
+          limit 1`,
+      )
+    ).rows[0];
+  } finally {
+    await pool.end();
+  }
   const timestamp = new Date()
     .toISOString()
     .replace(/[-:]/g, "")
@@ -164,6 +188,8 @@ async function createBackup(): Promise<BackupManifest> {
     sourceManifestPath: relative(process.cwd(), sourceManifestAbsolute),
     sourceManifestSha256: sourceManifest.sha256,
     sourceManifestBytes: sourceManifest.bytes.length,
+    datasetManifestId: datasetManifest?.id,
+    datasetManifestRootHash: datasetManifest?.rootHash,
     files: [
       { path: relativeDumpPath, sha256: sha256(dump), bytes: dump.length },
       {

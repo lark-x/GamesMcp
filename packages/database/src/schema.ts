@@ -655,7 +655,11 @@ export const questSubquests = knowledge.table(
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
   },
   (table) => [
-    uniqueIndex("quest_subquests_revision_key_unique").on(table.revisionId, table.subquestKey),
+    uniqueIndex("quest_subquests_revision_key_unique").on(
+      table.revisionId,
+      table.documentId,
+      table.subquestKey,
+    ),
     index("quest_subquests_document_index").on(table.documentId, table.ordinal),
   ],
 );
@@ -684,7 +688,11 @@ export const questDialogueNodes = knowledge.table(
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
   },
   (table) => [
-    uniqueIndex("quest_dialogue_nodes_revision_key_unique").on(table.revisionId, table.nodeKey),
+    uniqueIndex("quest_dialogue_nodes_revision_key_unique").on(
+      table.revisionId,
+      table.documentId,
+      table.nodeKey,
+    ),
     index("quest_dialogue_nodes_document_index").on(table.documentId, table.ordinal),
     index("quest_dialogue_nodes_speaker_index").on(table.revisionId, table.speakerKey),
   ],
@@ -710,9 +718,11 @@ export const questDialogueEdges = knowledge.table(
   (table) => [
     uniqueIndex("quest_dialogue_edges_revision_scope_unique").on(
       table.revisionId,
+      table.documentId,
       table.fromNodeKey,
       table.toNodeKey,
       table.edgeType,
+      table.optionText,
     ),
     index("quest_dialogue_edges_document_index").on(table.documentId),
   ],

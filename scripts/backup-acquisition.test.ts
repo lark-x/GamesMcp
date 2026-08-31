@@ -9,6 +9,7 @@ const environmentKeys = [
   "ANIME_GAME_COMMIT",
   "ANIME_GAME_DATA_DIR",
   "ANIME_GAME_LOCALE",
+  "ANIME_GAME_CATEGORY",
 ] as const;
 const originalEnvironment = new Map(environmentKeys.map((key) => [key, process.env[key]] as const));
 const temporaryDirectories: string[] = [];
@@ -39,6 +40,16 @@ describe("resolveOutputRoot", () => {
     process.env.ANIME_GAME_LOCALE = "zh-CN";
     expect(await resolveOutputRoot(root)).toBe(
       join(root, "imports", "normalized", "anime-game-data", "fixture-commit", "zh-CN"),
+    );
+  });
+
+  it("uses the quest output directory when backing up quest imports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gip-backup-path-"));
+    temporaryDirectories.push(root);
+    process.env.ANIME_GAME_COMMIT = "fixture-commit";
+    process.env.ANIME_GAME_CATEGORY = "quest";
+    expect(await resolveOutputRoot(root)).toBe(
+      join(root, "imports", "normalized", "anime-game-data", "fixture-commit", "quests"),
     );
   });
 

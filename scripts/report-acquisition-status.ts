@@ -391,8 +391,11 @@ try {
          )::int AS "normalizedHashMismatches",
          count(*) FILTER (WHERE provenance = '{}'::jsonb)::int AS "emptyProvenance",
          count(*) FILTER (
-           WHERE COALESCE(provenance->'lineage', provenance->'provenance'->'lineage')->'title' IS NULL
-              OR COALESCE(provenance->'lineage', provenance->'provenance'->'lineage')->'body' IS NULL
+           WHERE category IN ('book', 'character_story', 'item_description')
+             AND (
+               COALESCE(provenance->'lineage', provenance->'provenance'->'lineage')->'title' IS NULL
+               OR COALESCE(provenance->'lineage', provenance->'provenance'->'lineage')->'body' IS NULL
+             )
          )::int AS "incompleteLineage"
        FROM knowledge.source_observations
       WHERE game_id = $1`,
@@ -719,14 +722,18 @@ try {
   ];
   const mixedGameVersions = gameVersions.length > 1;
   const mixedLocales = locales.length > 1;
-  let currentManifestHash: string | undefined;
-  if (manifest) {
-    try {
-      currentManifestHash = sha256(await readFile(manifest.path));
-    } catch {
-      currentManifestHash = undefined;
-    }
-  }
+  const currentDatasetManifest = (
+    await pool.query<{ rootHash: string }>(
+      `select dm.root_hash as "rootHash"
+         from knowledge.dataset_revisions dr
+         join knowledge.dataset_manifests dm on dm.id = dr.manifest_id
+        where dr.game_id = $1 and dr.is_current = true
+        order by dr.revision_number desc
+        limit 1`,
+      [game.id],
+    )
+  ).rows[0];
+  const currentManifestHash = currentDatasetManifest?.rootHash;
   const manifestAccounting = asRecord(manifest?.value.accounting);
   const requiredAccountingKeys = ["books", "characterStories", "itemDescriptions"];
   const accountingComplete =
@@ -806,7 +813,7 @@ try {
   const backupMatchesCurrentManifest = Boolean(
     backup?.integrityValid &&
     currentManifestHash &&
-    backup.manifest.sourceManifestSha256 === currentManifestHash,
+    backup.manifest.datasetManifestRootHash === currentManifestHash,
   );
   const backupAfterCurrentBatches =
     backupMatchesCurrentManifest &&
@@ -891,6 +898,7 @@ try {
           dumpPath: safeRelativeBackupPath(backup.manifest.dumpPath),
           dumpSha256: backup.manifest.dumpSha256,
           sourceManifestSha256: backup.manifest.sourceManifestSha256,
+          datasetManifestRootHash: backup.manifest.datasetManifestRootHash,
           integrityValid: backup.integrityValid,
           integrityErrors: backup.integrityErrors,
           matchesCurrentManifest: backupMatchesCurrentManifest,

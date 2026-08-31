@@ -36,6 +36,86 @@ function entityRecord(sourceKey: string, title: string): NormalizedRecord {
   };
 }
 
+function questRecord(locale: "zh-CN" | "en"): NormalizedRecord {
+  const title = locale === "zh-CN" ? "捕风的异乡人" : "The Outlander Who Caught the Wind";
+  const body = locale === "zh-CN" ? "派蒙：我们到了。" : "Paimon: We made it.";
+  const value: Omit<NormalizedRecord, "contentHash"> = {
+    sourceKey: `quest/1001/locale/${locale}`,
+    recordType: "document",
+    title,
+    body,
+    documentType: "archon_quest",
+    gameVersion: "test-1",
+    locale,
+    metadata: { version: "test-1", locale },
+    segments: [
+      {
+        segmentKey: "quest/1001/dialog/100101",
+        ordinal: 0,
+        body,
+        startOffset: 0,
+        endOffset: body.length,
+        headingPath: [title],
+        metadata: { fixture: true },
+      },
+    ],
+    quest: {
+      questKey: "quest/1001",
+      mainQuestId: 1001,
+      questType: "archon_quest",
+      locale,
+      chapter: locale === "zh-CN" ? "序章" : "Prologue",
+      series: locale === "zh-CN" ? "捕风的异乡人" : "The Outlander Who Caught the Wind",
+      completeness: "complete",
+      subquests: [
+        {
+          subquestKey: "quest/1001/subquest/100101",
+          subquestId: 100101,
+          order: 1,
+          title,
+          objective: locale === "zh-CN" ? "跟随派蒙" : "Follow Paimon",
+          completeness: "complete",
+          metadata: { fixture: true },
+        },
+      ],
+      dialogueNodes: [
+        {
+          nodeKey: "quest/1001/dialog/100101",
+          nodeId: 100101,
+          type: "dialogue",
+          subquestKey: "quest/1001/subquest/100101",
+          speakerKey: "npc/1001",
+          speakerName: locale === "zh-CN" ? "派蒙" : "Paimon",
+          body,
+          segmentKey: "quest/1001/dialog/100101",
+          order: 1,
+          metadata: { fixture: true },
+        },
+      ],
+      dialogueEdges: [
+        {
+          fromNodeKey: "quest/1001/dialog/100101",
+          toNodeKey: "quest/1001/dialog/100101",
+          type: "fallback",
+          metadata: { fixture: true },
+        },
+        {
+          fromNodeKey: "quest/1001/dialog/100101",
+          toNodeKey: "quest/1001/dialog/100101",
+          type: "fallback",
+          metadata: { fixture: true, duplicate: true },
+        },
+      ],
+      metadata: { fixture: true },
+    },
+    parserVersion: "candidate-flow-test",
+  };
+  return {
+    ...value,
+    contentHash: createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+  };
+}
+
 function diffFor(records: NormalizedRecord[]) {
   return {
     added: records.map((record) => record.sourceKey),
@@ -204,15 +284,18 @@ async function main() {
       storagePath: "snapshots/candidate-flow-2.json",
       metadata: { commit: "fixture-2", locale: "zh-CN" },
     });
+    const questZh = questRecord("zh-CN");
+    const questEn = questRecord("en");
+    const batch2Records = [lisa, questZh, questEn];
     const batch2 = await repository.createImport({
       gameId,
       sourceId: source.id,
       sourceSnapshotId: snapshot2.id,
       parserVersion: "candidate-flow-test",
-      stagedRecords: [lisa],
+      stagedRecords: batch2Records,
       errors: [],
       warnings: [],
-      diff: diffFor([lisa]),
+      diff: diffFor(batch2Records),
     });
     const candidate2 = await repository.createReleaseCandidate({
       gameId,
@@ -233,6 +316,16 @@ async function main() {
     const revision2 = await activatePendingRevision(repository, "candidate-flow-worker-2");
     assert.equal(revision2.revisionNumber, revision1.revisionNumber + 1);
     assert.equal((await repository.getCurrentRevision(gameId))?.id, revision2.id);
+    const [questMaterialized] = (
+      await pool.query(
+        `select
+          (select count(*)::int from knowledge.quest_subquests where revision_id = $1) as subquests,
+          (select count(*)::int from knowledge.quest_dialogue_nodes where revision_id = $1) as nodes,
+          (select count(*)::int from knowledge.quest_dialogue_edges where revision_id = $1) as edges`,
+        [revision2.id],
+      )
+    ).rows;
+    assert.deepEqual(questMaterialized, { subquests: 2, nodes: 2, edges: 2 });
 
     const rolledBack = await repository.rollbackRevision(revision1.id, "隔离测试回滚");
     assert.equal(rolledBack.id, revision1.id);

@@ -259,14 +259,17 @@ type AcquisitionManifestInfo = {
 };
 
 function observationConflictKind(observations: SourceObservationRow[]): ConflictKind {
+  const sourceIds = new Set(observations.map((observation) => observation.sourceId));
   const missingField = observations.some((observation) => {
     const metadata = asRecord(observation.provenance);
     const nested = asRecord(metadata.provenance);
     const provenance = Object.keys(nested).length ? nested : metadata;
     const lineage = asRecord(provenance.lineage);
-    return !lineage.title || !lineage.body;
+    const lineagePresent = Object.keys(lineage).length > 0;
+    return !observation.title || (lineagePresent && (!lineage.title || !lineage.body));
   });
   if (missingField) return "missing_field";
+  if (sourceIds.size <= 1) return "formatting_only";
   const normalizedHashes = new Set(
     observations.map((observation) => observation.normalizedContentHash),
   );
@@ -3782,6 +3785,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       for (const record of records) {
         if (record.recordType === "entity" || record.entityType) continue;
         if (!record.title && !record.body) continue;
+        const recordMentionCandidates = record.entities ?? [];
         const sourceSnapshotId = snapshotByRecord.get(record.sourceKey);
         if (!sourceSnapshotId)
           throw new DomainError(
@@ -3829,7 +3833,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
             searchText: segment.body,
           });
           segmentRefs.push({ id: segmentId, body: segment.body });
-          for (const candidateValue of allCandidates) {
+          for (const candidateValue of recordMentionCandidates) {
             const names = [
               candidateValue.name,
               ...(candidateValue.aliases ?? []).map((alias) => alias.value),
@@ -3886,7 +3890,16 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
             );
           if (record.quest.dialogueEdges.length)
             await tx.insert(questDialogueEdges).values(
-              record.quest.dialogueEdges.map((edge) => ({
+              [
+                ...new Map(
+                  record.quest.dialogueEdges.map((edge) => [
+                    [edge.fromNodeKey, edge.toNodeKey, edge.type, edge.optionText ?? ""].join(
+                      "\u0000",
+                    ),
+                    edge,
+                  ]),
+                ).values(),
+              ].map((edge) => ({
                 documentId,
                 revisionId,
                 questKey: record.quest!.questKey,

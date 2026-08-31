@@ -560,9 +560,17 @@ function buildDialogueGraph(
   }
 
   const nodeKeys = new Set(nodes.map((node) => node.nodeKey));
+  const uniqueEdges = new Map<string, QuestRecordPayload["dialogueEdges"][number]>();
+  for (const edge of edges) {
+    if (!nodeKeys.has(edge.fromNodeKey) || !nodeKeys.has(edge.toNodeKey)) continue;
+    uniqueEdges.set(
+      [edge.fromNodeKey, edge.toNodeKey, edge.type, edge.optionText ?? ""].join("\u0000"),
+      edge,
+    );
+  }
   return {
     nodes,
-    edges: edges.filter((edge) => nodeKeys.has(edge.fromNodeKey) && nodeKeys.has(edge.toNodeKey)),
+    edges: [...uniqueEdges.values()],
     participantIds,
     sourceFiles: [...sourceFiles].sort(),
   };
