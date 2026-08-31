@@ -1488,7 +1488,8 @@ function PreviewBrowser({
         const nextBuildId =
           initialBuildId ??
           detail.currentBuildId ??
-          [...detail.builds].sort((left, right) => right.buildNumber - left.buildNumber)[0]?.id ??
+          [...(detail.builds ?? [])].sort((left, right) => right.buildNumber - left.buildNumber)[0]
+            ?.id ??
           "";
         setBuildId(nextBuildId);
       })
@@ -1647,7 +1648,7 @@ function PreviewBrowser({
           <select value={buildId} onChange={(event) => openBuild(event.target.value)}>
             <option value="">请选择 Build</option>
             {candidate?.builds
-              .slice()
+              ?.slice()
               .sort((left, right) => right.buildNumber - left.buildNumber)
               .map((build) => (
                 <option key={build.id} value={build.id}>
@@ -1658,7 +1659,7 @@ function PreviewBrowser({
         </label>
         <div className="preview-build-facts">
           <span>状态：{selectedBuild?.status ?? "未选择"}</span>
-          <span>校验：{selectedBuild?.contentChecksum.slice(0, 12) ?? "—"}</span>
+          <span>校验：{selectedBuild?.contentChecksum?.slice(0, 12) ?? "—"}</span>
           <span>记录：{selectedBuild?.recordCount ?? 0}</span>
         </div>
         <label className="preview-token-field">

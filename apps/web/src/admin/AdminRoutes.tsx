@@ -26,7 +26,8 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
   const [sourceId, setSourceId] = useState("");
   const [message, setMessage] = useState("");
   const [issueAction, setIssueAction] = useState<Record<string, string>>({});
-  const [evidence, setEvidence] = useState<File | null>(null);
+  const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File | null>>({});
+  const [evidenceUploaded, setEvidenceUploaded] = useState<Record<string, boolean>>({});
   const [reason, setReason] = useState("");
   useEffect(() => {
     fetch("/api/admin/release-candidates")
@@ -84,6 +85,11 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
           流程：导入 → Candidate → Build → 检查问题 → 原子激活正式 Revision。
         </p>
       ) : null}
+      {message && (
+        <p role="status" className="admin-status-message">
+          {message}
+        </p>
+      )}
       {page === "intake" && (
         <section className="admin-page">
           <h2>导入</h2>
@@ -123,7 +129,6 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
               />
             </label>
             <button type="submit">创建导入任务</button>
-            {message && <p role="status">{message}</p>}
           </form>
           <p>导入完成后 Worker 会自动聚合 Candidate 并生成 Build。</p>
         </section>
@@ -212,12 +217,19 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => setEvidence(e.target.files?.[0] ?? null)}
+                    onChange={(e) => {
+                      setEvidenceFiles((files) => ({
+                        ...files,
+                        [i.id]: e.target.files?.[0] ?? null,
+                      }));
+                      setEvidenceUploaded((uploaded) => ({ ...uploaded, [i.id]: false }));
+                    }}
                   />
                 </label>
                 <button
-                  disabled={!evidence}
+                  disabled={!evidenceFiles[i.id]}
                   onClick={async () => {
+                    const evidence = evidenceFiles[i.id];
                     if (!evidence) return;
                     const data = await new Promise<string>((resolve) => {
                       const reader = new FileReader();
@@ -225,16 +237,17 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                       reader.readAsDataURL(evidence);
                     });
                     await api.uploadEvidence(i.id, {
-                      mimeType: evidence.type as "image/png",
+                      mimeType: evidence.type as "image/png" | "image/jpeg" | "image/webp",
                       dataBase64: data,
                     });
+                    setEvidenceUploaded((uploaded) => ({ ...uploaded, [i.id]: true }));
                     setMessage("证据已上传");
                   }}
                 >
                   上传证据
                 </button>
                 <button
-                  disabled={!i.candidateId}
+                  disabled={!i.candidateId || !evidenceUploaded[i.id]}
                   onClick={() =>
                     i.candidateId &&
                     api
@@ -249,6 +262,7 @@ export function AdminRoutes({ initialRoute }: { initialRoute: string }) {
                 >
                   创建 Patch 并生成 Build N+1
                 </button>
+                {!evidenceUploaded[i.id] && <small>必须先上传游戏内截图，才能创建 Patch。</small>}
               </article>
             ))
           ) : (

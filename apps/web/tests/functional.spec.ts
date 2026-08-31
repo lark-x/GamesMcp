@@ -72,9 +72,9 @@ async function mockApi(page: import("@playwright/test").Page) {
 test("主页可切换预发布并浏览 51 条记录分页", async ({ page }) => {
   await mockApi(page);
   await page.goto("/#preview/c1");
-  await expect(page.getByText("Record 0")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Record 0", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "下一页" }).click();
-  await expect(page.getByText("Record 50")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Record 50", exact: true })).toBeVisible();
 });
 
 test("预览搜索过滤会发送 q 参数", async ({ page }) => {
