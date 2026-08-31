@@ -39,6 +39,8 @@ import {
 import { EvidenceQaService } from "@gip/qa";
 import { OpenAICompatibleEmbeddingProvider, RetrievalService } from "@gip/retrieval";
 
+const questTypeSchema = z.enum(["archon_quest", "story_quest", "world_quest", "event_quest"]);
+
 export type AppDependencies = {
   repository: KnowledgeRepository;
   config?: RuntimeConfig;
@@ -411,6 +413,64 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
       ? revisionIdSchema.parse(String(query.revisionId))
       : undefined;
     return { document: await domain.getDocument(gameId, documentId ?? "", revisionId) };
+  });
+
+  app.get("/api/games/:gameId/quests", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    if (!repository.searchQuests)
+      throw new DomainError("quest_tools_not_ready", "Quest search is not implemented");
+    const query = parseQuery(request);
+    const questType = query.type ? questTypeSchema.parse(String(query.type)) : undefined;
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    return {
+      quests: await repository.searchQuests(gameId, {
+        query: typeof query.q === "string" && query.q.trim() ? query.q : "quest/",
+        questTypes: questType ? [questType] : undefined,
+        locale: typeof query.locale === "string" ? query.locale : "zh-CN",
+        gameVersion: typeof query.gameVersion === "string" ? query.gameVersion : undefined,
+        limit: parsePositive(query.limit, 20, 100),
+        revisionId,
+      }),
+    };
+  });
+
+  app.get("/api/games/:gameId/quests/:questId", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    if (!repository.getQuest)
+      throw new DomainError("quest_tools_not_ready", "Quest reading is not implemented");
+    const params = request.params as { questId?: unknown };
+    const query = parseQuery(request);
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    const quest = await repository.getQuest(gameId, {
+      questKey: z.string().min(1).max(120).parse(params.questId),
+      locale: typeof query.locale === "string" ? query.locale : "zh-CN",
+      cursor: typeof query.cursor === "string" ? query.cursor : undefined,
+      nodeLimit: parsePositive(query.limit, 100, 300),
+      revisionId,
+    });
+    if (!quest) throw new DomainError("quest_not_found", "Quest was not found", undefined, 404);
+    const subquestId = typeof query.subquestId === "string" ? query.subquestId : undefined;
+    if (!subquestId) return { quest };
+    const subquestKey = subquestId.startsWith("quest/")
+      ? subquestId
+      : `${quest.questKey}/subquest/${subquestId}`;
+    const dialogueNodes = quest.dialogueNodes.filter((node) => node.subquestKey === subquestKey);
+    const nodeKeys = new Set(dialogueNodes.map((node) => node.nodeKey));
+    return {
+      quest: {
+        ...quest,
+        subquests: quest.subquests.filter((subquest) => subquest.subquestKey === subquestKey),
+        dialogueNodes,
+        dialogueEdges: quest.dialogueEdges.filter((edge) => nodeKeys.has(edge.fromNodeKey)),
+        citations: quest.citations.filter((citation) => citation.subquestKey === subquestKey),
+      },
+    };
   });
 
   app.post("/api/games/:gameId/search", async (request) => {

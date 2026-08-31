@@ -18,6 +18,7 @@ export default defineConfig({
       "packages/**/src/**/*.test.ts",
       "apps/**/src/**/*.test.ts",
       "scripts/anime-game-data-converter.test.ts",
+      "scripts/anime-game-data-quest-converter.test.ts",
       "scripts/anime-game-data-import-helpers.test.ts",
       "scripts/backup-acquisition.test.ts",
     ],

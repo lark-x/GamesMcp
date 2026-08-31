@@ -1,0 +1,72 @@
+{
+  "EBNBLBEIFFJ": [
+    {
+      "OGEGCCLHIHP": {
+        "BNJEGIAOKGM": 10002,
+        "JOBGILDNLEL": "SubQuestTitle"
+      },
+      "PEAKPGNONFA": [
+        {
+          "JOLOODLBEGO": [],
+          "MOMDAPFBMBM": [2],
+          "OFKGPGLHIDJ": [
+            {
+              "JGPDCLOJKLC": {
+                "BNJEGIAOKGM": 10005,
+                "JOBGILDNLEL": "DialogNormal"
+              },
+              "MOMDAPFBMBM": [],
+              "EICGDLLPINH": 1,
+              "NOAECFDFGMJ": "Dialog",
+              "AAICCGABILO": 1
+            }
+          ],
+          "LBGMHPAMINN": [],
+          "IILBCFJNPGA": {
+            "BNJEGIAOKGM": 10007,
+            "JOBGILDNLEL": "SpeakerKnown"
+          },
+          "EICGDLLPINH": 1,
+          "NDANANGPLHB": "SingleDialog"
+        },
+        {
+          "JOLOODLBEGO": [],
+          "MOMDAPFBMBM": [],
+          "OFKGPGLHIDJ": [
+            {
+              "JGPDCLOJKLC": {
+                "BNJEGIAOKGM": 10006,
+                "JOBGILDNLEL": "DialogNormal"
+              },
+              "MOMDAPFBMBM": [],
+              "EICGDLLPINH": 2,
+              "NOAECFDFGMJ": "Dialog",
+              "AAICCGABILO": 2
+            }
+          ],
+          "LBGMHPAMINN": [],
+          "IILBCFJNPGA": {
+            "BNJEGIAOKGM": 10007,
+            "JOBGILDNLEL": "SpeakerKnown"
+          },
+          "EICGDLLPINH": 2,
+          "NDANANGPLHB": "MultiDialog"
+        }
+      ]
+    }
+  ],
+  "CBLIMBBBKNK": {
+    "BNJEGIAOKGM": 10003,
+    "JOBGILDNLEL": "MainQuestDesp"
+  },
+  "ALOHJMPDFKI": {
+    "BNJEGIAOKGM": 10004,
+    "JOBGILDNLEL": "ChapterTitle"
+  },
+  "HEDPNHPBMJH": {
+    "BNJEGIAOKGM": 10001,
+    "JOBGILDNLEL": "MainQuestTitle"
+  },
+  "DCNPPIOLEOK": "AQ",
+  "IMJHJGBNMMD": 1001
+}

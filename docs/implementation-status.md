@@ -46,6 +46,25 @@
 
 固定 Commit `26df1dfbdf05a82bbb1d97506859f3e1c40718d8`，版本标签 `CNRELWin7.0.0`，简体中文书籍、角色故事、物品描述共 2412 条。其旧核验工作流仍保留为历史数据与兼容测试，但新 Candidate 流程不再要求用户逐条审核全部记录。
 
+### AnimeGameData 任务剧情 dry-run
+
+- 固定上游 Commit：`26df1dfbdf05a82bbb1d97506859f3e1c40718d8`
+- 版本标签：`CNRELWin7.0.0`
+- 语言：`zh-CN`、`en`
+- 输出目录：`data/imports/normalized/anime-game-data/26df1dfbdf05a82bbb1d97506859f3e1c40718d8/quests/`
+- 真实 dry-run：通过，blocking failures 为 0
+- 显式排除：268 个上游 `MainQuest` 记录，原因是缺失或不属于首版任务类型
+- 生成文档：8208 个，双语各 4104 个
+- 子任务：33064 个
+- 对话节点：53748 个
+- 对话边：9730 条
+- 完整度：`complete` 2930、`partial` 1560、`metadata_only` 3718
+- 标题 fallback：1617 个文档使用另一语言标题 fallback；236 个标题仍是上游双语缺失，已在 metadata 中标记 `titleUnresolved`
+
+已实现内容包括任务合约、数据库结构化表、MCP `search_quests/get_quest`、REST 任务接口、Web 正式 Revision 剧情阅读器、真实字段转换器、fixture 和自动化测试。尚未完成真实数据库导入、Candidate 发布、游戏内抽样核验和预发布 Build 专用剧情阅读器实跑。
+
+当前本机数据库阻塞：`pnpm db:up` 被存储预检拒绝，因为系统盘剩余 9.23 GiB，小于安全门禁要求的 10 GiB。不要降低该门禁；应先清理系统盘或换到满足条件的机器后再跑数据库集成。
+
 ## 验收命令
 
 静态与自动化检查：
@@ -58,6 +77,7 @@ pnpm test
 pnpm build
 pnpm test:e2e
 pnpm data:validate:genshin-db
+pnpm data:convert:anime-quests -- --upstream=data/upstream/AnimeGameData --commit=26df1dfbdf05a82bbb1d97506859f3e1c40718d8 --commit-date=2026-08-01T00:00:00.000Z --game-version=7.0.0 --version-label=CNRELWin7.0.0 --output=data/imports/normalized/anime-game-data/26df1dfbdf05a82bbb1d97506859f3e1c40718d8/quests
 ```
 
 Candidate 全链路必须使用隔离数据库：

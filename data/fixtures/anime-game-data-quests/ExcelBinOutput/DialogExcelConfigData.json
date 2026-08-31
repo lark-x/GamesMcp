@@ -1,0 +1,22 @@
+[
+  {
+    "GFLDJMJKIKE": 1,
+    "nextDialogs": [2],
+    "talkRole": {
+      "type": "TALK_ROLE_NPC",
+      "id": "2001"
+    },
+    "talkContentTextMapHash": 10005,
+    "talkRoleNameTextMapHash": 10007
+  },
+  {
+    "GFLDJMJKIKE": 2,
+    "nextDialogs": [],
+    "talkRole": {
+      "type": "TALK_ROLE_NPC",
+      "id": "2001"
+    },
+    "talkContentTextMapHash": 10006,
+    "talkRoleNameTextMapHash": 10007
+  }
+]

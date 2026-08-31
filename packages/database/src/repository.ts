@@ -29,6 +29,12 @@ import {
   type ImportDiff,
   type KnowledgeRepository,
   type NormalizedRecord,
+  type GetQuestRequest,
+  type QuestCompleteness,
+  type QuestDialoguePage,
+  type QuestRecordPayload,
+  type QuestSearchHit,
+  type QuestSearchRequest,
   type RelationshipView,
   type Source,
   type SourceSnapshot,
@@ -73,6 +79,9 @@ import {
   games,
   importBatches,
   jobs,
+  questDialogueEdges,
+  questDialogueNodes,
+  questSubquests,
   relationships,
   releaseCandidateBuilds,
   releaseCandidates,
@@ -394,6 +403,7 @@ function asDocumentSummary(
     title: row.title,
     type: row.type as DocumentType,
     gameVersion: row.gameVersion,
+    locale: row.locale,
     revision: undefined,
   };
 }
@@ -436,6 +446,100 @@ function splitIntoSegments(
     return chunks.filter((item) => item.body);
   }
   return sections;
+}
+
+function recordLocale(record: NormalizedRecord): string {
+  const metadata = asRecord(record.metadata);
+  const provenance = asRecord(metadata.provenance);
+  const locale = record.locale ?? provenance.locale ?? metadata.locale;
+  return typeof locale === "string" && locale.trim() ? locale.trim() : "und";
+}
+
+function recordSegments(
+  record: NormalizedRecord,
+  body: string,
+): Array<{
+  segmentKey?: string;
+  headingPath: string[];
+  metadata: Record<string, unknown>;
+  body: string;
+  start: number;
+  end: number;
+}> {
+  if (record.segments?.length)
+    return record.segments
+      .slice()
+      .sort((left, right) => left.ordinal - right.ordinal)
+      .map((segment) => ({
+        segmentKey: segment.segmentKey,
+        headingPath: segment.headingPath ?? [],
+        metadata: segment.metadata ?? {},
+        body: segment.body,
+        start: segment.startOffset,
+        end: segment.endOffset,
+      }));
+  return splitIntoSegments(body).map((segment) => ({
+    ...segment,
+    segmentKey: undefined,
+    metadata: {},
+  }));
+}
+
+function questKeyFromInput(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("quest/")) return trimmed.split("/locale/")[0] ?? trimmed;
+  return `quest/${trimmed}`;
+}
+
+function mainQuestIdFromKey(value: string): string {
+  return value.split("/")[1] ?? value;
+}
+
+function encodeQuestCursor(value: {
+  revisionId: string;
+  questKey: string;
+  locale: string;
+  offset: number;
+}): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function decodeQuestCursor(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      revisionId?: unknown;
+      questKey?: unknown;
+      locale?: unknown;
+      offset?: unknown;
+    };
+    if (
+      typeof parsed.revisionId === "string" &&
+      typeof parsed.questKey === "string" &&
+      typeof parsed.locale === "string" &&
+      typeof parsed.offset === "number" &&
+      Number.isSafeInteger(parsed.offset) &&
+      parsed.offset >= 0
+    )
+      return {
+        revisionId: parsed.revisionId,
+        questKey: parsed.questKey,
+        locale: parsed.locale,
+        offset: parsed.offset,
+      };
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function questMetadata(row: typeof documents.$inferSelect): Partial<QuestRecordPayload> & {
+  completeness?: QuestCompleteness;
+} {
+  const metadata = asRecord(row.metadata);
+  const questPayload = asRecord(metadata.questPayload);
+  const quest = Object.keys(questPayload).length ? questPayload : asRecord(metadata.quest);
+  return quest as Partial<QuestRecordPayload> & { completeness?: QuestCompleteness };
 }
 
 export class SqlKnowledgeRepository implements KnowledgeRepository {
@@ -993,6 +1097,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         documentConditions.push(inArray(documents.type, request.documentTypes));
       if (request.gameVersions?.length)
         documentConditions.push(inArray(documents.gameVersion, request.gameVersions));
+      if (request.locales?.length)
+        documentConditions.push(inArray(documents.locale, request.locales));
       if (request.sourceId)
         documentConditions.push(
           sql`${documents.sourceSnapshotId} in (select id from knowledge.source_snapshots where source_id = ${request.sourceId}::uuid)`,
@@ -1029,6 +1135,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           segmentConditions.push(inArray(documents.type, request.documentTypes));
         if (request.gameVersions?.length)
           segmentConditions.push(inArray(documents.gameVersion, request.gameVersions));
+        if (request.locales?.length)
+          segmentConditions.push(inArray(documents.locale, request.locales));
         if (request.sourceId)
           segmentConditions.push(
             sql`${documents.sourceSnapshotId} in (select id from knowledge.source_snapshots where source_id = ${request.sourceId}::uuid)`,
@@ -1069,6 +1177,214 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return result;
   }
 
+  async searchQuests(gameId: string, request: QuestSearchRequest): Promise<QuestSearchHit[]> {
+    const current = await this.getCurrentRevision(gameId);
+    if (!current) return [];
+    const revision = request.revisionId
+      ? await this.getRevision(request.revisionId, gameId)
+      : await this.getSearchableRevision(gameId, current);
+    if (!revision) return [];
+    const likeQuery = `%${escapeLike(request.query)}%`;
+    const normalizedLikeQuery = `%${escapeLike(normalize(request.query))}%`;
+    const questTypes = request.questTypes?.length
+      ? request.questTypes
+      : (["archon_quest", "story_quest", "world_quest", "event_quest"] as const);
+    const conditions = [
+      eq(documents.gameId, gameId),
+      eq(documents.revisionId, revision.id),
+      eq(documents.deleted, false),
+      inArray(documents.type, [...questTypes]),
+      or(
+        ilike(documents.sourceKey, likeQuery),
+        ilike(documents.normalizedTitle, normalizedLikeQuery),
+        ilike(documents.title, likeQuery),
+        ilike(documents.body, likeQuery),
+      ),
+    ];
+    if (request.locale) conditions.push(eq(documents.locale, request.locale));
+    if (request.gameVersion) conditions.push(eq(documents.gameVersion, request.gameVersion));
+    const rows = await this.db
+      .select()
+      .from(documents)
+      .where(and(...conditions))
+      .orderBy(asc(documents.title))
+      .limit(request.limit);
+    return rows.map((row) => {
+      const metadata = questMetadata(row);
+      const questKey = metadata.questKey ?? questKeyFromInput(row.sourceKey);
+      return {
+        questKey,
+        mainQuestId: String(metadata.mainQuestId ?? mainQuestIdFromKey(questKey)),
+        title: row.title,
+        type: row.type as QuestRecordPayload["questType"],
+        chapter: metadata.chapter ?? null,
+        series: metadata.series ?? null,
+        completeness: metadata.completeness ?? "partial",
+        locale: row.locale,
+        documentId: row.id,
+        revision: revisionLabel(revision.revisionNumber),
+        match: row.sourceKey.includes(request.query) ? "source_key" : "text",
+      };
+    });
+  }
+
+  async getQuest(gameId: string, request: GetQuestRequest): Promise<QuestDialoguePage | null> {
+    const current = await this.getCurrentRevision(gameId);
+    if (!current) return null;
+    const revision = request.revisionId
+      ? await this.getRevision(request.revisionId, gameId)
+      : await this.getSearchableRevision(gameId, current);
+    if (!revision) return null;
+    const cursor = decodeQuestCursor(request.cursor);
+    const questKey = questKeyFromInput(cursor?.questKey ?? request.questKey);
+    const requestedLocale = cursor?.locale ?? request.locale ?? "zh-CN";
+    if (
+      cursor &&
+      (cursor.revisionId !== revision.id ||
+        cursor.questKey !== questKey ||
+        cursor.locale !== requestedLocale)
+    )
+      throw new DomainError(
+        "quest_cursor_invalid",
+        "Quest cursor does not match this request",
+        undefined,
+        400,
+      );
+    const findDocument = async (locale: string) =>
+      (
+        await this.db
+          .select()
+          .from(documents)
+          .where(
+            and(
+              eq(documents.gameId, gameId),
+              eq(documents.revisionId, revision.id),
+              eq(documents.sourceKey, `${questKey}/locale/${locale}`),
+              eq(documents.deleted, false),
+            ),
+          )
+          .limit(1)
+      )[0];
+    let document = await findDocument(requestedLocale);
+    const warnings: string[] = [];
+    let locale = requestedLocale;
+    if (!document) {
+      const fallback = requestedLocale === "zh-CN" ? "en" : "zh-CN";
+      document = await findDocument(fallback);
+      if (document) {
+        locale = fallback;
+        warnings.push(`locale_fallback:${requestedLocale}->${fallback}`);
+      }
+    }
+    if (!document) return null;
+    const metadata = questMetadata(document);
+    const nodeLimit = Math.min(Math.max(request.nodeLimit, 1), 300);
+    const offset = cursor?.offset ?? 0;
+    const subquestRows = await this.db
+      .select()
+      .from(questSubquests)
+      .where(
+        and(eq(questSubquests.documentId, document.id), eq(questSubquests.revisionId, revision.id)),
+      )
+      .orderBy(asc(questSubquests.ordinal));
+    const nodeRows = await this.db
+      .select()
+      .from(questDialogueNodes)
+      .where(
+        and(
+          eq(questDialogueNodes.documentId, document.id),
+          eq(questDialogueNodes.revisionId, revision.id),
+        ),
+      )
+      .orderBy(asc(questDialogueNodes.ordinal))
+      .offset(offset)
+      .limit(nodeLimit + 1);
+    const pageRows = nodeRows.slice(0, nodeLimit);
+    const pageNodeKeys = pageRows.map((row) => row.nodeKey);
+    const edgeRows = pageNodeKeys.length
+      ? await this.db
+          .select()
+          .from(questDialogueEdges)
+          .where(
+            and(
+              eq(questDialogueEdges.documentId, document.id),
+              eq(questDialogueEdges.revisionId, revision.id),
+              inArray(questDialogueEdges.fromNodeKey, pageNodeKeys),
+            ),
+          )
+      : [];
+    const speakerKeys = [
+      ...new Set(
+        pageRows.map((row) => row.speakerKey).filter((key): key is string => Boolean(key)),
+      ),
+    ];
+    const participantRows = speakerKeys.length
+      ? await this.db
+          .select()
+          .from(entities)
+          .where(and(eq(entities.gameId, gameId), inArray(entities.sourceKey, speakerKeys)))
+      : [];
+    return {
+      questKey,
+      title: document.title,
+      type: document.type as QuestRecordPayload["questType"],
+      locale: document.locale,
+      gameVersion: document.gameVersion,
+      documentId: document.id,
+      revision: revisionLabel(revision.revisionNumber),
+      completeness: metadata.completeness ?? "partial",
+      subquests: subquestRows.map((row) => ({
+        subquestKey: row.subquestKey,
+        subquestId: row.subquestId,
+        title: row.title,
+        objective: row.objective ?? undefined,
+        order: row.ordinal,
+        completeness: row.completeness as QuestCompleteness,
+        metadata: row.metadata,
+      })),
+      dialogueNodes: pageRows.map((row) => ({
+        nodeKey: row.nodeKey,
+        nodeId: row.nodeId,
+        type: row.nodeType as QuestRecordPayload["dialogueNodes"][number]["type"],
+        subquestKey: row.subquestKey ?? undefined,
+        speakerKey: row.speakerKey ?? undefined,
+        speakerName: row.speakerName ?? undefined,
+        body: row.body,
+        segmentId: row.segmentId,
+        order: row.ordinal,
+        variants: row.variants,
+        metadata: row.metadata,
+      })),
+      dialogueEdges: edgeRows.map((row) => ({
+        fromNodeKey: row.fromNodeKey,
+        toNodeKey: row.toNodeKey,
+        type: row.edgeType as QuestRecordPayload["dialogueEdges"][number]["type"],
+        optionText: row.optionText ?? undefined,
+        metadata: row.metadata,
+      })),
+      participants: participantRows.map((row) => asEntitySummary(row)),
+      prerequisites: metadata.prerequisites ?? [],
+      citations: pageRows.map((row) => ({
+        documentId: document.id,
+        locale: document.locale,
+        questKey,
+        subquestKey: row.subquestKey ?? undefined,
+        dialogueNodeKey: row.nodeKey,
+        revision: revisionLabel(revision.revisionNumber),
+      })),
+      warnings,
+      nextCursor:
+        nodeRows.length > nodeLimit
+          ? encodeQuestCursor({
+              revisionId: revision.id,
+              questKey,
+              locale,
+              offset: offset + nodeLimit,
+            })
+          : null,
+    };
+  }
+
   async vectorSearch(
     gameId: string,
     request: SearchRequest,
@@ -1099,6 +1415,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     const sourceFilter = request.sourceId
       ? sql`and d.source_snapshot_id in (select id from knowledge.source_snapshots where source_id = ${request.sourceId}::uuid)`
       : sql``;
+    const localeFilter = request.locales?.length
+      ? sql`and d.locale in (${sql.join(
+          request.locales.map((value) => sql`${value}`),
+          sql`, `,
+        )})`
+      : sql``;
     const rows = await this.db.execute(sql`
       select ds.id as segment_id, d.id as document_id, d.source_key, d.title, d.type, d.game_version,
              ss.content_hash as source_version, ds.body,
@@ -1115,6 +1437,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         and d.deleted = false
         ${documentTypeFilter}
         ${gameVersionFilter}
+        ${localeFilter}
         ${sourceFilter}
       order by e.vector <=> ${vectorLiteral}::vector
       limit ${limit}
@@ -3477,6 +3800,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           title: record.title ?? record.sourceKey,
           normalizedTitle: normalize(record.title ?? record.sourceKey),
           gameVersion: record.gameVersion,
+          locale: recordLocale(record),
           sourceSnapshotId,
           body,
           metadata: record.metadata,
@@ -3484,14 +3808,18 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           deleted: false,
         });
         const segmentRefs: Array<{ id: string; body: string }> = [];
-        for (const [ordinal, segment] of splitIntoSegments(body).entries()) {
+        const segmentIdByKey = new Map<string, string>();
+        for (const [ordinal, segment] of recordSegments(record, body).entries()) {
           const segmentId = stableUuid(`${documentId}:segment:${ordinal}:${record.contentHash}`);
+          if (segment.segmentKey) segmentIdByKey.set(segment.segmentKey, segmentId);
           await tx.insert(documentSegments).values({
             id: segmentId,
             documentId,
             revisionId,
+            segmentKey: segment.segmentKey,
             ordinal,
             headingPath: segment.headingPath,
+            metadata: segment.metadata,
             body: segment.body,
             startOffset: segment.start,
             endOffset: segment.end,
@@ -3519,6 +3847,55 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
               confidence: 1,
             });
           }
+        }
+        if (record.quest) {
+          if (record.quest.subquests.length)
+            await tx.insert(questSubquests).values(
+              record.quest.subquests.map((subquest) => ({
+                documentId,
+                revisionId,
+                questKey: record.quest!.questKey,
+                subquestKey: subquest.subquestKey,
+                subquestId: String(subquest.subquestId),
+                ordinal: subquest.order,
+                title: subquest.title,
+                objective: subquest.objective,
+                completeness: subquest.completeness,
+                metadata: subquest.metadata ?? {},
+              })),
+            );
+          if (record.quest.dialogueNodes.length)
+            await tx.insert(questDialogueNodes).values(
+              record.quest.dialogueNodes.map((node, index) => ({
+                documentId,
+                revisionId,
+                questKey: record.quest!.questKey,
+                subquestKey: node.subquestKey,
+                nodeKey: node.nodeKey,
+                nodeId: String(node.nodeId),
+                nodeType: node.type,
+                speakerKey: node.speakerKey,
+                speakerName: node.speakerName,
+                body: node.body,
+                segmentId: node.segmentKey ? segmentIdByKey.get(node.segmentKey) : undefined,
+                ordinal: node.order ?? index,
+                variants: node.variants ?? {},
+                metadata: node.metadata ?? {},
+              })),
+            );
+          if (record.quest.dialogueEdges.length)
+            await tx.insert(questDialogueEdges).values(
+              record.quest.dialogueEdges.map((edge) => ({
+                documentId,
+                revisionId,
+                questKey: record.quest!.questKey,
+                fromNodeKey: edge.fromNodeKey,
+                toNodeKey: edge.toNodeKey,
+                edgeType: edge.type,
+                optionText: edge.optionText,
+                metadata: edge.metadata ?? {},
+              })),
+            );
         }
         documentBySourceKey.set(record.sourceKey, { id: documentId, segments: segmentRefs });
       }
@@ -3922,6 +4299,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
             title: previousDocument.title,
             normalizedTitle: previousDocument.normalizedTitle,
             gameVersion: previousDocument.gameVersion,
+            locale: previousDocument.locale,
             sourceSnapshotId: previousDocument.sourceSnapshotId,
             body: previousDocument.body,
             metadata: previousDocument.metadata,
@@ -3937,8 +4315,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
               id: segmentId,
               documentId,
               revisionId: revision.id,
+              segmentKey: previousSegment.segmentKey,
               ordinal: previousSegment.ordinal,
               headingPath: previousSegment.headingPath,
+              metadata: previousSegment.metadata,
               body: previousSegment.body,
               startOffset: previousSegment.startOffset,
               endOffset: previousSegment.endOffset,
@@ -3985,24 +4365,29 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           title: record.title ?? record.sourceKey,
           normalizedTitle: normalize(record.title ?? record.sourceKey),
           gameVersion: record.gameVersion,
+          locale: recordLocale(record),
           sourceSnapshotId,
           body,
           metadata: record.metadata,
           revisionId: revision.id,
           deleted: false,
         });
-        const segments = splitIntoSegments(body);
+        const segments = recordSegments(record, body);
         const segmentRefs: Array<{ id: string; body: string }> = [];
+        const segmentIdByKey = new Map<string, string>();
         for (let index = 0; index < segments.length; index += 1) {
           const segment = segments[index];
           if (!segment) continue;
           const segmentId = stableUuid(`${documentId}:segment:${index}:${record.contentHash}`);
+          if (segment.segmentKey) segmentIdByKey.set(segment.segmentKey, segmentId);
           await tx.insert(documentSegments).values({
             id: segmentId,
             documentId,
             revisionId: revision.id,
+            segmentKey: segment.segmentKey,
             ordinal: index,
             headingPath: segment.headingPath,
+            metadata: segment.metadata,
             body: segment.body,
             startOffset: segment.start,
             endOffset: segment.end,
@@ -4031,6 +4416,55 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
               }
             }
           }
+        }
+        if (record.quest) {
+          if (record.quest.subquests.length)
+            await tx.insert(questSubquests).values(
+              record.quest.subquests.map((subquest) => ({
+                documentId,
+                revisionId: revision.id,
+                questKey: record.quest!.questKey,
+                subquestKey: subquest.subquestKey,
+                subquestId: String(subquest.subquestId),
+                ordinal: subquest.order,
+                title: subquest.title,
+                objective: subquest.objective,
+                completeness: subquest.completeness,
+                metadata: subquest.metadata ?? {},
+              })),
+            );
+          if (record.quest.dialogueNodes.length)
+            await tx.insert(questDialogueNodes).values(
+              record.quest.dialogueNodes.map((node, index) => ({
+                documentId,
+                revisionId: revision.id,
+                questKey: record.quest!.questKey,
+                subquestKey: node.subquestKey,
+                nodeKey: node.nodeKey,
+                nodeId: String(node.nodeId),
+                nodeType: node.type,
+                speakerKey: node.speakerKey,
+                speakerName: node.speakerName,
+                body: node.body,
+                segmentId: node.segmentKey ? segmentIdByKey.get(node.segmentKey) : undefined,
+                ordinal: node.order ?? index,
+                variants: node.variants ?? {},
+                metadata: node.metadata ?? {},
+              })),
+            );
+          if (record.quest.dialogueEdges.length)
+            await tx.insert(questDialogueEdges).values(
+              record.quest.dialogueEdges.map((edge) => ({
+                documentId,
+                revisionId: revision.id,
+                questKey: record.quest!.questKey,
+                fromNodeKey: edge.fromNodeKey,
+                toNodeKey: edge.toNodeKey,
+                edgeType: edge.type,
+                optionText: edge.optionText,
+                metadata: edge.metadata ?? {},
+              })),
+            );
         }
         documentBySourceKey.set(record.sourceKey, { id: documentId, segments: segmentRefs });
       }

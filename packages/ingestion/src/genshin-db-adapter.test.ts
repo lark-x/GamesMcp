@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { convertSnapshot, LOCKED_COMMIT, verifyCommit } from "./genshin-db-adapter.js";
 
-const checkout = resolve("data/upstream/genshin-db");
+const checkout = resolve("data/fixtures/genshin-db");
 describe("genshin-db adapter", () => {
   it("rejects a checkout at the wrong commit", async () => {
     await expect(verifyCommit(checkout, "0".repeat(40))).rejects.toThrow(
@@ -16,11 +16,11 @@ describe("genshin-db adapter", () => {
     const second = await convertSnapshot(checkout, { samplePerCategory: 10 });
     expect(first.records).toEqual(second.records);
     expect(first.manifest.counts).toEqual({
-      characters: 10,
-      weapons: 10,
-      artifacts: 10,
-      materials: 10,
-      enemies: 10,
+      characters: 1,
+      weapons: 1,
+      artifacts: 1,
+      materials: 1,
+      enemies: 1,
     });
     expect(first.manifest.failures).toEqual([]);
     expect(JSON.stringify(first.records)).not.toMatch(/\.(png|jpg|jpeg|webp|mp3|wav)\b/i);

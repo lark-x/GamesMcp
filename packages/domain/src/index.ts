@@ -46,6 +46,66 @@ export type ClaimCandidate = {
   }>;
 };
 
+export type NormalizedSegment = {
+  segmentKey: string;
+  ordinal: number;
+  headingPath?: string[];
+  body: string;
+  startOffset: number;
+  endOffset: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type QuestCompleteness = "complete" | "partial" | "metadata_only";
+
+export type QuestSubquestPayload = {
+  subquestKey: string;
+  subquestId: string | number;
+  title: string;
+  objective?: string;
+  order: number;
+  completeness: QuestCompleteness;
+  metadata?: Record<string, unknown>;
+};
+
+export type QuestDialogueNodePayload = {
+  nodeKey: string;
+  nodeId: string | number;
+  type: "dialogue" | "player_choice" | "narration" | "objective" | "system_text";
+  subquestKey?: string;
+  speakerKey?: string;
+  speakerName?: string;
+  body: string;
+  segmentKey?: string;
+  order?: number;
+  variants?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type QuestDialogueEdgePayload = {
+  fromNodeKey: string;
+  toNodeKey: string;
+  type: "next" | "choice" | "optional" | "fallback";
+  optionText?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type QuestRecordPayload = {
+  questKey: string;
+  mainQuestId: string | number;
+  questType: "archon_quest" | "story_quest" | "world_quest" | "event_quest";
+  locale: string;
+  chapter?: string;
+  series?: string;
+  order?: number;
+  completeness: QuestCompleteness;
+  prerequisites?: string[];
+  subquests: QuestSubquestPayload[];
+  dialogueNodes: QuestDialogueNodePayload[];
+  dialogueEdges: QuestDialogueEdgePayload[];
+  metadata?: Record<string, unknown>;
+};
+
 export type NormalizedRecord = {
   sourceKey: string;
   recordType: string;
@@ -54,6 +114,9 @@ export type NormalizedRecord = {
   entityType?: EntityType;
   documentType?: DocumentType;
   gameVersion?: string;
+  locale?: string;
+  segments?: NormalizedSegment[];
+  quest?: QuestRecordPayload;
   entities?: EntityCandidate[];
   relationships?: RelationshipCandidate[];
   claims?: ClaimCandidate[];
@@ -485,6 +548,63 @@ export type VectorEntityHit = {
   score: number;
 };
 
+export type QuestSearchRequest = {
+  query: string;
+  questTypes?: Array<QuestRecordPayload["questType"]>;
+  locale?: string;
+  gameVersion?: string;
+  limit: number;
+  revisionId?: Id;
+};
+
+export type QuestSearchHit = {
+  questKey: string;
+  mainQuestId: string;
+  title: string;
+  type: QuestRecordPayload["questType"];
+  chapter?: string | null;
+  series?: string | null;
+  completeness: QuestCompleteness;
+  locale: string;
+  documentId: Id;
+  revision: string;
+  match?: string;
+};
+
+export type QuestDialoguePage = {
+  questKey: string;
+  title: string;
+  type: QuestRecordPayload["questType"];
+  locale: string;
+  gameVersion?: string | null;
+  documentId: Id;
+  revision: string;
+  completeness: QuestCompleteness;
+  subquests: QuestSubquestPayload[];
+  dialogueNodes: Array<QuestDialogueNodePayload & { segmentId?: Id | null }>;
+  dialogueEdges: QuestDialogueEdgePayload[];
+  participants: EntitySummary[];
+  prerequisites: string[];
+  citations: Array<{
+    documentId: Id;
+    locale: string;
+    questKey: string;
+    subquestKey?: string;
+    dialogueNodeKey?: string;
+    revision: string;
+  }>;
+  warnings: string[];
+  nextCursor?: string | null;
+};
+
+export type GetQuestRequest = {
+  questKey: string;
+  locale?: string;
+  nodeLimit: number;
+  cursor?: string;
+  revisionId?: Id;
+};
+
 export interface KnowledgeRepository {
   health(): Promise<RepositoryHealth>;
   listGames(): Promise<GameSummary[]>;
@@ -539,6 +659,8 @@ export interface KnowledgeRepository {
     spaceId: string,
     limit: number,
   ): Promise<VectorEntityHit[]>;
+  searchQuests?(gameId: Id, request: QuestSearchRequest): Promise<QuestSearchHit[]>;
+  getQuest?(gameId: Id, request: GetQuestRequest): Promise<QuestDialoguePage | null>;
   createSource(input: Omit<Source, "id">): Promise<Source>;
   listSources(gameId?: Id): Promise<Source[]>;
   getSource(sourceId: Id): Promise<Source | null>;
@@ -735,7 +857,10 @@ export function validateNormalizedRecords(
     ...knownEntityKeys,
     ...records.flatMap((record) => (record.entities ?? []).map((entity) => entity.sourceKey)),
   ]);
-  const entityDefinitions = new Map<string, { name: string; type: EntityType }>();
+  const entityDefinitions = new Map<
+    string,
+    { type: EntityType; namesByLanguage: Map<string, string> }
+  >();
   const entityTypes = new Set([
     "character",
     "faction",
@@ -746,11 +871,13 @@ export function validateNormalizedRecords(
     "concept",
     "quest",
     "book",
+    "npc",
   ]);
   const documentTypes = new Set([
     "archon_quest",
     "story_quest",
     "world_quest",
+    "event_quest",
     "book",
     "character_story",
     "item_description",
@@ -766,6 +893,8 @@ export function validateNormalizedRecords(
     "enemy_of",
     "participated_in",
     "mentioned_by",
+    "prerequisite_for",
+    "part_of",
   ]);
   const claimStatuses = new Set([
     "confirmed",
@@ -832,12 +961,161 @@ export function validateNormalizedRecords(
         sourceKey: record.sourceKey,
       });
     }
+    if (record.locale !== undefined && !record.locale.trim()) {
+      issues.push({
+        severity: "error",
+        code: "invalid_locale",
+        message: "locale must not be blank",
+        sourceKey: record.sourceKey,
+      });
+    }
+    const segmentKeys = new Set<string>();
+    for (const segment of record.segments ?? []) {
+      if (!segment.segmentKey.trim()) {
+        issues.push({
+          severity: "error",
+          code: "segment_key_required",
+          message: "Structured segments require segmentKey",
+          sourceKey: record.sourceKey,
+        });
+      }
+      if (segmentKeys.has(segment.segmentKey)) {
+        issues.push({
+          severity: "error",
+          code: "duplicate_segment_key",
+          message: `Duplicate segment key: ${segment.segmentKey}`,
+          sourceKey: record.sourceKey,
+        });
+      }
+      segmentKeys.add(segment.segmentKey);
+      if (!segment.body.trim()) {
+        issues.push({
+          severity: "error",
+          code: "empty_segment",
+          message: `Structured segment is empty: ${segment.segmentKey}`,
+          sourceKey: record.sourceKey,
+        });
+      }
+      if (segment.endOffset < segment.startOffset) {
+        issues.push({
+          severity: "error",
+          code: "invalid_segment_offsets",
+          message: `Segment offsets are invalid: ${segment.segmentKey}`,
+          sourceKey: record.sourceKey,
+        });
+      }
+    }
+    if (record.quest) {
+      const questTypes = new Set(["archon_quest", "story_quest", "world_quest", "event_quest"]);
+      const nodeTypes = new Set([
+        "dialogue",
+        "player_choice",
+        "narration",
+        "objective",
+        "system_text",
+      ]);
+      const edgeTypes = new Set(["next", "choice", "optional", "fallback"]);
+      if (
+        !questTypes.has(record.quest.questType) ||
+        record.documentType !== record.quest.questType
+      ) {
+        issues.push({
+          severity: "error",
+          code: "quest_document_type_mismatch",
+          message: "Quest payload type must match documentType",
+          sourceKey: record.sourceKey,
+        });
+      }
+      if (record.locale && record.quest.locale !== record.locale) {
+        issues.push({
+          severity: "error",
+          code: "quest_locale_mismatch",
+          message: "Quest payload locale must match record locale",
+          sourceKey: record.sourceKey,
+        });
+      }
+      const subquestKeys = new Set<string>();
+      for (const subquest of record.quest.subquests) {
+        if (subquestKeys.has(subquest.subquestKey)) {
+          issues.push({
+            severity: "error",
+            code: "duplicate_subquest_key",
+            message: `Duplicate subquest key: ${subquest.subquestKey}`,
+            sourceKey: record.sourceKey,
+          });
+        }
+        subquestKeys.add(subquest.subquestKey);
+      }
+      const nodeKeys = new Set<string>();
+      for (const node of record.quest.dialogueNodes) {
+        if (!nodeTypes.has(node.type)) {
+          issues.push({
+            severity: "error",
+            code: "invalid_quest_node_type",
+            message: `Invalid quest dialogue node type: ${node.type}`,
+            sourceKey: record.sourceKey,
+          });
+        }
+        if (nodeKeys.has(node.nodeKey)) {
+          issues.push({
+            severity: "error",
+            code: "duplicate_dialogue_node_key",
+            message: `Duplicate dialogue node key: ${node.nodeKey}`,
+            sourceKey: record.sourceKey,
+          });
+        }
+        nodeKeys.add(node.nodeKey);
+        if (node.subquestKey && !subquestKeys.has(node.subquestKey)) {
+          issues.push({
+            severity: "error",
+            code: "invalid_dialogue_subquest_reference",
+            message: `Dialogue node references an unknown subquest: ${node.subquestKey}`,
+            sourceKey: record.sourceKey,
+          });
+        }
+        if (node.segmentKey && !segmentKeys.has(node.segmentKey)) {
+          issues.push({
+            severity: "error",
+            code: "invalid_dialogue_segment_reference",
+            message: `Dialogue node references an unknown segment: ${node.segmentKey}`,
+            sourceKey: record.sourceKey,
+          });
+        }
+      }
+      for (const edge of record.quest.dialogueEdges) {
+        if (!edgeTypes.has(edge.type)) {
+          issues.push({
+            severity: "error",
+            code: "invalid_dialogue_edge_type",
+            message: `Invalid dialogue edge type: ${edge.type}`,
+            sourceKey: record.sourceKey,
+          });
+        }
+        if (!nodeKeys.has(edge.fromNodeKey) || !nodeKeys.has(edge.toNodeKey)) {
+          issues.push({
+            severity: "error",
+            code: "dangling_dialogue_edge",
+            message: "Dialogue edge references a missing node",
+            sourceKey: record.sourceKey,
+          });
+        }
+      }
+    }
     for (const entity of record.entities ?? []) {
       const previousDefinition = entityDefinitions.get(entity.sourceKey);
-      if (
-        previousDefinition &&
-        (previousDefinition.name !== entity.name || previousDefinition.type !== entity.type)
-      ) {
+      const language =
+        entity.aliases?.find((alias) => alias.primary && alias.language)?.language ??
+        entity.aliases?.find((alias) => alias.language)?.language ??
+        "und";
+      const previousName = previousDefinition?.namesByLanguage.get(language);
+      if (previousDefinition && previousDefinition.type !== entity.type) {
+        issues.push({
+          severity: "error",
+          code: "conflicting_entity_definition",
+          message: `Conflicting definitions for entity: ${entity.sourceKey}`,
+          sourceKey: record.sourceKey,
+        });
+      } else if (previousName && previousName !== entity.name) {
         issues.push({
           severity: "error",
           code: "conflicting_entity_definition",
@@ -845,7 +1123,12 @@ export function validateNormalizedRecords(
           sourceKey: record.sourceKey,
         });
       } else if (!previousDefinition) {
-        entityDefinitions.set(entity.sourceKey, { name: entity.name, type: entity.type });
+        entityDefinitions.set(entity.sourceKey, {
+          type: entity.type,
+          namesByLanguage: new Map([[language, entity.name]]),
+        });
+      } else if (!previousName) {
+        previousDefinition.namesByLanguage.set(language, entity.name);
       }
       if (!entityTypes.has(entity.type)) {
         issues.push({

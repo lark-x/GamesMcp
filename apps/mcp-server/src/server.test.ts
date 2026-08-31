@@ -37,6 +37,67 @@ const repository = {
   getEntity: async () => null,
   getDocument: async () => null,
   getRelationships: async () => [],
+  searchQuests: async () => [
+    {
+      questKey: "quest/1001",
+      mainQuestId: "1001",
+      title: "捕风的异乡人",
+      type: "archon_quest" as const,
+      chapter: "序章",
+      series: "Prologue",
+      completeness: "complete" as const,
+      locale: "zh-CN",
+      documentId: "00000000-0000-0000-0000-000000000020",
+      revision: "r1",
+      match: "text",
+    },
+  ],
+  getQuest: async () => ({
+    questKey: "quest/1001",
+    title: "捕风的异乡人",
+    type: "archon_quest" as const,
+    locale: "zh-CN",
+    gameVersion: "7.0.0",
+    documentId: "00000000-0000-0000-0000-000000000020",
+    revision: "r1",
+    completeness: "complete" as const,
+    subquests: [
+      {
+        subquestKey: "quest/1001/subquest/100101",
+        subquestId: "100101",
+        title: "与派蒙同行",
+        order: 0,
+        completeness: "complete" as const,
+      },
+    ],
+    dialogueNodes: [
+      {
+        nodeKey: "quest/1001/dialog/1",
+        nodeId: "1",
+        type: "dialogue" as const,
+        subquestKey: "quest/1001/subquest/100101",
+        speakerKey: "npc/2001",
+        speakerName: "派蒙",
+        body: "旅行者，我们出发吧。",
+        order: 0,
+      },
+    ],
+    dialogueEdges: [],
+    participants: [],
+    prerequisites: [],
+    citations: [
+      {
+        documentId: "00000000-0000-0000-0000-000000000020",
+        locale: "zh-CN",
+        questKey: "quest/1001",
+        subquestKey: "quest/1001/subquest/100101",
+        dialogueNodeKey: "quest/1001/dialog/1",
+        revision: "r1",
+      },
+    ],
+    warnings: [],
+    nextCursor: null,
+  }),
   listRevisions: async () => [
     {
       id: "00000000-0000-0000-0000-000000000010",
@@ -71,7 +132,7 @@ describe("MCP server", () => {
     expect(createMcpServer(repository)).toBeDefined();
   });
 
-  it("exposes the seven-tool and four-resource public contract", async () => {
+  it("exposes the nine-tool and four-resource public contract", async () => {
     const server = createMcpServer(repository);
     const client = new Client(
       { name: "contract-test-client", version: "0.1.0" },
@@ -86,10 +147,12 @@ describe("MCP server", () => {
       "get_entity",
       "get_game_capabilities",
       "get_lore_document",
+      "get_quest",
       "get_relationships",
       "list_games",
       "search_entities",
       "search_lore",
+      "search_quests",
     ]);
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((template) => template.uriTemplate).sort()).toEqual([
@@ -119,6 +182,21 @@ describe("MCP server", () => {
     expect((resultJson(missingEntity) as { error?: { code?: string } })?.error?.code).toBe(
       "entity_not_found",
     );
+    const questSearch = await client.callTool({
+      name: "search_quests",
+      arguments: { game_id: gameId, query: "捕风", locale: "zh-CN", limit: 5 },
+    });
+    expect(
+      (resultJson(questSearch) as { quests?: Array<{ questKey?: string }> }).quests?.[0]?.questKey,
+    ).toBe("quest/1001");
+    const questRead = await client.callTool({
+      name: "get_quest",
+      arguments: { game_id: gameId, quest_id: "1001", locale: "zh-CN", node_limit: 1 },
+    });
+    expect(
+      (resultJson(questRead) as { quest?: { citations?: Array<{ dialogueNodeKey?: string }> } })
+        .quest?.citations?.[0]?.dialogueNodeKey,
+    ).toBe("quest/1001/dialog/1");
     const missingResource = await client.readResource({
       uri: `entity://${gameId}/${entityId}`,
     });

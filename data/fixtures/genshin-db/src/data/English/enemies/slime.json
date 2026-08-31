@@ -1,0 +1,6 @@
+{
+  "id": "slime",
+  "name": "Slime",
+  "type": "Common Enemy",
+  "drops": ["slime-condensate"]
+}

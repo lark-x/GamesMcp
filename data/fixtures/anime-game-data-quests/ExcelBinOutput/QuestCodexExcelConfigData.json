@@ -1,0 +1,28 @@
+[
+  {
+    "mainQuestId": 1001,
+    "dialogueNodes": [
+      {
+        "id": 1,
+        "subQuestId": 100101,
+        "speakerId": 2001,
+        "textMapHash": 10005,
+        "order": 0
+      },
+      {
+        "id": 2,
+        "subQuestId": 100101,
+        "type": "player_choice",
+        "textMapHash": 10006,
+        "order": 1
+      }
+    ],
+    "dialogueEdges": [
+      {
+        "from": 1,
+        "to": 2,
+        "type": "next"
+      }
+    ]
+  }
+]

@@ -165,6 +165,81 @@ describe("API", () => {
     await app.close();
   });
 
+  it("serves quest search and paginated quest details", async () => {
+    const app = appWith({
+      searchQuests: async () => [
+        {
+          questKey: "quest/1001",
+          mainQuestId: "1001",
+          title: "捕风的异乡人",
+          type: "archon_quest",
+          chapter: "序章",
+          series: "Prologue",
+          completeness: "complete",
+          locale: "zh-CN",
+          documentId: "00000000-0000-0000-0000-000000000020",
+          revision: "r1",
+        },
+      ],
+      getQuest: async () => ({
+        questKey: "quest/1001",
+        title: "捕风的异乡人",
+        type: "archon_quest",
+        locale: "zh-CN",
+        gameVersion: "7.0.0",
+        documentId: "00000000-0000-0000-0000-000000000020",
+        revision: "r1",
+        completeness: "complete",
+        subquests: [
+          {
+            subquestKey: "quest/1001/subquest/100101",
+            subquestId: "100101",
+            title: "与派蒙同行",
+            order: 0,
+            completeness: "complete",
+          },
+        ],
+        dialogueNodes: [
+          {
+            nodeKey: "quest/1001/dialog/1",
+            nodeId: "1",
+            type: "dialogue",
+            subquestKey: "quest/1001/subquest/100101",
+            speakerName: "派蒙",
+            body: "旅行者，我们出发吧。",
+          },
+        ],
+        dialogueEdges: [],
+        participants: [],
+        prerequisites: [],
+        citations: [
+          {
+            documentId: "00000000-0000-0000-0000-000000000020",
+            locale: "zh-CN",
+            questKey: "quest/1001",
+            dialogueNodeKey: "quest/1001/dialog/1",
+            revision: "r1",
+          },
+        ],
+        warnings: [],
+        nextCursor: null,
+      }),
+    });
+    const search = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/quests?q=%E6%8D%95%E9%A3%8E&locale=zh-CN`,
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/quests/1001?locale=zh-CN&limit=1`,
+    });
+    expect(search.statusCode).toBe(200);
+    expect(search.json().quests[0].questKey).toBe("quest/1001");
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().quest.dialogueNodes[0].nodeKey).toBe("quest/1001/dialog/1");
+    await app.close();
+  });
+
   it("protects production admin routes with bearer authentication", async () => {
     const config = loadConfig({ NODE_ENV: "production", ADMIN_TOKEN: "test-admin-token" });
     const app = appWith({}, config);

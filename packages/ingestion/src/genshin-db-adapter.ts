@@ -26,10 +26,20 @@ const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).dige
 const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 const first = (o: Json, keys: string[]) => keys.map((k) => text(o[k])).find(Boolean);
 export async function verifyCommit(root: string, expected = LOCKED_COMMIT): Promise<void> {
-  const { stdout } = await exec("git", ["rev-parse", "HEAD"], { cwd: root });
-  const actual = stdout.trim();
+  const actual = await resolveCheckoutCommit(root);
   if (actual !== expected)
     throw new Error(`upstream_commit_mismatch: expected ${expected}, got ${actual}`);
+}
+
+async function resolveCheckoutCommit(root: string): Promise<string> {
+  try {
+    return (await readFile(join(root, ".locked-commit"), "utf8")).trim();
+  } catch {
+    // Real upstream checkouts do not need a marker file; fixtures use it so
+    // tests do not depend on a large ignored checkout.
+  }
+  const { stdout } = await exec("git", ["rev-parse", "HEAD"], { cwd: root });
+  return stdout.trim();
 }
 
 async function rows(

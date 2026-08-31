@@ -23,6 +23,7 @@ import type {
   VerificationScreenshot,
 } from "@gip/domain";
 import { AdminRoutes } from "./admin/AdminRoutes.js";
+import type { QuestDetail, QuestSearchHit } from "./api.js";
 import { VersionSwitcher } from "./versions/VersionSwitcher.js";
 type VerificationStatus = string;
 type VerificationItem = {
@@ -329,6 +330,9 @@ export function App() {
   const [isAdminRoute, setIsAdminRoute] = useState(() =>
     window.location.hash.startsWith("#admin/"),
   );
+  const [isQuestRoute, setIsQuestRoute] = useState(() =>
+    window.location.hash.startsWith("#quests"),
+  );
   const [previewRoute, setPreviewRoute] = useState<PreviewRoute | null>(() => parsePreviewRoute());
   const [games, setGames] = useState<GameSummary[]>([]);
   const [gameId, setGameId] = useState("");
@@ -417,6 +421,7 @@ export function App() {
   useEffect(() => {
     const onHashChange = () => {
       setIsAdminRoute(window.location.hash.startsWith("#admin/"));
+      setIsQuestRoute(window.location.hash.startsWith("#quests"));
       setPreviewRoute(parsePreviewRoute());
     };
     window.addEventListener("hashchange", onHashChange);
@@ -552,6 +557,21 @@ export function App() {
     );
   }
 
+  if (isQuestRoute && gameId) {
+    return (
+      <QuestReader
+        gameId={gameId}
+        gameName={currentGame?.name ?? "Game"}
+        revisionLabel={visibleRevisionLabel}
+        selectedRevision={selectedRevision}
+        onBack={() => {
+          window.location.hash = "";
+          setIsQuestRoute(false);
+        }}
+      />
+    );
+  }
+
   if (isAdminRoute) return <AdminRoutes initialRoute={window.location.hash.slice(1)} />;
 
   return (
@@ -604,6 +624,15 @@ export function App() {
               setDocument(null);
             }}
           />
+          <button
+            className="preview-entry-button"
+            onClick={() => {
+              window.location.hash = "quests";
+              setIsQuestRoute(true);
+            }}
+          >
+            剧情阅读器
+          </button>
           <button
             className="preview-entry-button"
             onClick={() => (window.location.hash = "admin/preview")}
@@ -877,6 +906,301 @@ export function App() {
       <footer>
         {currentGame?.name ?? "加载中"}资料库 · 当前版本 {visibleRevisionLabel} · 内容均可追溯到来源
       </footer>
+    </div>
+  );
+}
+
+const questTypeOptions = [
+  ["", "全部任务"],
+  ["archon_quest", "魔神任务"],
+  ["story_quest", "传说任务"],
+  ["world_quest", "世界任务"],
+  ["event_quest", "活动任务"],
+] as const;
+
+function questTypeLabel(type: QuestSearchHit["type"]): string {
+  return (
+    {
+      archon_quest: "魔神任务",
+      story_quest: "传说任务",
+      world_quest: "世界任务",
+      event_quest: "活动任务",
+    }[type] ?? type
+  );
+}
+
+function completenessLabel(value: QuestSearchHit["completeness"]): string {
+  return (
+    {
+      complete: "完整",
+      partial: "部分",
+      metadata_only: "仅元数据",
+    }[value] ?? value
+  );
+}
+
+function QuestReader({
+  gameId,
+  gameName,
+  revisionLabel,
+  selectedRevision,
+  onBack,
+}: {
+  gameId: string;
+  gameName: string;
+  revisionLabel: string;
+  selectedRevision?: string;
+  onBack: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [locale, setLocale] = useState("zh-CN");
+  const [questType, setQuestType] = useState("");
+  const [quests, setQuests] = useState<QuestSearchHit[]>([]);
+  const [selectedQuest, setSelectedQuest] = useState<QuestDetail | null>(null);
+  const [cursor, setCursor] = useState<string | null | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function searchQuests(event?: FormEvent) {
+    event?.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        locale,
+        limit: "30",
+      });
+      if (query.trim()) params.set("q", query.trim());
+      if (questType) params.set("type", questType);
+      if (selectedRevision) params.set("revisionId", selectedRevision);
+      const result = await api<{ quests: QuestSearchHit[] }>(
+        `/api/games/${gameId}/quests?${params.toString()}`,
+      );
+      setQuests(result.quests);
+      setSelectedQuest(null);
+      setCursor(undefined);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "任务列表加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openQuest(hit: QuestSearchHit, nextCursor?: string | null) {
+    setError("");
+    setDetailLoading(true);
+    try {
+      const params = new URLSearchParams({ locale, limit: "100" });
+      if (selectedRevision) params.set("revisionId", selectedRevision);
+      if (nextCursor) params.set("cursor", nextCursor);
+      const result = await api<{ quest: QuestDetail }>(
+        `/api/games/${gameId}/quests/${encodeURIComponent(hit.questKey)}?${params.toString()}`,
+      );
+      setSelectedQuest((current) =>
+        nextCursor && current
+          ? {
+              ...result.quest,
+              dialogueNodes: [...current.dialogueNodes, ...result.quest.dialogueNodes],
+              dialogueEdges: [...current.dialogueEdges, ...result.quest.dialogueEdges],
+              citations: [...current.citations, ...result.quest.citations],
+            }
+          : result.quest,
+      );
+      setCursor(result.quest.nextCursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "任务详情加载失败");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void searchQuests();
+  }, [gameId, locale, questType, selectedRevision]);
+
+  const selectedHit =
+    selectedQuest && quests.find((quest) => quest.questKey === selectedQuest.questKey);
+
+  return (
+    <div className="app-shell quest-reader-shell">
+      <header className="topbar library-topbar">
+        <div className="library-brand">
+          <span className="brand-mark" aria-hidden="true">
+            任
+          </span>
+          <div>
+            <span className="eyebrow">QUEST READER</span>
+            <h1>剧情任务阅读器</h1>
+          </div>
+        </div>
+        <div className="library-top-actions">
+          <span className="library-data-state">
+            {gameName} · {revisionLabel}
+          </span>
+          <button className="secondary-button" onClick={onBack}>
+            返回资料库
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button onClick={() => setError("")}>关闭</button>
+        </div>
+      )}
+
+      <main className="quest-reader-layout">
+        <aside className="panel quest-catalog-panel">
+          <form className="quest-filter-form" onSubmit={searchQuests}>
+            <label>
+              <span>关键词</span>
+              <input
+                aria-label="搜索任务"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="任务名、章节或台词"
+              />
+            </label>
+            <label>
+              <span>语言</span>
+              <select
+                aria-label="任务语言"
+                value={locale}
+                onChange={(event) => setLocale(event.target.value)}
+              >
+                <option value="zh-CN">简体中文</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+            <label>
+              <span>类型</span>
+              <select
+                aria-label="任务类型"
+                value={questType}
+                onChange={(event) => setQuestType(event.target.value)}
+              >
+                {questTypeOptions.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" disabled={loading}>
+              {loading ? "搜索中…" : "搜索任务"}
+            </button>
+          </form>
+
+          <div className="quest-result-list" aria-busy={loading}>
+            {quests.map((quest) => (
+              <button
+                type="button"
+                key={`${quest.questKey}:${quest.locale}`}
+                className={selectedQuest?.questKey === quest.questKey ? "is-active" : ""}
+                onClick={() => void openQuest(quest)}
+              >
+                <strong>{quest.title}</strong>
+                <span>
+                  {questTypeLabel(quest.type)} · {completenessLabel(quest.completeness)}
+                </span>
+                <small>
+                  {quest.chapter ?? quest.series ?? "章节未知"} · {quest.locale}
+                </small>
+              </button>
+            ))}
+            {!loading && !quests.length && (
+              <ArchiveEmpty title="没有任务结果" detail="尝试切换语言、类型或缩短关键词。" />
+            )}
+          </div>
+        </aside>
+
+        <section className="panel quest-detail-panel" aria-busy={detailLoading}>
+          {!selectedQuest ? (
+            <div className="empty-detail">
+              <span className="detail-mark">◇</span>
+              <h2>选择一个任务开始阅读</h2>
+              <p>任务详情会显示子任务、分页对话节点、分支边、参与角色和 Revision 引用。</p>
+            </div>
+          ) : (
+            <article className="quest-document">
+              <div className="detail-header">
+                <span className="type-pill">{questTypeLabel(selectedQuest.type)}</span>
+                <h2>{selectedQuest.title}</h2>
+                <p>
+                  {selectedQuest.chapter ?? "章节未知"} ·{" "}
+                  {completenessLabel(selectedQuest.completeness)} · {selectedQuest.locale}
+                </p>
+                <small className="detail-meta">
+                  {selectedQuest.questKey} · Revision {selectedQuest.revision} · Document{" "}
+                  {selectedQuest.documentId}
+                </small>
+              </div>
+
+              {selectedQuest.warnings.length > 0 && (
+                <div className="inline-warning" role="status">
+                  <strong>读取警告</strong>
+                  <span>{selectedQuest.warnings.join("；")}</span>
+                </div>
+              )}
+
+              <section className="quest-summary-grid">
+                <div>
+                  <h3>子任务</h3>
+                  {selectedQuest.subquests.slice(0, 12).map((subquest) => (
+                    <div className="quest-subquest" key={subquest.subquestKey}>
+                      <strong>{subquest.title}</strong>
+                      <small>{subquest.objective ?? "无目标文本"}</small>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <h3>参与者与关系</h3>
+                  <p className="muted">
+                    {selectedQuest.participants.map((item) => item.name).join("、") || "暂无"}
+                  </p>
+                  <p className="muted">
+                    前置任务：{selectedQuest.prerequisites.join("、") || "暂无"}；本页分支边{" "}
+                    {selectedQuest.dialogueEdges.length} 条
+                  </p>
+                </div>
+              </section>
+
+              <h3>对话</h3>
+              <div className="quest-dialogue-list">
+                {selectedQuest.dialogueNodes.map((node) => (
+                  <article
+                    id={node.nodeKey}
+                    className={`quest-dialogue-node ${node.type}`}
+                    key={node.nodeKey}
+                  >
+                    <header>
+                      <strong>
+                        {node.speakerName ?? (node.type === "narration" ? "旁白" : "未知")}
+                      </strong>
+                      <small>
+                        {node.type} · {node.nodeKey}
+                      </small>
+                    </header>
+                    <p>{node.body}</p>
+                  </article>
+                ))}
+              </div>
+
+              <div className="quest-reader-actions">
+                <button
+                  type="button"
+                  disabled={!cursor || detailLoading || !selectedHit}
+                  onClick={() => selectedHit && void openQuest(selectedHit, cursor)}
+                >
+                  {cursor ? "读取下一页对话" : "已到末尾"}
+                </button>
+              </div>
+            </article>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

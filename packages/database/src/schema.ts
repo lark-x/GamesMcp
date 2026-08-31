@@ -582,6 +582,7 @@ export const documents = knowledge.table(
     title: text("title").notNull(),
     normalizedTitle: text("normalized_title").notNull(),
     gameVersion: text("game_version"),
+    locale: text("locale").notNull().default("und"),
     sourceSnapshotId: uuid("source_snapshot_id")
       .notNull()
       .references(() => sourceSnapshots.id),
@@ -600,6 +601,7 @@ export const documents = knowledge.table(
       table.revisionId,
     ),
     index("documents_game_title_index").on(table.gameId, table.normalizedTitle),
+    index("documents_revision_type_locale_index").on(table.revisionId, table.type, table.locale),
   ],
 );
 
@@ -613,8 +615,10 @@ export const documentSegments = knowledge.table(
     revisionId: uuid("revision_id")
       .notNull()
       .references(() => datasetRevisions.id),
+    segmentKey: text("segment_key"),
     ordinal: integer("ordinal").notNull(),
     headingPath: jsonb("heading_path").$type<string[]>().notNull().default([]),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     body: text("body").notNull(),
     startOffset: integer("start_offset").notNull(),
     endOffset: integer("end_offset").notNull(),
@@ -624,7 +628,93 @@ export const documentSegments = knowledge.table(
   },
   (table) => [
     uniqueIndex("document_segments_document_ordinal_unique").on(table.documentId, table.ordinal),
+    uniqueIndex("document_segments_document_key_unique")
+      .on(table.documentId, table.segmentKey)
+      .where(sql`${table.segmentKey} IS NOT NULL`),
     index("document_segments_search_index").on(table.searchText),
+  ],
+);
+
+export const questSubquests = knowledge.table(
+  "quest_subquests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    questKey: text("quest_key").notNull(),
+    subquestKey: text("subquest_key").notNull(),
+    subquestId: text("subquest_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    title: text("title").notNull(),
+    objective: text("objective"),
+    completeness: text("completeness").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    uniqueIndex("quest_subquests_revision_key_unique").on(table.revisionId, table.subquestKey),
+    index("quest_subquests_document_index").on(table.documentId, table.ordinal),
+  ],
+);
+
+export const questDialogueNodes = knowledge.table(
+  "quest_dialogue_nodes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    questKey: text("quest_key").notNull(),
+    subquestKey: text("subquest_key"),
+    nodeKey: text("node_key").notNull(),
+    nodeId: text("node_id").notNull(),
+    nodeType: text("node_type").notNull(),
+    speakerKey: text("speaker_key"),
+    speakerName: text("speaker_name"),
+    body: text("body").notNull(),
+    segmentId: uuid("segment_id").references(() => documentSegments.id, { onDelete: "set null" }),
+    ordinal: integer("ordinal").notNull(),
+    variants: jsonb("variants").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    uniqueIndex("quest_dialogue_nodes_revision_key_unique").on(table.revisionId, table.nodeKey),
+    index("quest_dialogue_nodes_document_index").on(table.documentId, table.ordinal),
+    index("quest_dialogue_nodes_speaker_index").on(table.revisionId, table.speakerKey),
+  ],
+);
+
+export const questDialogueEdges = knowledge.table(
+  "quest_dialogue_edges",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    questKey: text("quest_key").notNull(),
+    fromNodeKey: text("from_node_key").notNull(),
+    toNodeKey: text("to_node_key").notNull(),
+    edgeType: text("edge_type").notNull(),
+    optionText: text("option_text"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    uniqueIndex("quest_dialogue_edges_revision_scope_unique").on(
+      table.revisionId,
+      table.fromNodeKey,
+      table.toNodeKey,
+      table.edgeType,
+    ),
+    index("quest_dialogue_edges_document_index").on(table.documentId),
   ],
 );
 

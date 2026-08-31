@@ -99,6 +99,59 @@ export type Revision = {
   isCurrent?: boolean;
   publishedAt?: string;
 };
+export type QuestSearchHit = {
+  questKey: string;
+  mainQuestId: string;
+  title: string;
+  type: "archon_quest" | "story_quest" | "world_quest" | "event_quest";
+  chapter?: string | null;
+  series?: string | null;
+  completeness: "complete" | "partial" | "metadata_only";
+  locale: string;
+  documentId: string;
+  revision: string;
+  match?: string;
+};
+export type QuestDetail = QuestSearchHit & {
+  gameVersion?: string | null;
+  subquests: Array<{
+    subquestKey: string;
+    subquestId: string | number;
+    title: string;
+    objective?: string;
+    order: number;
+    completeness: "complete" | "partial" | "metadata_only";
+  }>;
+  dialogueNodes: Array<{
+    nodeKey: string;
+    nodeId: string | number;
+    type: string;
+    subquestKey?: string;
+    speakerKey?: string;
+    speakerName?: string;
+    body: string;
+    segmentId?: string | null;
+    order?: number;
+  }>;
+  dialogueEdges: Array<{
+    fromNodeKey: string;
+    toNodeKey: string;
+    type: string;
+    optionText?: string;
+  }>;
+  participants: Array<{ id: string; sourceKey?: string | null; name: string; type: string }>;
+  prerequisites: string[];
+  citations: Array<{
+    documentId: string;
+    locale: string;
+    questKey: string;
+    subquestKey?: string;
+    dialogueNodeKey?: string;
+    revision: string;
+  }>;
+  warnings: string[];
+  nextCursor?: string | null;
+};
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem("gip.adminToken");
   const r = await fetch(path, {
@@ -205,4 +258,49 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ reason }),
     }),
+  quests: (
+    gameId: string,
+    input: {
+      q?: string;
+      locale?: string;
+      type?: QuestSearchHit["type"];
+      gameVersion?: string;
+      revisionId?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (input.q) params.set("q", input.q);
+    if (input.locale) params.set("locale", input.locale);
+    if (input.type) params.set("type", input.type);
+    if (input.gameVersion) params.set("gameVersion", input.gameVersion);
+    if (input.revisionId) params.set("revisionId", input.revisionId);
+    if (input.limit) params.set("limit", String(input.limit));
+    const query = params.toString();
+    return request<{ quests: QuestSearchHit[] }>(
+      `/api/games/${gameId}/quests${query ? `?${query}` : ""}`,
+    );
+  },
+  quest: (
+    gameId: string,
+    questId: string,
+    input: {
+      locale?: string;
+      subquestId?: string;
+      cursor?: string;
+      revisionId?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (input.locale) params.set("locale", input.locale);
+    if (input.subquestId) params.set("subquestId", input.subquestId);
+    if (input.cursor) params.set("cursor", input.cursor);
+    if (input.revisionId) params.set("revisionId", input.revisionId);
+    if (input.limit) params.set("limit", String(input.limit));
+    const query = params.toString();
+    return request<{ quest: QuestDetail }>(
+      `/api/games/${gameId}/quests/${encodeURIComponent(questId)}${query ? `?${query}` : ""}`,
+    );
+  },
 };

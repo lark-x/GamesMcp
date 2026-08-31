@@ -24,6 +24,82 @@ async function mockApi(page: import("@playwright/test").Page) {
     const u = new URL(route.request().url());
     if (u.pathname === "/api/games")
       return route.fulfill({ json: { games: [{ id: "g1", name: "Game" }] } });
+    if (u.pathname === "/api/games/g1/quests")
+      return route.fulfill({
+        json: {
+          quests: [
+            {
+              questKey: "quest/1000",
+              mainQuestId: "1000",
+              title: "浮世浮生千岩间",
+              type: "archon_quest",
+              chapter: "第一章",
+              series: "1001",
+              completeness: "complete",
+              locale: u.searchParams.get("locale") ?? "zh-CN",
+              documentId: "d-quest-1000",
+              revision: "r1",
+              match: "text",
+            },
+          ],
+        },
+      });
+    if (u.pathname === "/api/games/g1/quests/quest%2F1000")
+      return route.fulfill({
+        json: {
+          quest: {
+            questKey: "quest/1000",
+            mainQuestId: "1000",
+            title: "浮世浮生千岩间",
+            type: "archon_quest",
+            chapter: "第一章",
+            series: "1001",
+            completeness: "complete",
+            locale: u.searchParams.get("locale") ?? "zh-CN",
+            documentId: "d-quest-1000",
+            revision: "r1",
+            gameVersion: "7.0.0",
+            subquests: [
+              {
+                subquestKey: "quest/1000/subquest/100000",
+                subquestId: "100000",
+                title: "前往璃月港",
+                objective: "前往璃月港",
+                order: 1,
+                completeness: "complete",
+              },
+            ],
+            dialogueNodes:
+              u.searchParams.get("cursor") === "next"
+                ? [
+                    {
+                      nodeKey: "quest/1000/dialog/100002",
+                      nodeId: "100002",
+                      type: "dialogue",
+                      speakerName: "派蒙",
+                      body: "下一页台词",
+                      order: 2,
+                    },
+                  ]
+                : [
+                    {
+                      nodeKey: "quest/1000/dialog/100001",
+                      nodeId: "100001",
+                      type: "dialogue",
+                      speakerName: "派蒙",
+                      body: "要寻找岩神的话，一年里只有这一次机会。",
+                      order: 1,
+                    },
+                  ],
+            dialogueEdges: [],
+            participants: [{ id: "e1", sourceKey: "npc/1005", name: "派蒙", type: "npc" }],
+            prerequisites: [],
+            citations: [],
+            warnings: [],
+            nextCursor: u.searchParams.get("cursor") === "next" ? null : "next",
+          },
+        },
+      });
     if (u.pathname === "/api/admin/sources")
       return route.fulfill({
         json: { sources: [{ id: "s1", name: "Fixture source", type: "local_json" }] },
@@ -204,4 +280,16 @@ test("历史页回滚提交原因", async ({ page }) => {
   await page.getByLabel("回滚原因 r1").fill("安全回退");
   await page.getByRole("button", { name: "切换到此 Revision" }).click();
   await expect.poll(() => body).toContain("安全回退");
+});
+
+test("剧情阅读器可搜索任务并分页读取对话", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/#quests");
+  await expect(page.getByRole("heading", { name: "剧情任务阅读器" })).toBeVisible();
+  await page.getByLabel("搜索任务").fill("岩神");
+  await page.getByRole("button", { name: "搜索任务" }).click();
+  await page.getByRole("button", { name: /浮世浮生千岩间/ }).click();
+  await expect(page.getByText("要寻找岩神的话，一年里只有这一次机会。")).toBeVisible();
+  await page.getByRole("button", { name: "读取下一页对话" }).click();
+  await expect(page.getByText("下一页台词")).toBeVisible();
 });

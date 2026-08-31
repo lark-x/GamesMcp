@@ -16,6 +16,7 @@ export const entityTypeSchema = z.enum([
   "concept",
   "quest",
   "book",
+  "npc",
 ]);
 export type EntityType = z.infer<typeof entityTypeSchema>;
 
@@ -23,6 +24,7 @@ export const documentTypeSchema = z.enum([
   "archon_quest",
   "story_quest",
   "world_quest",
+  "event_quest",
   "book",
   "character_story",
   "item_description",
@@ -48,6 +50,8 @@ export const relationshipPredicateSchema = z.enum([
   "enemy_of",
   "participated_in",
   "mentioned_by",
+  "prerequisite_for",
+  "part_of",
 ]);
 export type RelationshipPredicate = z.infer<typeof relationshipPredicateSchema>;
 
@@ -67,6 +71,7 @@ export const searchRequestSchema = z.object({
   entityTypes: z.array(entityTypeSchema).optional(),
   documentTypes: z.array(documentTypeSchema).optional(),
   gameVersions: z.array(z.string().trim().min(1).max(40)).optional(),
+  locales: z.array(z.string().trim().min(1).max(40)).optional(),
   sourceId: z.string().uuid().optional(),
   revisionId: revisionIdSchema.optional(),
   limit: z.number().int().min(1).max(100).default(20),
@@ -91,6 +96,10 @@ export const citationSchema = z.object({
   sourceName: z.string(),
   gameVersion: z.string().nullable(),
   datasetRevision: z.string(),
+  locale: z.string().optional().nullable(),
+  questKey: z.string().optional().nullable(),
+  subquestKey: z.string().optional().nullable(),
+  dialogueNodeKey: z.string().optional().nullable(),
 });
 export type Citation = z.infer<typeof citationSchema>;
 
@@ -187,6 +196,7 @@ export type DocumentSummary = {
   title: string;
   type: DocumentType;
   gameVersion?: string | null;
+  locale?: string | null;
   snippet?: string;
   score?: number;
   match?: string;

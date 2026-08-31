@@ -11,6 +11,8 @@ import {
 } from "@gip/contracts";
 import { z } from "zod";
 
+const questTypeSchema = z.enum(["archon_quest", "story_quest", "world_quest", "event_quest"]);
+
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
@@ -126,6 +128,87 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
           : errorResult("index_not_ready", "No searchable Dataset Revision is ready");
       } catch (error) {
         return errorResultFrom(error, "search_failed", "Search failed");
+      }
+    },
+  );
+
+  server.tool(
+    "search_quests",
+    "Search published quest documents by quest title, body, type, locale and game version.",
+    {
+      game_id: gameId,
+      query: z.string().min(1).max(500),
+      quest_type: questTypeSchema.optional(),
+      locale: z.string().min(1).max(40).default("zh-CN"),
+      game_version: z.string().min(1).max(40).optional(),
+      limit: z.number().int().min(1).max(50).default(20),
+    },
+    async ({ game_id, query, quest_type, locale, game_version, limit }) => {
+      try {
+        await domain.requireCapability(game_id, "lore_search");
+        const revisionId = await requirePublicRevision(repository, game_id);
+        if (!repository.searchQuests)
+          throw new DomainError("quest_tools_not_ready", "Quest search is not implemented");
+        return textResult({
+          quests: await repository.searchQuests(game_id, {
+            query,
+            questTypes: quest_type ? [quest_type] : undefined,
+            locale,
+            gameVersion: game_version,
+            limit,
+            revisionId,
+          }),
+        });
+      } catch (error) {
+        return errorResultFrom(error, "search_quests_failed", "Quest search failed");
+      }
+    },
+  );
+
+  server.tool(
+    "get_quest",
+    "Read a published quest with subquests, paginated dialogue nodes, branch edges and citations.",
+    {
+      game_id: gameId,
+      quest_id: z.string().min(1).max(120),
+      locale: z.string().min(1).max(40).default("zh-CN"),
+      subquest_id: z.string().min(1).max(120).optional(),
+      cursor: z.string().min(1).optional(),
+      node_limit: z.number().int().min(1).max(300).default(100),
+    },
+    async ({ game_id, quest_id, locale, subquest_id, cursor, node_limit }) => {
+      try {
+        await domain.requireCapability(game_id, "lore_search");
+        const revisionId = await requirePublicRevision(repository, game_id);
+        if (!repository.getQuest)
+          throw new DomainError("quest_tools_not_ready", "Quest reading is not implemented");
+        const quest = await repository.getQuest(game_id, {
+          questKey: quest_id,
+          locale,
+          cursor,
+          nodeLimit: node_limit,
+          revisionId,
+        });
+        if (!quest) throw new DomainError("quest_not_found", "Quest was not found", undefined, 404);
+        if (!subquest_id) return textResult({ quest });
+        const subquestKey = subquest_id.startsWith("quest/")
+          ? subquest_id
+          : `${quest.questKey}/subquest/${subquest_id}`;
+        const dialogueNodes = quest.dialogueNodes.filter(
+          (node) => node.subquestKey === subquestKey,
+        );
+        const nodeKeys = new Set(dialogueNodes.map((node) => node.nodeKey));
+        return textResult({
+          quest: {
+            ...quest,
+            subquests: quest.subquests.filter((subquest) => subquest.subquestKey === subquestKey),
+            dialogueNodes,
+            dialogueEdges: quest.dialogueEdges.filter((edge) => nodeKeys.has(edge.fromNodeKey)),
+            citations: quest.citations.filter((citation) => citation.subquestKey === subquestKey),
+          },
+        });
+      } catch (error) {
+        return errorResultFrom(error, "get_quest_failed", "Quest could not be loaded");
       }
     },
   );

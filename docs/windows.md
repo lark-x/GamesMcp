@@ -36,6 +36,24 @@ D:\GamesMcp\data\upstream\   # AnimeGameData checkout
 
 启动前的存储预检会确认数据盘存在、文件系统为 NTFS 或 ReFS、目录可写、剩余空间不少于 50 GiB，并确认数据盘不是系统盘。检查失败时程序会停止，不会偷偷改用 `C:`。
 
+## 任务剧情转换
+
+首版剧情任务转换不需要启动游戏。确认 `data/upstream/AnimeGameData` 固定在 Commit
+`26df1dfbdf05a82bbb1d97506859f3e1c40718d8` 后，在 PowerShell 执行：
+
+```powershell
+pnpm data:convert:anime-quests -- --upstream=data/upstream/AnimeGameData --commit=26df1dfbdf05a82bbb1d97506859f3e1c40718d8 --commit-date=2026-08-01T00:00:00.000Z --game-version=7.0.0 --version-label=CNRELWin7.0.0 --output=data/imports/normalized/anime-game-data/26df1dfbdf05a82bbb1d97506859f3e1c40718d8/quests
+```
+
+可先用样本验证速度和字段映射：
+
+```powershell
+pnpm data:convert:anime-quests -- --upstream=data/upstream/AnimeGameData --commit=26df1dfbdf05a82bbb1d97506859f3e1c40718d8 --commit-date=2026-08-01T00:00:00.000Z --game-version=7.0.0 --version-label=CNRELWin7.0.0 --output=data/imports/normalized/anime-game-data/sample-quests/quests --limit=200 --profile
+```
+
+生成结果仍在 `data/` 下，默认不会提交到 GitHub。后续导入、Candidate、发布和 MCP
+读取需要 PostgreSQL 通过预检并完成迁移。
+
 ## 迁移已有数据
 
 建议保持 macOS 外置盘为原始副本，另外准备 NTFS 目标盘。迁移顺序如下：

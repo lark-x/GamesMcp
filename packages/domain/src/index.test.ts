@@ -95,4 +95,65 @@ describe("domain validation", () => {
     expect(issues.map((issue) => issue.code)).toContain("conflicting_entity_definition");
     expect(issues.map((issue) => issue.code)).not.toContain("invalid_entity_reference");
   });
+
+  it("validates structured quest payloads before import", () => {
+    const issues = validateNormalizedRecords([
+      {
+        sourceKey: "quest/100/locale/zh-CN",
+        recordType: "document",
+        title: "序章",
+        body: "派蒙：我们走吧。",
+        documentType: "archon_quest",
+        locale: "zh-CN",
+        segments: [
+          {
+            segmentKey: "quest/100/dialog/1",
+            ordinal: 0,
+            body: "派蒙：我们走吧。",
+            startOffset: 0,
+            endOffset: 8,
+          },
+        ],
+        quest: {
+          questKey: "quest/100",
+          mainQuestId: 100,
+          questType: "archon_quest",
+          locale: "en",
+          completeness: "complete",
+          subquests: [
+            {
+              subquestKey: "quest/100/subquest/101",
+              subquestId: 101,
+              title: "启程",
+              order: 0,
+              completeness: "complete",
+            },
+          ],
+          dialogueNodes: [
+            {
+              nodeKey: "quest/100/dialog/1",
+              nodeId: 1,
+              type: "dialogue",
+              subquestKey: "quest/100/subquest/101",
+              segmentKey: "quest/100/dialog/1",
+              body: "派蒙：我们走吧。",
+            },
+          ],
+          dialogueEdges: [
+            {
+              fromNodeKey: "quest/100/dialog/1",
+              toNodeKey: "quest/100/dialog/missing",
+              type: "next",
+            },
+          ],
+        },
+        metadata: {},
+        contentHash: "hash",
+        parserVersion: "test",
+      },
+    ]);
+    expect(issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["quest_locale_mismatch", "dangling_dialogue_edge"]),
+    );
+  });
 });

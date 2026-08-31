@@ -4048,6 +4048,119 @@ footer {
   margin: 8px 0 16px;
 }
 
+.quest-reader-shell {
+  max-width: 1500px;
+}
+.quest-reader-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 18px;
+}
+.quest-catalog-panel,
+.quest-detail-panel {
+  min-height: 620px;
+}
+.quest-filter-form {
+  display: grid;
+  gap: 12px;
+}
+.quest-filter-form label {
+  display: grid;
+  gap: 6px;
+  color: #486581;
+  font-size: 12px;
+  font-weight: 700;
+}
+.quest-filter-form input,
+.quest-filter-form select {
+  width: 100%;
+}
+.quest-result-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.quest-result-list button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid #e0e8f0;
+  background: #fff;
+  color: #102a43;
+  text-align: left;
+}
+.quest-result-list button:hover,
+.quest-result-list button.is-active {
+  border-color: #2f80ed;
+  background: #f0f7ff;
+  filter: none;
+}
+.quest-result-list span,
+.quest-result-list small {
+  color: #627d98;
+  font-size: 12px;
+}
+.quest-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.75fr);
+  gap: 16px;
+  margin: 18px 0;
+}
+.quest-subquest {
+  display: grid;
+  gap: 3px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef2f6;
+}
+.quest-subquest small {
+  color: #627d98;
+}
+.quest-dialogue-list {
+  display: grid;
+  gap: 10px;
+}
+.quest-dialogue-node {
+  padding: 14px;
+  border: 1px solid #e0e8f0;
+  border-radius: 13px;
+  background: #fbfdff;
+}
+.quest-dialogue-node header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.quest-dialogue-node header small {
+  color: #829ab1;
+  overflow-wrap: anywhere;
+}
+.quest-dialogue-node p {
+  margin: 0;
+  color: #243b53;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+.quest-dialogue-node.narration {
+  background: #fffaf0;
+}
+.quest-dialogue-node.player_choice {
+  border-color: #c7d2fe;
+  background: #f5f7ff;
+}
+.quest-reader-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+@media (max-width: 900px) {
+  .quest-reader-layout,
+  .quest-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .admin-topbar,
   .admin-top-actions,
