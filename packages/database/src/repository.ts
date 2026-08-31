@@ -2564,6 +2564,16 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
   async addReviewEvidence(
     input: Omit<ReviewEvidence, "id" | "createdAt">,
   ): Promise<ReviewEvidence> {
+    // Evidence is part of the audit contract, not an arbitrary attachment.
+    // Enforce the invariant here as well as at the HTTP boundary so workers
+    // and alternate callers cannot create unverifiable review records.
+    if (!/^image\/(png|jpeg|webp)$/i.test(input.mimeType) || input.bytes <= 0)
+      throw new DomainError("invalid_review_evidence", "Review evidence must be a non-empty image");
+    if (!input.checkedGameVersion.trim() || !input.checkedLocale.trim() || !input.note.trim())
+      throw new DomainError(
+        "review_evidence_provenance_required",
+        "Review evidence requires game version, language, and explanation",
+      );
     const [row] = await this.db
       .insert(reviewEvidence)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2726,7 +2736,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           baseRevisionId: candidate.baseRevisionId,
           importBatchId: candidate.importBatchIds.at(-1),
           buildKind: "import",
-          indexStatus: "pending",
+          // Candidate builds contain a complete immutable manifest; the
+          // searchable index is materialized from this payload during
+          // activation, so the build itself is ready for promotion.
+          indexStatus: "ready",
         })
         .returning();
       if (!build)
@@ -2753,12 +2766,15 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
           .set({ status: "resolved", resolvedAt: new Date(), updatedAt: new Date() })
           .where(inArray(reviewIssues.id, issueIds));
       const baseByKey = new Map(baseRecords.map((record) => [record.sourceKey, record]));
-      const incomingByKey = new Map<string, NormalizedRecord[]>();
+      const incomingByKey = new Map<
+        string,
+        Array<{ record: NormalizedRecord; sourceId: string }>
+      >();
       for (const batch of batches)
         for (const record of batch.stagedRecords ?? [])
           incomingByKey.set(record.sourceKey, [
             ...(incomingByKey.get(record.sourceKey) ?? []),
-            record,
+            { record, sourceId: batch.sourceId },
           ]);
       const issueValues: Array<Record<string, unknown>> = [];
       const addIssue = (
@@ -2797,7 +2813,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
             { batchId: batch.id, error },
           );
       }
-      for (const [key, records] of incomingByKey) {
+      for (const [key, incomingRecords] of incomingByKey) {
+        const records = incomingRecords.map((item) => item.record);
         const base = baseByKey.get(key);
         const hashes = {
           baseContentHash: base
@@ -2811,7 +2828,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         // Overwrite is reserved for an explicit competing write in the same
         // import aggregation; comparing against the published base alone
         // would turn every routine refresh into a blocking issue.
-        if (records.length > 1 && new Set(records.map(canonicalRecordBytes)).size > 1)
+        if (
+          new Set(incomingRecords.map((item) => item.sourceId)).size > 1 &&
+          new Set(records.map(canonicalRecordBytes)).size > 1
+        )
           addIssue(
             "field_conflict",
             key,
@@ -2904,6 +2924,11 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       blockingReasons.push({
         code: "candidate_checksum_invalid",
         message: "The preview build checksum is invalid",
+      });
+    if (build && build.indexStatus !== "ready")
+      blockingReasons.push({
+        code: "candidate_index_not_ready",
+        message: "Preview build index is not ready",
       });
     if (build?.manifestId) {
       const [manifest] = await this.db
@@ -3226,6 +3251,19 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         activationError: error ? { error } : null,
       })
       .where(eq(datasetRevisions.id, revisionId));
+    const [revision] = await this.db
+      .select({ activationBuildId: datasetRevisions.activationBuildId })
+      .from(datasetRevisions)
+      .where(eq(datasetRevisions.id, revisionId))
+      .limit(1);
+    if (revision?.activationBuildId)
+      await this.db
+        .update(releaseCandidateBuilds)
+        .set({
+          indexStatus: status,
+          status: status === "failed" ? "failed" : "ready",
+        })
+        .where(eq(releaseCandidateBuilds.id, revision.activationBuildId));
   }
 
   /**
