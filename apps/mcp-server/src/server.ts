@@ -92,6 +92,36 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   );
 
   server.tool(
+    "get_weapon",
+    "Get one Genshin weapon by display name with structured facts.",
+    { game_id: gameId, name: nameInput },
+    async ({ game_id, name }) => {
+      try {
+        const weapon = await gameDomain.findStructuredByName(game_id, "weapon", name);
+        if (!weapon) return errorResult("weapon_not_found", `Weapon was not found: ${name}`);
+        return textResult({ weapon });
+      } catch (error) {
+        return errorResultFrom(error, "get_weapon_failed", "Weapon could not be loaded");
+      }
+    },
+  );
+
+  server.tool(
+    "get_enemy",
+    "Get one Genshin enemy by display name with structured facts.",
+    { game_id: gameId, name: nameInput },
+    async ({ game_id, name }) => {
+      try {
+        const enemy = await gameDomain.findStructuredByName(game_id, "enemy", name);
+        if (!enemy) return errorResult("enemy_not_found", `Enemy was not found: ${name}`);
+        return textResult({ enemy });
+      } catch (error) {
+        return errorResultFrom(error, "get_enemy_failed", "Enemy could not be loaded");
+      }
+    },
+  );
+
+  server.tool(
     "resolve_entity",
     "Resolve a display name or alias to the canonical entity with confidence.",
     { game_id: gameId, query: z.string().trim().min(1).max(200) },
@@ -125,25 +155,22 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
       try {
         await gameDomain.requireCapability(game_id, "lore_search");
         const revisionId = await gameDomain.requirePublicRevision(game_id);
-        if (!repository.searchQuests)
-          throw new DomainError("quest_tools_not_ready", "Quest search is not implemented");
-        const quests = await repository.searchQuests(game_id, {
+        if (!repository.searchDialogue)
+          throw new DomainError("dialogue_tools_not_ready", "Dialogue search is not implemented");
+        const hits = await repository.searchDialogue(game_id, {
           query,
           limit,
           revisionId,
         });
         return textResult({
-          hits: quests.slice(0, limit).map((quest) => ({
-            quest: quest.title,
-            questKey: quest.questKey,
-            type: quest.type,
-            documentId: quest.documentId,
-            citation: {
-              documentId: quest.documentId,
-              locale: quest.locale,
-              questKey: quest.questKey,
-              revision: quest.revision,
-            },
+          hits: hits.slice(0, limit).map((hit) => ({
+            quest: hit.quest,
+            subquest: hit.subquest,
+            speaker: hit.speaker,
+            text: hit.text,
+            dialogueNodeKey: hit.dialogueNodeKey,
+            score: hit.score,
+            citation: hit.citation,
           })),
         });
       } catch (error) {

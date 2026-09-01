@@ -779,7 +779,7 @@ function structuredBase(
   };
 }
 
-async function materializeStructuredRecords(
+export async function materializeStructuredRecords(
   db: Database,
   gameId: string,
   revisionId: string,

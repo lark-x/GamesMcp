@@ -15,7 +15,16 @@ export type SearchRepositoryPort = {
   listStructuredAtRevision(
     gameId: string,
     revisionId: string,
-  ): Promise<Array<{ kind: StructuredSearchKind; name: string; aliases: string[]; body: string }>>;
+    query: string,
+  ): Promise<
+    Array<{
+      kind: StructuredSearchKind;
+      stableId: string;
+      name: string;
+      aliases: string[];
+      body: string;
+    }>
+  >;
   listEntityCandidates(
     gameId: string,
     revisionId: string,

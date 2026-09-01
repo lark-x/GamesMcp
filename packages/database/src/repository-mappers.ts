@@ -84,7 +84,8 @@ export function mapReleaseCandidateBuild(
     buildNumber: row.buildNumber,
     status: row.status as ReleaseCandidateBuild["status"],
     contentChecksum: row.contentChecksum,
-    recordCount: row.normalizedRecords.length,
+    recordCount: row.normalizedRecords.length + structuredRecordCount(row.structuredRecords),
+    structuredRecordCount: structuredRecordCount(row.structuredRecords),
     createdAt: row.createdAt,
     manifestId: row.manifestId,
     importBatchId: row.importBatchId,
@@ -92,6 +93,13 @@ export function mapReleaseCandidateBuild(
     buildKind: row.buildKind,
     indexStatus: row.indexStatus,
   };
+}
+
+function structuredRecordCount(
+  records: typeof releaseCandidateBuilds.$inferSelect.structuredRecords,
+): number {
+  if (!records) return 0;
+  return Object.values(records).reduce((total, list) => total + (list?.length ?? 0), 0);
 }
 
 export function mapVerificationItem(

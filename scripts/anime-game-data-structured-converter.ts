@@ -175,6 +175,17 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function booleanValue(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLocaleLowerCase("zh-CN");
+    if (["true", "1", "yes"].includes(normalized)) return true;
+    if (["false", "0", "no"].includes(normalized)) return false;
+  }
+  return undefined;
+}
+
 function textValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -304,10 +315,6 @@ function enemyCategory(value: unknown): GenshinEnemy["category"] {
   return "common";
 }
 
-function sourceKeyRefs(records: Array<{ stableId: string }>): string[] {
-  return records.map((record) => record.stableId).sort();
-}
-
 function voiceLineRecord(
   options: StructuredConvertOptions,
   sourceFile: SourceFile<unknown>,
@@ -396,17 +403,24 @@ export async function convertStructuredAnimeGameData(
       });
       return [];
     }
+    const base = baseRecord(options, "weapon", upstreamId, inputs.weapon, row, name);
     return [
       {
-        ...baseRecord(options, "weapon", upstreamId, inputs.weapon, row, name),
+        ...base,
         weaponType: type,
         rarity: rank,
-        baseAttack: numberValue(row.weaponBaseExp) ?? null,
+        baseAttack: null,
+        baseAttackResolved: false,
         subStat: null,
         passiveName: textMapValue(textMap, row.skillNameTextMapHash),
         passiveDescription: null,
         ascensionMaterials: [],
         description: textMapValue(textMap, row.descTextMapHash),
+        provenance: {
+          ...base.provenance,
+          weaponBaseExp: numberValue(row.weaponBaseExp) ?? null,
+          baseAttackResolved: false,
+        },
       },
     ];
   });
@@ -519,13 +533,25 @@ export async function convertStructuredAnimeGameData(
       return [];
     }
     const goalName = achievementGoals.get(idText(row.goalId) ?? "");
+    const base = baseRecord(options, "achievement", upstreamId, inputs.achievement, row, name);
+    const isShown = booleanValue(row.isShow) ?? false;
     return [
       {
-        ...baseRecord(options, "achievement", upstreamId, inputs.achievement, row, name),
+        ...base,
         category: achievementCategory(goalName),
         requirement: textMapValue(textMap, row.descTextMapHash),
-        rewardPrimogems: numberValue(row.finishRewardId) ?? null,
-        hidden: Boolean(row.isShow) === false && Boolean(row.isDisuse),
+        rewardPrimogems: null,
+        hidden: !isShown,
+        displayState: isShown ? "displayed" : "hidden",
+        provenance: {
+          ...base.provenance,
+          goalId: idText(row.goalId) ?? null,
+          goalName: goalName ?? null,
+          finishRewardId: idText(row.finishRewardId) ?? null,
+          rewardPrimogemsResolved: false,
+          displayState: isShown ? "displayed" : "hidden",
+          achievementHiddenSource: "isShow",
+        },
       },
     ];
   });
@@ -541,14 +567,20 @@ export async function convertStructuredAnimeGameData(
       });
       return [];
     }
+    const base = baseRecord(options, "enemy", upstreamId, inputs.monster, row, name);
     return [
       {
-        ...baseRecord(options, "enemy", upstreamId, inputs.monster, row, name),
+        ...base,
         category: enemyCategory(row.type),
         family: textValue(row.type) ?? null,
         description: textMapValue(textMap, row.descTextMapHash),
-        drops: sourceKeyRefs(materials),
+        drops: [],
+        dropsResolved: false,
         resistances: {},
+        provenance: {
+          ...base.provenance,
+          dropsResolved: false,
+        },
       },
     ];
   });

@@ -11,7 +11,7 @@ import type {
   GenshinWeapon,
 } from "@gip/domain";
 import type { Database } from "./client.js";
-import { normalize } from "./repository-utils.js";
+import { escapeLike, normalize } from "./repository-utils.js";
 
 type StructuredKind =
   "character" | "weapon" | "artifactSet" | "artifact" | "material" | "achievement" | "enemy";
@@ -277,7 +277,7 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
     const config = configs[kind];
     const limit = Math.min(Math.max(options.limit, 1), 200);
     const offset = Math.max(options.offset ?? 0, 0);
-    const query = options.query ? `%${normalize(options.query)}%` : undefined;
+    const query = options.query ? `%${escapeLike(normalize(options.query))}%` : undefined;
     const rows = rowsFromExecuteResult(
       await this.db.execute(sql`
       select * from ${sql.raw(config.table)}
@@ -370,6 +370,10 @@ function mapRow(kind: StructuredKind, row: StructuredRow): StructuredRecord {
       weaponType: row.weapon_type as GenshinWeapon["weaponType"],
       rarity: row.rarity ?? 1,
       baseAttack: row.base_attack,
+      baseAttackResolved:
+        typeof row.provenance?.baseAttackResolved === "boolean"
+          ? row.provenance.baseAttackResolved
+          : row.base_attack !== null && row.base_attack !== undefined,
       subStat: row.sub_stat,
       passiveName: row.passive_name,
       passiveDescription: row.passive_description,
@@ -408,6 +412,12 @@ function mapRow(kind: StructuredKind, row: StructuredRow): StructuredRecord {
       requirement: row.requirement,
       rewardPrimogems: row.reward_primogems,
       hidden: row.hidden ?? false,
+      displayState:
+        typeof row.provenance?.displayState === "string"
+          ? row.provenance.displayState
+          : row.hidden
+            ? "hidden"
+            : "displayed",
     };
   return {
     ...base,
@@ -415,6 +425,10 @@ function mapRow(kind: StructuredKind, row: StructuredRow): StructuredRecord {
     family: row.family,
     description: row.description,
     drops: row.drops ?? [],
+    dropsResolved:
+      typeof row.provenance?.dropsResolved === "boolean"
+        ? row.provenance.dropsResolved
+        : Boolean(row.drops?.length),
     resistances: row.resistances ?? {},
   };
 }

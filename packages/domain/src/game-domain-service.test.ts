@@ -180,4 +180,62 @@ describe("GameDomainService", () => {
       code: "character_not_found",
     });
   });
+
+  it("finds structured records by name through the requested kind only", async () => {
+    const calls: string[] = [];
+    const service = new GameDomainService(
+      makeRepository({
+        genshin: {
+          ...makeRepository().genshin,
+          listMaterials: async (options) => {
+            calls.push(`materials:${options.query}:${options.limit}`);
+            return [
+              {
+                id: "material-1",
+                gameId,
+                revisionId,
+                stableId: "material/nichang",
+                sourceKey: "structured/material/nichang",
+                name: "霓裳花",
+                locale: "zh-CN",
+                provenance: {},
+                category: "local_specialty",
+                sources: [],
+                usedBy: [],
+              },
+            ];
+          },
+          getMaterial: async (_revision, stableId) =>
+            stableId === "material/nichang"
+              ? {
+                  id: "material-1",
+                  gameId,
+                  revisionId,
+                  stableId: "material/nichang",
+                  sourceKey: "structured/material/nichang",
+                  name: "霓裳花",
+                  locale: "zh-CN",
+                  provenance: {},
+                  category: "local_specialty",
+                  sources: [],
+                  usedBy: [],
+                }
+              : null,
+          listCharacters: async () => {
+            calls.push("characters");
+            return [];
+          },
+          listWeapons: async () => {
+            calls.push("weapons");
+            return [];
+          },
+        },
+      }),
+    );
+
+    const material = await service.findStructuredByName(gameId, "material", "霓裳花");
+
+    expect(material).toMatchObject({ stableId: "material/nichang", name: "霓裳花" });
+    expect(calls).toEqual(["materials:霓裳花:200"]);
+  });
 });

@@ -27,6 +27,7 @@ type BuildDetail = {
   candidateId: string;
   contentChecksum: string;
   normalizedRecords: RevisionRow["normalizedRecords"];
+  structuredRecords?: RevisionRow["structuredRecords"];
   manifestId?: string | null;
   indexStatus?: string | null;
 };
@@ -154,6 +155,7 @@ export async function promoteReleaseCandidate(
         isCurrent: false,
         indexStatus: "pending",
         normalizedRecords: build.normalizedRecords,
+        structuredRecords: build.structuredRecords,
         manifestId: build.manifestId,
         activationBuildId: build.id,
         activationCandidateId: candidate.id,

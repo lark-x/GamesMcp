@@ -110,7 +110,11 @@ export function registerGenshinRoutes(
   app.get("/api/games/:gameId/genshin/weapons", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const weapons = await gameDomain.listWeapons(gameId, query.revisionId);
+    const weapons = await gameDomain.listWeapons(gameId, query.revisionId, {
+      query: query.q,
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+    });
     return {
       gameId,
       revisionId: query.revisionId ?? null,
@@ -120,8 +124,13 @@ export function registerGenshinRoutes(
 
   app.get("/api/games/:gameId/genshin/weapons/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
+    const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const weapon = await gameDomain.getWeapon(params.gameId, decodeStableId(params.stableId));
+      const weapon = await gameDomain.getWeapon(
+        params.gameId,
+        decodeStableId(params.stableId),
+        query.revisionId,
+      );
       return { weapon: genshinWeaponSchema.parse(weapon) };
     } catch (error) {
       if ((error as { code?: string }).code === "weapon_not_found")
@@ -134,8 +143,16 @@ export function registerGenshinRoutes(
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
     const [artifacts, artifactSets] = await Promise.all([
-      gameDomain.listArtifacts(gameId, query.revisionId),
-      gameDomain.listArtifactSets(gameId, query.revisionId),
+      gameDomain.listArtifacts(gameId, query.revisionId, {
+        query: query.q,
+        limit: query.limit ?? 20,
+        offset: query.offset ?? 0,
+      }),
+      gameDomain.listArtifactSets(gameId, query.revisionId, {
+        query: query.q,
+        limit: query.limit ?? 20,
+        offset: query.offset ?? 0,
+      }),
     ]);
     return {
       gameId,
@@ -147,8 +164,13 @@ export function registerGenshinRoutes(
 
   app.get("/api/games/:gameId/genshin/artifacts/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
+    const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const artifact = await gameDomain.getArtifact(params.gameId, decodeStableId(params.stableId));
+      const artifact = await gameDomain.getArtifact(
+        params.gameId,
+        decodeStableId(params.stableId),
+        query.revisionId,
+      );
       return { artifact: genshinArtifactSchema.parse(artifact) };
     } catch (error) {
       if ((error as { code?: string }).code === "artifact_not_found")
@@ -157,10 +179,46 @@ export function registerGenshinRoutes(
     }
   });
 
+  app.get("/api/games/:gameId/genshin/artifactSets", async (request) => {
+    const { gameId } = parseIdParams(request);
+    const query = listQuerySchema.parse(parseQuery(request));
+    const artifactSets = await gameDomain.listArtifactSets(gameId, query.revisionId, {
+      query: query.q,
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+    });
+    return {
+      gameId,
+      revisionId: query.revisionId ?? null,
+      artifactSets: artifactSets.map((set) => genshinArtifactSetSchema.parse(set)),
+    };
+  });
+
+  app.get("/api/games/:gameId/genshin/artifactSets/:stableId", async (request, reply) => {
+    const params = stableIdParams.parse(request.params);
+    const query = listQuerySchema.parse(parseQuery(request));
+    try {
+      const artifactSet = await gameDomain.getArtifactSet(
+        params.gameId,
+        decodeStableId(params.stableId),
+        query.revisionId,
+      );
+      return { artifactSet: genshinArtifactSetSchema.parse(artifactSet) };
+    } catch (error) {
+      if ((error as { code?: string }).code === "artifact_set_not_found")
+        return reply.code(404).send({ error: { code: "artifact_set_not_found" } });
+      throw error;
+    }
+  });
+
   app.get("/api/games/:gameId/genshin/achievements", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const achievements = await gameDomain.listAchievements(gameId, query.revisionId);
+    const achievements = await gameDomain.listAchievements(gameId, query.revisionId, {
+      query: query.q,
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+    });
     return {
       gameId,
       revisionId: query.revisionId ?? null,
@@ -170,10 +228,12 @@ export function registerGenshinRoutes(
 
   app.get("/api/games/:gameId/genshin/achievements/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
+    const query = listQuerySchema.parse(parseQuery(request));
     try {
       const achievement = await gameDomain.getAchievement(
         params.gameId,
         decodeStableId(params.stableId),
+        query.revisionId,
       );
       return { achievement: genshinAchievementSchema.parse(achievement) };
     } catch (error) {
@@ -186,7 +246,11 @@ export function registerGenshinRoutes(
   app.get("/api/games/:gameId/genshin/enemies", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const enemies = await gameDomain.listEnemies(gameId, query.revisionId);
+    const enemies = await gameDomain.listEnemies(gameId, query.revisionId, {
+      query: query.q,
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+    });
     return {
       gameId,
       revisionId: query.revisionId ?? null,
@@ -196,8 +260,13 @@ export function registerGenshinRoutes(
 
   app.get("/api/games/:gameId/genshin/enemies/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
+    const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const enemy = await gameDomain.getEnemy(params.gameId, decodeStableId(params.stableId));
+      const enemy = await gameDomain.getEnemy(
+        params.gameId,
+        decodeStableId(params.stableId),
+        query.revisionId,
+      );
       return { enemy: genshinEnemySchema.parse(enemy) };
     } catch (error) {
       if ((error as { code?: string }).code === "enemy_not_found")

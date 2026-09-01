@@ -81,7 +81,7 @@ const outputRoot = resolve(
       "normalized",
       "anime-game-data",
       detectedCommit,
-      category === "quest" ? "quests" : "zh-CN",
+      category === "quest" ? "quests" : category === "structured" ? "structured" : "zh-CN",
     ),
 );
 const inputPath = resolve(outputRoot, "records", categoryFiles[category]);

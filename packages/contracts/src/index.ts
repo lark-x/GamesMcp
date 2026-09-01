@@ -354,6 +354,7 @@ export const genshinWeaponSchema = structuredBaseSchema.extend({
   weaponType: genshinWeaponTypeSchema,
   rarity: z.number().int().min(1).max(5),
   baseAttack: z.number().nullable().optional(),
+  baseAttackResolved: z.boolean().optional(),
   subStat: z.string().nullable().optional(),
   passiveName: z.string().nullable().optional(),
   passiveDescription: z.string().nullable().optional(),
@@ -392,6 +393,7 @@ export const genshinAchievementSchema = structuredBaseSchema.extend({
   requirement: z.string().nullable().optional(),
   rewardPrimogems: z.number().int().min(0).nullable().optional(),
   hidden: z.boolean().default(false),
+  displayState: z.string().nullable().optional(),
 });
 export type GenshinAchievement = z.infer<typeof genshinAchievementSchema>;
 
@@ -400,6 +402,7 @@ export const genshinEnemySchema = structuredBaseSchema.extend({
   family: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   drops: z.array(z.string()).default([]),
+  dropsResolved: z.boolean().optional(),
   resistances: z.record(z.string(), z.unknown()).default({}),
 });
 export type GenshinEnemy = z.infer<typeof genshinEnemySchema>;

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
+  type GenshinArtifactSet,
   type GenshinCharacter,
   type GenshinMaterial,
   genshinAchievementSchema,
@@ -56,42 +57,78 @@ const material: GenshinMaterial = {
   usedBy: [],
 };
 
+const artifactSet: GenshinArtifactSet = {
+  id: "00000000-0000-0000-0000-0000000000d1",
+  gameId,
+  revisionId,
+  stableId: "artifact-set/adventurer",
+  sourceKey: "structured/artifact-set/adventurer",
+  name: "冒险家",
+  locale: "zh-CN",
+  provenance: {},
+  pieces: [],
+};
+
+const calls: string[] = [];
+
 const genshin: GenshinStructuredRepository = {
   upsertCharacter: async () => {
     throw new Error("not used");
   },
   getCharacter: async (_rev, stableId) => (stableId === "char/hutao" ? character : null),
-  listCharacters: async () => [character],
+  listCharacters: async (options) => {
+    calls.push(`characters:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [character];
+  },
   upsertWeapon: async () => {
     throw new Error("not used");
   },
   getWeapon: async () => null,
-  listWeapons: async () => [],
+  listWeapons: async (options) => {
+    calls.push(`weapons:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [];
+  },
   upsertArtifactSet: async () => {
     throw new Error("not used");
   },
-  getArtifactSet: async () => null,
-  listArtifactSets: async () => [],
+  getArtifactSet: async (_rev, stableId) =>
+    stableId === "artifact-set/adventurer" ? artifactSet : null,
+  listArtifactSets: async (options) => {
+    calls.push(`artifactSets:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [artifactSet];
+  },
   upsertArtifact: async () => {
     throw new Error("not used");
   },
   getArtifact: async () => null,
-  listArtifacts: async () => [],
+  listArtifacts: async (options) => {
+    calls.push(`artifacts:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [];
+  },
   upsertMaterial: async () => {
     throw new Error("not used");
   },
   getMaterial: async (_rev, stableId) => (stableId === "material/nichang" ? material : null),
-  listMaterials: async () => [material],
+  listMaterials: async (options) => {
+    calls.push(`materials:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [material];
+  },
   upsertAchievement: async () => {
     throw new Error("not used");
   },
   getAchievement: async () => null,
-  listAchievements: async () => [],
+  listAchievements: async (options) => {
+    calls.push(`achievements:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [];
+  },
   upsertEnemy: async () => {
     throw new Error("not used");
   },
   getEnemy: async () => null,
-  listEnemies: async () => [],
+  listEnemies: async (options) => {
+    calls.push(`enemies:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);
+    return [];
+  },
 };
 
 const repository = {
@@ -128,6 +165,10 @@ function app() {
 }
 
 describe("Genshin API contracts", () => {
+  beforeEach(() => {
+    calls.length = 0;
+  });
+
   it("lists characters with Zod-validated response contracts", async () => {
     const instance = app();
     const response = await instance.inject({
@@ -138,6 +179,7 @@ describe("Genshin API contracts", () => {
     const body = response.json();
     expect(body.characters).toHaveLength(1);
     expect(() => genshinCharacterSchema.parse(body.characters[0])).not.toThrow();
+    expect(calls).toEqual(["characters::20:0"]);
     await instance.close();
   });
 
@@ -193,6 +235,49 @@ describe("Genshin API contracts", () => {
     expect(Array.isArray(artifactList.json().artifactSets)).toBe(true);
     for (const set of artifactList.json().artifactSets)
       expect(() => genshinArtifactSetSchema.parse(set)).not.toThrow();
+    await instance.close();
+  });
+
+  it("exposes artifact set list and detail routes", async () => {
+    const instance = app();
+    const list = await instance.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/genshin/artifactSets?q=冒险&limit=7&offset=3`,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(() => genshinArtifactSetSchema.parse(list.json().artifactSets[0])).not.toThrow();
+    expect(calls).toContain("artifactSets:冒险:7:3");
+    const found = await instance.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/genshin/artifactSets/artifact-set%2Fadventurer?revisionId=${revisionId}`,
+    });
+    expect(found.statusCode).toBe(200);
+    expect(() => genshinArtifactSetSchema.parse(found.json().artifactSet)).not.toThrow();
+    const missing = await instance.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/genshin/artifactSets/artifact-set%2Fmissing`,
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("artifact_set_not_found");
+    await instance.close();
+  });
+
+  it("passes list pagination and query parameters to every structured category", async () => {
+    const instance = app();
+    for (const path of ["weapons", "artifacts", "achievements", "enemies"]) {
+      const response = await instance.inject({
+        method: "GET",
+        url: `/api/games/${gameId}/genshin/${path}?q=测试&limit=11&offset=5`,
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    expect(calls).toEqual([
+      "weapons:测试:11:5",
+      "artifacts:测试:11:5",
+      "artifactSets:测试:11:5",
+      "achievements:测试:11:5",
+      "enemies:测试:11:5",
+    ]);
     await instance.close();
   });
 

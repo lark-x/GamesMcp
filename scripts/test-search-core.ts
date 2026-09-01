@@ -167,6 +167,7 @@ const core = (result as { coreHits?: { structured: Array<{ name: string; score: 
 assert.ok(core, "coreHits must be present");
 assert.ok(core.structured.length >= 1, "structured hits must include character");
 assert.equal(core.structured[0]?.name, "胡桃");
+assert.equal(core.structured[0]?.stableId, "char/hutao");
 assert.ok((core.structured[0]?.score ?? 0) >= 10, "exact name tier must rank first");
 
 const resolved = await repository.search(game.id, { query: "堂主", types: ["entity"], limit: 5 });
@@ -179,6 +180,7 @@ assert.ok(result.revisionId, "revisionId must be present");
 const dialogueResult = await coreService.searchText(game.id, result.revisionId, "胡桃");
 assert.ok(dialogueResult.documents.length >= 1, "document hits must exist");
 assert.ok(dialogueResult.structured.length >= 1, "structured hits must exist");
+assert.equal(dialogueResult.structured[0]?.stableId, "char/hutao");
 
 await pool.end();
 console.log("search core integration smoke passed");

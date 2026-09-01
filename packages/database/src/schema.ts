@@ -374,6 +374,7 @@ export const releaseCandidateBuilds = knowledge.table(
     status: text("status").notNull().default("ready"),
     contentChecksum: text("content_checksum").notNull(),
     normalizedRecords: jsonb("normalized_records").$type<NormalizedRecord[]>().notNull(),
+    structuredRecords: jsonb("structured_records").$type<StructuredImportRecords>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     importBatchId: uuid("import_batch_id"),
     baseRevisionId: uuid("base_revision_id"),

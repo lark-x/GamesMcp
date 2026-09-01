@@ -36,6 +36,10 @@ export type {
 
 export type Id = string;
 
+function normalizeDisplayName(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase("zh-CN");
+}
+
 export type EntityCandidate = {
   sourceKey: string;
   name: string;
@@ -113,6 +117,29 @@ export type QuestDialogueEdgePayload = {
   type: "next" | "choice" | "optional" | "fallback";
   optionText?: string;
   metadata?: Record<string, unknown>;
+};
+
+export type DialogueSearchHit = {
+  quest: string;
+  subquest: string | null;
+  speaker: string | null;
+  text: string;
+  dialogueNodeKey: string;
+  citation: {
+    documentId: string;
+    locale: string;
+    questKey: string;
+    subquestKey?: string;
+    dialogueNodeKey: string;
+    revision: string;
+  };
+  score: number;
+};
+
+export type DialogueSearchRequest = {
+  query: string;
+  limit: number;
+  revisionId: Id;
 };
 
 export type QuestRecordPayload = {
@@ -548,6 +575,7 @@ export type ReleaseCandidateBuild = {
   status: "ready" | "failed";
   contentChecksum: string;
   recordCount: number;
+  structuredRecordCount?: number;
   createdAt: Date;
   manifestId?: Id | null;
   importBatchId?: Id | null;
@@ -811,6 +839,7 @@ export interface KnowledgeRepository {
     limit: number,
   ): Promise<VectorEntityHit[]>;
   searchQuests?(gameId: Id, request: QuestSearchRequest): Promise<QuestSearchHit[]>;
+  searchDialogue?(gameId: Id, request: DialogueSearchRequest): Promise<DialogueSearchHit[]>;
   getQuest?(gameId: Id, request: GetQuestRequest): Promise<QuestDialoguePage | null>;
   createSource(input: Omit<Source, "id">): Promise<Source>;
   listSources(gameId?: Id): Promise<Source[]>;
@@ -879,6 +908,7 @@ export interface KnowledgeRepository {
     | (ReleaseCandidateBuild & {
         gameId: Id;
         normalizedRecords: NormalizedRecord[];
+        structuredRecords?: StructuredImportRecords;
       })
     | null
   >;
@@ -1564,12 +1594,18 @@ export class GameDomainService {
     return material;
   }
 
-  async listWeapons(gameId: Id, revisionId?: Id) {
+  async listWeapons(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listWeapons({
       revisionId: revision,
-      limit: 100,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
     });
   }
 
@@ -1581,12 +1617,18 @@ export class GameDomainService {
     return weapon;
   }
 
-  async listArtifacts(gameId: Id, revisionId?: Id) {
+  async listArtifacts(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listArtifacts({
       revisionId: revision,
-      limit: 100,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
     });
   }
 
@@ -1599,12 +1641,18 @@ export class GameDomainService {
     return artifact;
   }
 
-  async listArtifactSets(gameId: Id, revisionId?: Id) {
+  async listArtifactSets(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listArtifactSets({
       revisionId: revision,
-      limit: 100,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
     });
   }
 
@@ -1617,12 +1665,18 @@ export class GameDomainService {
     return artifactSet;
   }
 
-  async listAchievements(gameId: Id, revisionId?: Id) {
+  async listAchievements(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listAchievements({
       revisionId: revision,
-      limit: 100,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
     });
   }
 
@@ -1635,12 +1689,18 @@ export class GameDomainService {
     return achievement;
   }
 
-  async listEnemies(gameId: Id, revisionId?: Id) {
+  async listEnemies(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listEnemies({
       revisionId: revision,
-      limit: 100,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
     });
   }
 
@@ -1665,28 +1725,23 @@ export class GameDomainService {
   ): Promise<unknown | null> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const wanted = name.trim().toLocaleLowerCase("zh-CN");
-    const lists: Record<string, Array<{ name: string; stableId: string }>> = {
-      character: await this.repository.genshin.listCharacters({
-        revisionId: revision,
-        limit: 100,
-      }),
-      weapon: await this.repository.genshin.listWeapons({ revisionId: revision, limit: 100 }),
-      artifact: await this.repository.genshin.listArtifacts({ revisionId: revision, limit: 100 }),
-      artifact_set: await this.repository.genshin.listArtifactSets({
-        revisionId: revision,
-        limit: 100,
-      }),
-      material: await this.repository.genshin.listMaterials({ revisionId: revision, limit: 100 }),
-      achievement: await this.repository.genshin.listAchievements({
-        revisionId: revision,
-        limit: 100,
-      }),
-      enemy: await this.repository.genshin.listEnemies({ revisionId: revision, limit: 100 }),
-    };
-    const match = lists[kind]?.find(
-      (item) => item.name.trim().toLocaleLowerCase("zh-CN") === wanted,
-    );
+    const wanted = normalizeDisplayName(name);
+    const listOptions = { revisionId: revision, query: name, limit: 200 };
+    const candidates: Array<{ name: string; stableId: string }> =
+      kind === "character"
+        ? await this.repository.genshin.listCharacters(listOptions)
+        : kind === "weapon"
+          ? await this.repository.genshin.listWeapons(listOptions)
+          : kind === "artifact"
+            ? await this.repository.genshin.listArtifacts(listOptions)
+            : kind === "artifact_set"
+              ? await this.repository.genshin.listArtifactSets(listOptions)
+              : kind === "material"
+                ? await this.repository.genshin.listMaterials(listOptions)
+                : kind === "achievement"
+                  ? await this.repository.genshin.listAchievements(listOptions)
+                  : await this.repository.genshin.listEnemies(listOptions);
+    const match = candidates.find((item) => normalizeDisplayName(item.name) === wanted);
     if (!match) return null;
     switch (kind) {
       case "character":

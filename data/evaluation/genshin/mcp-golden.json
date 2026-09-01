@@ -36,15 +36,15 @@
     {
       "id": "dull-blade-type",
       "question": "无锋之剑是什么武器类型",
-      "expectedTool": "get_material",
+      "expectedTool": "get_weapon",
       "entityName": "Dull Blade",
-      "requiredField": "type",
+      "requiredField": "weaponType",
       "maxToolCalls": 1
     },
     {
       "id": "slime-drops",
       "question": "史莱姆掉落什么",
-      "expectedTool": "get_material",
+      "expectedTool": "get_enemy",
       "entityName": "Slime",
       "requiredField": "drops",
       "maxToolCalls": 1

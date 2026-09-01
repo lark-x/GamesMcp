@@ -14,6 +14,8 @@ import {
   type ConflictDetail,
   type ConflictKind,
   type DatasetRevision,
+  type DialogueSearchRequest,
+  type DialogueSearchHit,
   type DocumentDetail,
   type EmbeddingInput,
   type EntityDetail,
@@ -232,6 +234,14 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
 
   async searchQuests(gameId: string, request: QuestSearchRequest): Promise<QuestSearchHit[]> {
     return this.readModels.searchQuests(gameId, request);
+  }
+
+  async searchDialogue(
+    gameId: string,
+    request: DialogueSearchRequest,
+  ): Promise<DialogueSearchHit[]> {
+    const core = new (await import("@gip/search")).SearchService(this.searchPort);
+    return core.searchDialogue(gameId, request.revisionId, request.query);
   }
 
   async getQuest(gameId: string, request: GetQuestRequest): Promise<QuestDialoguePage | null> {

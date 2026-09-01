@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { DomainError, type NormalizedRecord, type ReleaseCandidateBuild } from "@gip/domain";
+import {
+  DomainError,
+  type NormalizedRecord,
+  type ReleaseCandidateBuild,
+  type StructuredImportRecords,
+} from "@gip/domain";
 import type { Database } from "./client.js";
 import {
   candidatePatches,
@@ -63,8 +68,11 @@ export async function buildReleaseCandidate(
   for (const batch of batches) {
     if (batch.gameId !== candidate.gameId)
       throw new DomainError("candidate_game_mismatch", "Candidate batch game mismatch");
-    if (!batch.stagedRecords)
-      throw new DomainError("staged_data_missing", "Candidate batch has no staged records");
+    if (!batch.stagedRecords && !hasStructuredRecords(batch.structuredRecords))
+      throw new DomainError(
+        "staged_data_missing",
+        "Candidate batch has no staged or structured records",
+      );
   }
   const baseRevision = candidate.baseRevisionId
     ? await ctx.getRevision(candidate.baseRevisionId, candidate.gameId)
@@ -81,6 +89,10 @@ export async function buildReleaseCandidate(
         confirmedDeletionKeys: batch.confirmedDeletionKeys,
       };
     }),
+  );
+  const structuredRecords = mergeStructuredImportRecords(
+    baseRevision?.structuredRecords ?? undefined,
+    batches.map((batch) => batch.structuredRecords ?? undefined),
   );
   // Patches always produce a new immutable build. Hash preconditions prevent
   // silently applying a decision to a changed base/incoming record.
@@ -128,7 +140,7 @@ export async function buildReleaseCandidate(
         patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
   }
   normalizedRecords = [...patched.values()];
-  const contentChecksum = releaseCandidateChecksum(normalizedRecords);
+  const contentChecksum = releaseCandidateChecksum(normalizedRecords, structuredRecords);
   const manifestId = await ctx.createPreviewManifest(
     candidate.gameId,
     normalizedRecords,
@@ -152,6 +164,7 @@ export async function buildReleaseCandidate(
         status: "ready",
         contentChecksum,
         normalizedRecords,
+        structuredRecords,
         manifestId,
         baseRevisionId: candidate.baseRevisionId,
         importBatchId: candidate.importBatchIds.at(-1),
@@ -299,4 +312,57 @@ export async function buildReleaseCandidate(
       .where(eq(releaseCandidates.id, candidateId));
     return mapReleaseCandidateBuild(build);
   });
+}
+
+function hasStructuredRecords(records: StructuredImportRecords | null | undefined): boolean {
+  if (!records) return false;
+  return Object.values(records).some((items) => Boolean(items?.length));
+}
+
+function mergeStructuredImportRecords(
+  base: StructuredImportRecords | undefined,
+  incoming: Array<StructuredImportRecords | undefined>,
+): StructuredImportRecords | undefined {
+  const merged: StructuredImportRecords = {
+    characters: mergeByStableId(
+      base?.characters,
+      incoming.flatMap((records) => records?.characters ?? []),
+    ),
+    weapons: mergeByStableId(
+      base?.weapons,
+      incoming.flatMap((records) => records?.weapons ?? []),
+    ),
+    artifactSets: mergeByStableId(
+      base?.artifactSets,
+      incoming.flatMap((records) => records?.artifactSets ?? []),
+    ),
+    artifacts: mergeByStableId(
+      base?.artifacts,
+      incoming.flatMap((records) => records?.artifacts ?? []),
+    ),
+    materials: mergeByStableId(
+      base?.materials,
+      incoming.flatMap((records) => records?.materials ?? []),
+    ),
+    achievements: mergeByStableId(
+      base?.achievements,
+      incoming.flatMap((records) => records?.achievements ?? []),
+    ),
+    enemies: mergeByStableId(
+      base?.enemies,
+      incoming.flatMap((records) => records?.enemies ?? []),
+    ),
+    voices: mergeByStableId(
+      base?.voices,
+      incoming.flatMap((records) => records?.voices ?? []),
+    ),
+  };
+  return hasStructuredRecords(merged) ? merged : undefined;
+}
+
+function mergeByStableId<T extends { stableId: string }>(base: T[] = [], incoming: T[] = []): T[] {
+  const merged = new Map<string, T>();
+  for (const record of base) merged.set(record.stableId, record);
+  for (const record of incoming) merged.set(record.stableId, record);
+  return [...merged.values()].sort((left, right) => left.stableId.localeCompare(right.stableId));
 }

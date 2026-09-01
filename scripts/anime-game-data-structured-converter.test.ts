@@ -69,7 +69,13 @@ describe("AnimeGameData structured converter", () => {
       name: "测试单手剑",
       weaponType: "sword",
       rarity: 4,
+      baseAttack: null,
+      baseAttackResolved: false,
       passiveName: "剑之秘传",
+      provenance: {
+        weaponBaseExp: 42,
+        baseAttackResolved: false,
+      },
     });
     expect(result.records.artifactSets[0]).toMatchObject({
       stableId: "genshin:artifact-set:12001",
@@ -95,13 +101,26 @@ describe("AnimeGameData structured converter", () => {
       name: "测试成就",
       category: "wonders_of_the_world",
       requirement: "完成测试条件",
-      rewardPrimogems: 5,
+      rewardPrimogems: null,
+      hidden: true,
+      displayState: "hidden",
+      provenance: {
+        goalId: "13001",
+        goalName: "天地万象",
+        finishRewardId: "5",
+        rewardPrimogemsResolved: false,
+      },
     });
     expect(result.records.enemies[0]).toMatchObject({
       stableId: "genshin:enemy:14001",
       name: "测试丘丘人",
       category: "common",
       description: "敌人描述",
+      drops: [],
+      dropsResolved: false,
+      provenance: {
+        dropsResolved: false,
+      },
     });
     expect(result.records.voices[0]).toMatchObject({
       stableId: "genshin:voice:15001",
@@ -130,6 +149,22 @@ describe("AnimeGameData structured converter", () => {
     expect(() => genshinMaterialSchema.parse(result.records.materials[0])).not.toThrow();
     expect(() => genshinAchievementSchema.parse(result.records.achievements[0])).not.toThrow();
     expect(() => genshinEnemySchema.parse(result.records.enemies[0])).not.toThrow();
+  });
+
+  it("does not serialize unresolved upstream fields as gameplay facts", async () => {
+    const result = await convertStructuredAnimeGameData({ upstreamDir: fixtureDir, context });
+    const weapon = result.records.weapons[0];
+    const achievement = result.records.achievements[0];
+    const enemy = result.records.enemies[0];
+
+    expect(weapon?.provenance.weaponBaseExp).toBe(42);
+    expect(weapon?.baseAttack).toBeNull();
+    expect(weapon?.baseAttack).not.toBe(weapon?.provenance.weaponBaseExp);
+    expect(achievement?.provenance.finishRewardId).toBe("5");
+    expect(achievement?.rewardPrimogems).toBeNull();
+    expect(achievement?.rewardPrimogems).not.toBe(Number(achievement?.provenance.finishRewardId));
+    expect(enemy?.drops).toEqual([]);
+    expect(enemy?.drops.length).not.toBe(result.records.materials.length);
   });
 
   it("is deterministic and reports full stable id coverage for fixture rows", async () => {

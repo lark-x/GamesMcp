@@ -8,6 +8,7 @@ import type {
   ProvenanceLineage,
   QuestCompleteness,
   QuestRecordPayload,
+  StructuredImportRecords,
   VerificationItem,
 } from "@gip/domain";
 import { documents, entities, sourceObservations } from "./schema.js";
@@ -224,12 +225,35 @@ export function revisionLabel(revisionNumber: number): string {
   return `r${revisionNumber}`;
 }
 
-export function releaseCandidateChecksum(records: NormalizedRecord[]): string {
-  return createHash("sha256").update(JSON.stringify(records)).digest("hex");
+export function releaseCandidateChecksum(
+  records: NormalizedRecord[],
+  structuredRecords?: StructuredImportRecords,
+): string {
+  return createHash("sha256")
+    .update(stableStringify({ records, structuredRecords: structuredRecords ?? {} }))
+    .digest("hex");
 }
 
 export function canonicalRecordBytes(record: NormalizedRecord): string {
-  return JSON.stringify(record);
+  return stableStringify(record);
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(canonicalize(value));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .filter((key) => record[key] !== undefined)
+        .sort()
+        .map((key) => [key, canonicalize(record[key])]),
+    );
+  }
+  return value;
 }
 
 export function manifestRootHash(records: NormalizedRecord[]): string {

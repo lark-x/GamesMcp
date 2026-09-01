@@ -4,7 +4,7 @@ import { createDatabase, createPool } from "../packages/database/src/client.ts";
 import { applyMigrations } from "../packages/database/src/migration-runner.ts";
 import { SqlKnowledgeRepository } from "../packages/database/src/repository.ts";
 import { gameCapabilities, games } from "../packages/database/src/schema.ts";
-import type { NormalizedRecord } from "../packages/domain/src/index.ts";
+import type { NormalizedRecord, StructuredImportRecords } from "../packages/domain/src/index.ts";
 
 const databaseUrl = process.env.GIP_DB_TEST_URL;
 if (!databaseUrl)
@@ -119,6 +119,20 @@ function questRecord(locale: "zh-CN" | "en"): NormalizedRecord {
 function diffFor(records: NormalizedRecord[]) {
   return {
     added: records.map((record) => record.sourceKey),
+    modified: [],
+    deletionCandidates: [],
+    unchanged: [],
+    conflicts: [],
+    unparsed: [],
+  };
+}
+
+function structuredDiffFor(records: StructuredImportRecords) {
+  const keys = Object.values(records).flatMap((items) =>
+    (items ?? []).map((record) => record.sourceKey),
+  );
+  return {
+    added: keys,
     modified: [],
     deletionCandidates: [],
     unchanged: [],
@@ -277,6 +291,81 @@ async function main() {
     assert.equal(revision1.indexStatus, "ready");
     assert.equal((await repository.getCurrentRevision(gameId))?.id, revision1.id);
 
+    const structured: StructuredImportRecords = {
+      characters: [
+        {
+          stableId: "genshin:character:10000001",
+          sourceKey: "anime-game-data/character/10000001",
+          name: "结构化测试角色",
+          locale: "zh-CN",
+          gameId,
+          revisionId: revision1.id,
+          provenance: {},
+          profile: {},
+          rarity: 5,
+          element: "pyro",
+          weaponType: "sword",
+          description: "只来自结构化记录的测试角色。",
+        },
+      ],
+    };
+    const structuredSnapshot = await repository.createSnapshot({
+      sourceId: source.id,
+      contentHash: createHash("sha256").update("structured-snapshot").digest("hex"),
+      storagePath: "snapshots/candidate-flow-structured.json",
+      metadata: { commit: "structured-fixture", locale: "zh-CN" },
+    });
+    const structuredBatch = await repository.createImport({
+      gameId,
+      sourceId: source.id,
+      sourceSnapshotId: structuredSnapshot.id,
+      parserVersion: "candidate-flow-structured-test",
+      stagedRecords: [],
+      structuredRecords: structured,
+      errors: [],
+      warnings: [],
+      diff: structuredDiffFor(structured),
+    });
+    const structuredCandidate = await repository.createReleaseCandidate({
+      gameId,
+      name: "RC Structured",
+      importBatchIds: [structuredBatch.id],
+    });
+    const structuredBuild = await repository.buildReleaseCandidate(structuredCandidate.id);
+    assert.equal(structuredBuild.recordCount, 2);
+    assert.equal(structuredBuild.structuredRecordCount, 1);
+    const immutableStructuredBuild = await repository.getReleaseCandidateBuild(structuredBuild.id);
+    assert.equal(
+      immutableStructuredBuild?.structuredRecords?.characters?.[0]?.name,
+      "结构化测试角色",
+    );
+    const structuredReadiness = await repository.getReleaseCandidateReadiness(
+      structuredCandidate.id,
+    );
+    assert.equal(
+      structuredReadiness.ready,
+      true,
+      JSON.stringify(structuredReadiness.blockingReasons),
+    );
+    await repository.promoteReleaseCandidate({
+      candidateId: structuredCandidate.id,
+      buildId: structuredBuild.id,
+      contentChecksum: structuredBuild.contentChecksum,
+      expectedCurrentRevisionId: revision1.id,
+      releaseNote: "候选流程测试结构化记录",
+      idempotencyKey: `candidate-flow-${structuredCandidate.id}-${structuredBuild.id}`,
+    });
+    const structuredRevision = await activatePendingRevision(
+      repository,
+      "candidate-flow-structured-worker",
+    );
+    assert.equal(structuredRevision.structuredRecords?.characters?.[0]?.name, "结构化测试角色");
+    const structuredCharacter = await repository.genshin.getCharacter(
+      structuredRevision.id,
+      "genshin:character:10000001",
+    );
+    assert.equal(structuredCharacter?.name, "结构化测试角色");
+
     const lisa = entityRecord("characters/lisa", "丽莎");
     const snapshot2 = await repository.createSnapshot({
       sourceId: source.id,
@@ -309,12 +398,12 @@ async function main() {
       candidateId: candidate2.id,
       buildId: build3.id,
       contentChecksum: build3.contentChecksum,
-      expectedCurrentRevisionId: revision1.id,
+      expectedCurrentRevisionId: structuredRevision.id,
       releaseNote: "候选流程测试第二版",
       idempotencyKey: `candidate-flow-${candidate2.id}-${build3.id}`,
     });
     const revision2 = await activatePendingRevision(repository, "candidate-flow-worker-2");
-    assert.equal(revision2.revisionNumber, revision1.revisionNumber + 1);
+    assert.equal(revision2.revisionNumber, structuredRevision.revisionNumber + 1);
     assert.equal((await repository.getCurrentRevision(gameId))?.id, revision2.id);
     const [questMaterialized] = (
       await pool.query(
@@ -346,7 +435,11 @@ async function main() {
       JSON.stringify({
         candidateBuilds: [build1.buildNumber, build2.buildNumber],
         evidenceRequired: true,
-        publishedRevisions: [revision1.revisionNumber, revision2.revisionNumber],
+        publishedRevisions: [
+          revision1.revisionNumber,
+          structuredRevision.revisionNumber,
+          revision2.revisionNumber,
+        ],
         rolledBackTo: revision1.revisionNumber,
         currentRevisionId: (await repository.getCurrentRevision(gameId))?.id,
       }),

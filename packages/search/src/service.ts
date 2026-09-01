@@ -56,7 +56,7 @@ export class SearchService {
 
   async searchText(gameId: string, revisionId: string, query: string): Promise<SearchCoreResult> {
     const [structured, documents, dialogue] = await Promise.all([
-      this.repository.listStructuredAtRevision(gameId, revisionId),
+      this.repository.listStructuredAtRevision(gameId, revisionId, query),
       this.repository.listDocumentHits(gameId, revisionId, query),
       this.repository.listDialogueHits(gameId, revisionId, query),
     ]);
@@ -69,7 +69,7 @@ export class SearchService {
         });
         return {
           kind: item.kind,
-          stableId: "",
+          stableId: item.stableId,
           name: item.name,
           score: ranked.score,
           matchedBy: ranked.matchedBy,

@@ -13,6 +13,14 @@ import {
   entityAliases,
   entityMentions,
   evidence,
+  genshinAchievements,
+  genshinArtifacts,
+  genshinArtifactSets,
+  genshinCharacters,
+  genshinEnemies,
+  genshinMaterials,
+  genshinVoiceLines,
+  genshinWeapons,
   importBatches,
   questDialogueEdges,
   questDialogueNodes,
@@ -29,6 +37,7 @@ import {
   stableEntityId,
   stableUuid,
 } from "./repository-utils.js";
+import { materializeStructuredRecords } from "./repository-import-publication.js";
 
 /**
  * Build the revision-scoped read model from the immutable Candidate Build.
@@ -126,6 +135,14 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
     await tx.delete(claims).where(eq(claims.revisionId, revisionId));
     await tx.delete(relationships).where(eq(relationships.revisionId, revisionId));
     await tx.delete(documents).where(eq(documents.revisionId, revisionId));
+    await tx.delete(genshinVoiceLines).where(eq(genshinVoiceLines.revisionId, revisionId));
+    await tx.delete(genshinEnemies).where(eq(genshinEnemies.revisionId, revisionId));
+    await tx.delete(genshinAchievements).where(eq(genshinAchievements.revisionId, revisionId));
+    await tx.delete(genshinMaterials).where(eq(genshinMaterials.revisionId, revisionId));
+    await tx.delete(genshinArtifacts).where(eq(genshinArtifacts.revisionId, revisionId));
+    await tx.delete(genshinArtifactSets).where(eq(genshinArtifactSets.revisionId, revisionId));
+    await tx.delete(genshinWeapons).where(eq(genshinWeapons.revisionId, revisionId));
+    await tx.delete(genshinCharacters).where(eq(genshinCharacters.revisionId, revisionId));
 
     const entityIdBySourceKey = new Map<string, string>();
     const entityRecordBySourceKey = new Map<string, string>();
@@ -451,5 +468,11 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
           actual: counts,
         },
       );
+    await materializeStructuredRecords(
+      tx,
+      revision.gameId,
+      revisionId,
+      revision.structuredRecords ?? undefined,
+    );
   });
 }

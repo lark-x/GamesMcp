@@ -80,8 +80,14 @@ describe("search service over port", () => {
   it("ranks structured, document, and dialogue hits", async () => {
     const service = new SearchService({
       listStructuredAtRevision: async () => [
-        { kind: "character" as const, name: "胡桃", aliases: [], body: "" },
-        { kind: "material" as const, name: "霓裳花", aliases: [], body: "" },
+        { kind: "character" as const, stableId: "char/hutao", name: "胡桃", aliases: [], body: "" },
+        {
+          kind: "material" as const,
+          stableId: "material/nichang",
+          name: "霓裳花",
+          aliases: [],
+          body: "",
+        },
       ],
       listEntityCandidates: async () => [],
       listDialogueHits: async () => [
@@ -121,6 +127,7 @@ describe("search service over port", () => {
     });
     const result = await service.searchText("game", "rev", "胡桃");
     expect(result.structured[0]?.name).toBe("胡桃");
+    expect(result.structured[0]?.stableId).toBe("char/hutao");
     expect(result.documents[0]?.document.title).toBe("胡桃的故事");
     expect(result.dialogue[0]?.dialogueNodeKey).toBe("n1");
     const lore = await service.searchLore("game", "rev", "胡桃");

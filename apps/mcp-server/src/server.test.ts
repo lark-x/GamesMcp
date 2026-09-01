@@ -52,6 +52,24 @@ const repository = {
       match: "text",
     },
   ],
+  searchDialogue: async () => [
+    {
+      quest: "捕风的异乡人",
+      subquest: "quest/1001/subquest/100101",
+      speaker: "派蒙",
+      text: "旅行者，我们出发吧。",
+      dialogueNodeKey: "quest/1001/dialog/1",
+      citation: {
+        documentId: "00000000-0000-0000-0000-000000000020",
+        locale: "zh-CN",
+        questKey: "quest/1001",
+        subquestKey: "quest/1001/subquest/100101",
+        dialogueNodeKey: "quest/1001/dialog/1",
+        revision: "00000000-0000-0000-0000-000000000010",
+      },
+      score: 10,
+    },
+  ],
   getQuest: async () => ({
     questKey: "quest/1001",
     title: "捕风的异乡人",
@@ -132,7 +150,7 @@ describe("MCP server", () => {
     expect(createMcpServer(repository)).toBeDefined();
   });
 
-  it("exposes the thirteen-tool and four-resource public contract", async () => {
+  it("exposes the fifteen-tool and four-resource public contract", async () => {
     const server = createMcpServer(repository);
     const client = new Client(
       { name: "contract-test-client", version: "0.1.0" },
@@ -145,12 +163,14 @@ describe("MCP server", () => {
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
       "get_character",
+      "get_enemy",
       "get_entity",
       "get_game_capabilities",
       "get_lore_document",
       "get_material",
       "get_quest",
       "get_relationships",
+      "get_weapon",
       "list_games",
       "resolve_entity",
       "search_dialogue",
@@ -193,6 +213,16 @@ describe("MCP server", () => {
     expect(
       (resultJson(questSearch) as { quests?: Array<{ questKey?: string }> }).quests?.[0]?.questKey,
     ).toBe("quest/1001");
+    const dialogueSearch = await client.callTool({
+      name: "search_dialogue",
+      arguments: { game_id: gameId, query: "派蒙", limit: 5 },
+    });
+    const dialogueBody = resultJson(dialogueSearch) as {
+      hits?: Array<{ speaker?: string; text?: string; dialogueNodeKey?: string }>;
+    };
+    expect(dialogueBody.hits?.[0]?.speaker).toBe("派蒙");
+    expect(dialogueBody.hits?.[0]?.text).toContain("旅行者");
+    expect(dialogueBody.hits?.[0]?.dialogueNodeKey).toBe("quest/1001/dialog/1");
     const questRead = await client.callTool({
       name: "get_quest",
       arguments: { game_id: gameId, quest_id: "1001", locale: "zh-CN", node_limit: 1 },
@@ -301,11 +331,37 @@ describe("MCP server", () => {
       element: "pyro",
       weaponType: "polearm",
     };
+    const weapon = {
+      id: "00000000-0000-0000-0000-0000000000d1",
+      gameId,
+      revisionId: "00000000-0000-0000-0000-000000000010",
+      stableId: "weapon/dull-blade",
+      sourceKey: "structured/weapon/dull-blade",
+      name: "无锋剑",
+      locale: "zh-CN",
+      provenance: {},
+      weaponType: "sword",
+      rarity: 1,
+      ascensionMaterials: [],
+    };
+    const enemy = {
+      id: "00000000-0000-0000-0000-0000000000e1",
+      gameId,
+      revisionId: "00000000-0000-0000-0000-000000000010",
+      stableId: "enemy/slime",
+      sourceKey: "structured/enemy/slime",
+      name: "史莱姆",
+      locale: "zh-CN",
+      provenance: {},
+      category: "common",
+      drops: [],
+      resistances: {},
+    };
     const structuredRepository = {
       ...repository,
       genshin: {
         listCharacters: async () => [character],
-        listWeapons: async () => [],
+        listWeapons: async () => [weapon],
         listArtifacts: async () => [],
         listArtifactSets: async () => [],
         listMaterials: async () => [
@@ -324,9 +380,9 @@ describe("MCP server", () => {
           },
         ],
         listAchievements: async () => [],
-        listEnemies: async () => [],
+        listEnemies: async () => [enemy],
         getCharacter: async () => character,
-        getWeapon: async () => null,
+        getWeapon: async () => weapon,
         getArtifact: async () => null,
         getArtifactSet: async () => null,
         getMaterial: async () => ({
@@ -343,7 +399,7 @@ describe("MCP server", () => {
           usedBy: [],
         }),
         getAchievement: async () => null,
-        getEnemy: async () => null,
+        getEnemy: async () => enemy,
       },
     } as unknown as KnowledgeRepository;
     const server = createMcpServer(structuredRepository);
@@ -369,6 +425,23 @@ describe("MCP server", () => {
     });
     const materialBody = resultJson(material) as { material?: { name?: string } };
     expect(materialBody.material?.name).toBe("霓裳花");
+
+    const weaponResult = await client.callTool({
+      name: "get_weapon",
+      arguments: { game_id: gameId, name: "无锋剑" },
+    });
+    const weaponBody = resultJson(weaponResult) as { weapon?: { weaponType?: string } };
+    expect(weaponBody.weapon?.weaponType).toBe("sword");
+
+    const enemyResult = await client.callTool({
+      name: "get_enemy",
+      arguments: { game_id: gameId, name: "史莱姆" },
+    });
+    const enemyBody = resultJson(enemyResult) as {
+      enemy?: { stableId?: string; drops?: string[] };
+    };
+    expect(enemyBody.enemy?.stableId).toBe("enemy/slime");
+    expect(enemyBody.enemy?.drops).toEqual([]);
 
     const missing = await client.callTool({
       name: "get_character",

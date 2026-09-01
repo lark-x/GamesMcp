@@ -13,6 +13,8 @@ type McpGoldenCase = {
 type ToolFixture = {
   characters: Array<Record<string, unknown>>;
   materials: Array<Record<string, unknown>>;
+  weapons: Array<Record<string, unknown>>;
+  enemies: Array<Record<string, unknown>>;
   entities: Array<{ canonicalName: string; aliases: string[] }>;
 };
 
@@ -44,6 +46,24 @@ function callTool(name: string, args: Record<string, unknown>): unknown {
       ) ?? null
     );
   }
+  if (name === "get_weapon") {
+    return (
+      fixture.weapons.find(
+        (item) =>
+          String(item.name).toLocaleLowerCase("zh-CN") ===
+          String(args.name).toLocaleLowerCase("zh-CN"),
+      ) ?? null
+    );
+  }
+  if (name === "get_enemy") {
+    return (
+      fixture.enemies.find(
+        (item) =>
+          String(item.name).toLocaleLowerCase("zh-CN") ===
+          String(args.name).toLocaleLowerCase("zh-CN"),
+      ) ?? null
+    );
+  }
   if (name === "resolve_entity") {
     const wanted = String(args.query).toLocaleLowerCase("zh-CN");
     const entity = fixture.entities.find(
@@ -59,12 +79,7 @@ function callTool(name: string, args: Record<string, unknown>): unknown {
 const failures: string[] = [];
 for (const item of golden.cases) {
   toolCalls = 0;
-  const toolName =
-    item.expectedTool === "resolve_entity"
-      ? "resolve_entity"
-      : item.expectedTool === "get_material"
-        ? "get_material"
-        : "get_character";
+  const toolName = item.expectedTool;
   const argKey = toolName === "resolve_entity" ? "query" : "name";
   const result = callTool(toolName, { [argKey]: item.entityName }) as Record<
     string,

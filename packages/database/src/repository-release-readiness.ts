@@ -42,6 +42,7 @@ export async function getReleaseCandidateBuild(
     ...mapReleaseCandidateBuild(row.build),
     gameId: row.gameId,
     normalizedRecords: row.build.normalizedRecords,
+    structuredRecords: row.build.structuredRecords ?? undefined,
   };
 }
 
@@ -61,7 +62,10 @@ export async function getReleaseCandidateReadiness(
       code: "candidate_build_missing",
       message: "Build the candidate first",
     });
-  else if (build.contentChecksum !== releaseCandidateChecksum(build.normalizedRecords))
+  else if (
+    build.contentChecksum !==
+    releaseCandidateChecksum(build.normalizedRecords, build.structuredRecords)
+  )
     blockingReasons.push({
       code: "candidate_checksum_invalid",
       message: "The preview build checksum is invalid",
