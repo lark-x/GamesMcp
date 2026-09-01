@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import type { DocumentType } from "../packages/contracts/src/index.ts";
 import type { NormalizedRecord, QuestRecordPayload } from "../packages/domain/src/index.ts";
 import { validateNormalizedRecords } from "../packages/domain/src/index.ts";
+import { isPathInside, runStoragePreflight } from "./check-data-storage.ts";
+import { loadConfig } from "../packages/config/src/index.ts";
 
-export const QUEST_CONVERTER_VERSION = "anime-game-data-quests-v0";
+export const QUEST_CONVERTER_VERSION = "anime-game-data-quests-v1";
 export const DEFAULT_QUEST_UPSTREAM_DIR = "data/upstream/AnimeGameData";
 export const QUEST_UPSTREAM_SOURCE = "DimbreathBot/AnimeGameData";
+const execFileAsync = promisify(execFile);
 
 const inputPaths = {
   mainQuest: "ExcelBinOutput/MainQuestExcelConfigData.json",
@@ -44,7 +49,7 @@ export type QuestConversionOptions = {
 };
 
 export type QuestConversionManifest = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   generatedAt?: string;
   upstream: {
     source: string;
@@ -58,10 +63,28 @@ export type QuestConversionManifest = {
   inputHashes: Record<string, string>;
   counts: {
     mainQuests: number;
+    discoveredByType: Record<string, number>;
     documents: Record<Locale, number>;
+    eligibleDocuments: Record<Locale, number>;
+    publicDocuments: Record<Locale, number>;
+    completeness: Record<Locale, Record<"complete" | "partial" | "metadata_only", number>>;
     subquests: number;
     dialogueNodes: number;
     dialogueEdges: number;
+  };
+  accounting: {
+    discoveredMainQuests: number;
+    discoveredDocuments: number;
+    convertedDocuments: number;
+    excludedDocuments: number;
+    failedDocuments: number;
+    accountedCoverage: number;
+    unexplainedMissing: number;
+  };
+  sourceCoverage: {
+    codexQuestFiles: number;
+    codexQuestMatchedMainQuests: number;
+    talkFallbackMainQuests: number;
   };
   excluded: Array<{ sourceKey: string; reason: string }>;
   failures: Array<{ sourceKey: string; reason: string }>;
@@ -149,6 +172,40 @@ function cleanDialogue(value: string): string {
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n")
     .trim();
+}
+
+const questMarkerPattern = /\$(?:HIDDEN|UNRELEASED)\$?/i;
+const questTestPattern =
+  /(?:^|[\s._-])(?:test|debug|tutorial|mirror|placeholder|dummy)(?:$|[\s._-])/i;
+
+export type QuestVisibilityReason =
+  | "public"
+  | "hidden_show_type"
+  | "unreleased_marker"
+  | "test_or_placeholder"
+  | "unresolved_title"
+  | "incomplete_content";
+
+/**
+ * Classify a main quest without guessing from its numeric id.  The client-facing
+ * catalogue only exposes `public` records; all other rows remain accounted for
+ * in the conversion manifest as explicit exclusions.
+ */
+export function classifyQuestVisibility(
+  main: Json,
+  title: string | undefined,
+): QuestVisibilityReason {
+  const showType = text(main.showType ?? main.questShowType ?? main.visibility);
+  if (showType && /HIDDEN|UNRELEASED|TEST|DEBUG/i.test(showType)) {
+    return /UNRELEASED/i.test(showType) ? "unreleased_marker" : "hidden_show_type";
+  }
+  if (!title) return "unresolved_title";
+  if (questMarkerPattern.test(title))
+    return /UNRELEASED/i.test(title) ? "unreleased_marker" : "hidden_show_type";
+  if (questTestPattern.test(title) || /\$(?:TEST|DEBUG|HIDDEN)\$/i.test(title))
+    return "test_or_placeholder";
+  if (/^Quest\s+\d+$/i.test(title)) return "unresolved_title";
+  return "public";
 }
 
 function resolveText(
@@ -497,8 +554,10 @@ function buildDialogueGraph(
   if (!nodes.length) {
     const talkRows = inputs.talk
       .filter((row) => {
-        const id = idText(row.id);
-        return id === mainId || id?.startsWith(mainId);
+        // TalkExcelConfigData carries an explicit questId.  Prefix matching on
+        // the talk id is unsafe (e.g. quest 11 also matches 11124), so rows
+        // without the relation are deliberately not assigned to a quest.
+        return idText(row.questId) === mainId;
       })
       .sort((left, right) => Number(left.id ?? 0) - Number(right.id ?? 0));
     for (const talk of talkRows) {
@@ -621,9 +680,11 @@ function buildRecord(
     (row) => idText(row.parentQuestId ?? row.mainQuestId ?? row.mainId) === mainId,
   );
   const titleHash = main.titleTextMapHash ?? main.titleHash ?? codexFile?.value.HEDPNHPBMJH;
-  const title =
+  const requestedTitle =
     tryResolveText(requestedTextMap, titleHash) ??
-    tryResolveText(requestedTextMap, codexFile?.value.HEDPNHPBMJH) ??
+    tryResolveText(requestedTextMap, codexFile?.value.HEDPNHPBMJH);
+  const title =
+    requestedTitle ??
     tryResolveText(fallbackTextMap, titleHash) ??
     tryResolveText(fallbackTextMap, codexFile?.value.HEDPNHPBMJH) ??
     `Quest ${mainId}`;
@@ -687,6 +748,17 @@ function buildRecord(
       node.subquestKey && subquestKeys.has(node.subquestKey) ? node.subquestKey : undefined,
   }));
   const dialogueEdges = graph.edges;
+  const visibilityReason = classifyQuestVisibility(main, requestedTitle);
+  const visibility =
+    visibilityReason === "public"
+      ? "public"
+      : visibilityReason === "unreleased_marker"
+        ? "unreleased"
+        : visibilityReason === "hidden_show_type"
+          ? "hidden"
+          : visibilityReason === "test_or_placeholder"
+            ? "test"
+            : "unresolved";
   const payload: QuestRecordPayload = {
     questKey: `quest/${mainId}`,
     mainQuestId: mainId,
@@ -701,6 +773,8 @@ function buildRecord(
         : dialogueNodes.length || subquests.length
           ? "partial"
           : "metadata_only",
+    visibility,
+    visibilityReason,
     prerequisites: [...asArray(main.prerequisites), ...asArray(main.BJOCFAJIGLH)].flatMap((row) => {
       const id = idText(row.id ?? row.mainQuestId ?? row.questId);
       return id ? [`quest/${id}`] : [];
@@ -783,6 +857,50 @@ function buildRecord(
         locale,
         canonicalKey: sourceKey,
         sourceFiles: [...new Set([...Object.values(inputPaths), ...graph.sourceFiles])].sort(),
+        lineage: {
+          mainQuest: {
+            relativeFile: inputPaths.mainQuest,
+            upstreamId: mainId,
+            hash: inputs.inputHashes[inputPaths.mainQuest],
+            valueHash: sha256(stableStringify(main)),
+          },
+          subquests: {
+            relativeFile: inputPaths.quest,
+            upstreamId: questRows.map((row) => idText(row.subId ?? row.id ?? row.subQuestId) ?? ""),
+            hash: inputs.inputHashes[inputPaths.quest],
+            valueHash: sha256(stableStringify(questRows)),
+          },
+          title: {
+            relativeFile: locale === "zh-CN" ? inputPaths.textMapChs : inputPaths.textMapEn,
+            upstreamId: hashValue(titleHash),
+            hash: inputs.inputHashes[
+              locale === "zh-CN" ? inputPaths.textMapChs : inputPaths.textMapEn
+            ],
+            valueHash: requestedTitle ? sha256(requestedTitle) : undefined,
+          },
+          dialogue: {
+            relativeFile: codexFile?.relativePath ?? inputPaths.dialog,
+            upstreamId: payload.dialogueNodes.map((node) => node.nodeId),
+            hash: codexFile?.hash ?? inputs.inputHashes[inputPaths.dialog],
+            valueHash: sha256(stableStringify(payload.dialogueNodes)),
+          },
+        },
+        upstreamIds: {
+          mainQuestId: mainId,
+          subquestIds: questRows.map((row) => idText(row.subId ?? row.id ?? row.subQuestId) ?? ""),
+          dialogueNodeIds: payload.dialogueNodes.map((node) => node.nodeId),
+        },
+        textMapHashes: {
+          ...(hashValue(titleHash) && Number.isSafeInteger(Number(hashValue(titleHash)))
+            ? { title: Number(hashValue(titleHash)) }
+            : {}),
+          dialogue: payload.dialogueNodes
+            .map((node) => node.metadata?.textMapHash)
+            .filter(
+              (value): value is number | number[] =>
+                typeof value === "number" || Array.isArray(value),
+            ),
+        },
         rawContentHash: sha256(stableStringify({ main, questRows, codexFile: codexFile?.value })),
         normalizedContentHash: sha256(stableStringify(contentBasis)),
         transforms: ["textmap_resolution", "dialogue_graph_materialization"],
@@ -792,6 +910,8 @@ function buildRecord(
       quest: {
         questKey: payload.questKey,
         completeness: payload.completeness,
+        visibility: payload.visibility,
+        visibilityReason: payload.visibilityReason,
       },
       questPayload: payload,
     },
@@ -814,8 +934,11 @@ export async function convertQuestSnapshot(
   const inputs = await loadInputs(root);
   if (options.profile) console.error(`loaded inputs in ${Date.now() - startedAt}ms`);
   const records: NormalizedRecord[] = [];
+  const builtRecords: NormalizedRecord[] = [];
   const excluded: Array<{ sourceKey: string; reason: string }> = [];
   const failures: Array<{ sourceKey: string; reason: string }> = [];
+  let excludedDocumentCount = 0;
+  const discoveredByType: Record<string, number> = {};
   const mainQuestRows =
     options.limit && options.limit > 0
       ? inputs.mainQuest.slice(0, options.limit)
@@ -829,16 +952,46 @@ export async function convertQuestSnapshot(
         sourceKey: `quest/${mainId}`,
         reason: `quest_type_out_of_scope:${rawType ?? "missing"}`,
       });
+      excludedDocumentCount += locales.length;
       continue;
     }
+    discoveredByType[questType(rawType)!] = (discoveredByType[questType(rawType)!] ?? 0) + 1;
+    const mainRecords: NormalizedRecord[] = [];
     for (const locale of locales) {
       try {
-        records.push(buildRecord(inputs, main, locale, context));
+        const record = buildRecord(inputs, main, locale, context);
+        builtRecords.push(record);
+        mainRecords.push(record);
       } catch (error) {
         failures.push({
           sourceKey: `quest/${mainId}/locale/${locale}`,
           reason: error instanceof Error ? error.message : String(error),
         });
+      }
+    }
+    const hasBilingualCompletePair =
+      mainRecords.length === locales.length &&
+      mainRecords.every(
+        (record) =>
+          record.quest?.visibility === "public" && record.quest.completeness === "complete",
+      );
+    if (hasBilingualCompletePair) {
+      records.push(...mainRecords);
+    } else {
+      // A public revision is bilingual and atomic: if one locale is hidden,
+      // partial, or failed, the matching document in the other locale is also
+      // excluded rather than publishing an asymmetric task set.
+      for (const record of mainRecords) {
+        const payload = record.quest;
+        const reason = !payload
+          ? "quest_payload_missing"
+          : payload.visibility !== "public"
+            ? (payload.visibilityReason ?? `visibility:${payload.visibility ?? "unknown"}`)
+            : payload.completeness !== "complete"
+              ? `incomplete_content:${payload.completeness}`
+              : "bilingual_pair_incomplete";
+        excluded.push({ sourceKey: record.sourceKey, reason });
+        excludedDocumentCount += 1;
       }
     }
   }
@@ -861,10 +1014,37 @@ export async function convertQuestSnapshot(
   const documents = Object.fromEntries(
     locales.map((locale) => [locale, records.filter((record) => record.locale === locale).length]),
   ) as Record<Locale, number>;
+  const eligibleDocuments = Object.fromEntries(
+    locales.map((locale) => [
+      locale,
+      builtRecords.filter((record) => record.locale === locale).length,
+    ]),
+  ) as Record<Locale, number>;
+  const completeness = Object.fromEntries(
+    locales.map((locale) => [
+      locale,
+      {
+        complete: builtRecords.filter(
+          (record) => record.locale === locale && record.quest?.completeness === "complete",
+        ).length,
+        partial: builtRecords.filter(
+          (record) => record.locale === locale && record.quest?.completeness === "partial",
+        ).length,
+        metadata_only: builtRecords.filter(
+          (record) => record.locale === locale && record.quest?.completeness === "metadata_only",
+        ).length,
+      },
+    ]),
+  ) as Record<Locale, Record<"complete" | "partial" | "metadata_only", number>>;
+  const discoveredDocuments = mainQuestRows.length * locales.length;
+  const convertedDocuments = records.length;
+  const excludedDocuments = excludedDocumentCount;
+  const failedDocuments = failures.length;
+  const accountedDocuments = convertedDocuments + excludedDocuments + failedDocuments;
   return {
     records,
     manifest: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       upstream: {
         source: QUEST_UPSTREAM_SOURCE,
         commit: context.upstreamCommit,
@@ -877,7 +1057,11 @@ export async function convertQuestSnapshot(
       inputHashes: inputs.inputHashes,
       counts: {
         mainQuests: inputs.mainQuest.length,
+        discoveredByType,
         documents,
+        eligibleDocuments,
+        publicDocuments: documents,
+        completeness,
         subquests: records.reduce((sum, record) => sum + (record.quest?.subquests.length ?? 0), 0),
         dialogueNodes: records.reduce(
           (sum, record) => sum + (record.quest?.dialogueNodes.length ?? 0),
@@ -888,9 +1072,36 @@ export async function convertQuestSnapshot(
           0,
         ),
       },
+      accounting: {
+        discoveredMainQuests: mainQuestRows.length,
+        discoveredDocuments,
+        convertedDocuments,
+        excludedDocuments,
+        failedDocuments,
+        accountedCoverage: discoveredDocuments ? accountedDocuments / discoveredDocuments : 1,
+        unexplainedMissing: Math.max(0, discoveredDocuments - accountedDocuments),
+      },
+      sourceCoverage: {
+        codexQuestFiles: inputs.codexQuest.length,
+        codexQuestMatchedMainQuests: new Set(
+          [...inputs.codexQuestByMainId.keys()].filter((id) =>
+            mainQuestRows.some((row) => idText(row.id ?? row.mainQuestId) === id),
+          ),
+        ).size,
+        talkFallbackMainQuests: builtRecords.filter((record) =>
+          (record.metadata.questPayload as QuestRecordPayload | undefined)?.dialogueNodes?.some(
+            (node) => node.metadata?.talkId,
+          ),
+        ).length,
+      },
       excluded,
       failures,
-      unexplainedMissing: failures.length ? [{ scope: "validation", count: failures.length }] : [],
+      unexplainedMissing: [
+        ...(failures.length ? [{ scope: "validation", count: failures.length }] : []),
+        ...(discoveredDocuments > accountedDocuments
+          ? [{ scope: "documents", count: discoveredDocuments - accountedDocuments }]
+          : []),
+      ],
     },
   };
 }
@@ -911,31 +1122,74 @@ function argValue(name: string): string | undefined {
   return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
 }
 
+async function readUpstreamGitMetadata(upstreamDir: string): Promise<{
+  commit: string;
+  commitDate: string;
+  subject: string;
+}> {
+  try {
+    const result = await execFileAsync("git", ["log", "-1", "--format=%H%n%cI%n%s"], {
+      cwd: upstreamDir,
+    });
+    const [commit = "unknown", commitDate = "unknown", subject = "unknown"] = String(result.stdout)
+      .trim()
+      .split("\n");
+    return { commit, commitDate, subject };
+  } catch {
+    return { commit: "unknown", commitDate: "unknown", subject: "unknown" };
+  }
+}
+
+function inferGameVersion(subject: string): string {
+  return /(?:CNRELWin|OSRELWin)(\d+\.\d+\.\d+)/.exec(subject)?.[1] ?? "unknown";
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const upstreamDir = argValue("upstream") ?? DEFAULT_QUEST_UPSTREAM_DIR;
-  const commit = argValue("commit") ?? "unknown";
-  const gameVersion = argValue("game-version") ?? "unknown";
-  const versionLabel = argValue("version-label") ?? gameVersion;
-  const output = argValue("output") ?? `data/imports/normalized/anime-game-data/${commit}/quests`;
   const limit = Number(argValue("limit") ?? 0);
+  const preflight = await runStoragePreflight();
+  if (!preflight.ok) throw new Error(preflight.errors.join("; "));
+  const resolvedUpstream = resolve(upstreamDir);
+  if (!isPathInside(resolvedUpstream, preflight.config.externalVolumePath))
+    throw new Error(
+      `AnimeGameData upstream checkout must stay on the external volume: ${resolvedUpstream}`,
+    );
+  await access(resolvedUpstream);
+  const git = await readUpstreamGitMetadata(resolvedUpstream);
+  const requestedCommit = argValue("commit");
+  if (requestedCommit && requestedCommit !== git.commit)
+    throw new Error(`Upstream commit mismatch: requested ${requestedCommit}, found ${git.commit}`);
+  if (git.commit === "unknown") throw new Error("Unable to determine the upstream Git commit");
+  const commit = requestedCommit ?? git.commit;
+  const gameVersion = argValue("game-version") ?? inferGameVersion(git.subject);
+  const versionLabel = argValue("version-label") ?? git.subject;
+  const config = loadConfig();
+  const output = resolve(
+    argValue("output") ??
+      join(config.dataDir, "imports", "normalized", "anime-game-data", commit, "quests"),
+  );
+  if (!isPathInside(output, preflight.config.dataRoot))
+    throw new Error(`Quest output must stay under the external data root: ${output}`);
   const result = await convertQuestSnapshot({
-    upstreamDir,
+    upstreamDir: resolvedUpstream,
     limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
     profile: process.argv.includes("--profile"),
     context: {
       upstreamCommit: commit,
-      upstreamCommitDate: argValue("commit-date") ?? "unknown",
+      upstreamCommitDate: argValue("commit-date") ?? git.commitDate,
       gameVersion,
       upstreamVersionLabel: versionLabel,
     },
   });
   await writeQuestSnapshot(result, output);
-  if (result.manifest.failures.length) {
+  if (result.manifest.failures.length || result.manifest.unexplainedMissing.length) {
     console.error(
-      `Quest conversion completed with ${result.manifest.failures.length} blocking failures`,
+      `Quest conversion completed with ${result.manifest.failures.length} failures and ${result.manifest.unexplainedMissing.length} unexplained gaps`,
     );
     process.exitCode = 1;
   } else {
-    console.log(`Quest conversion wrote ${result.records.length} records to ${resolve(output)}`);
+    console.log(
+      `Quest conversion wrote ${result.records.length} public records to ${resolve(output)}`,
+    );
   }
 }

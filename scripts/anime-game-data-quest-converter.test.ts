@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import { convertQuestSnapshot } from "./anime-game-data-quest-converter.js";
+import {
+  classifyQuestVisibility,
+  convertQuestSnapshot,
+} from "./anime-game-data-quest-converter.js";
 
 describe("AnimeGameData quest converter", () => {
   it("creates deterministic bilingual quest records with structured dialogue", async () => {
@@ -25,6 +28,8 @@ describe("AnimeGameData quest converter", () => {
 
     expect(first.records).toEqual(second.records);
     expect(first.manifest.failures).toEqual([]);
+    expect(first.manifest.schemaVersion).toBe(2);
+    expect(first.manifest.converterVersion).toBe("anime-game-data-quests-v1");
     expect(first.manifest.counts).toMatchObject({
       mainQuests: 1,
       documents: { "zh-CN": 1, en: 1 },
@@ -43,5 +48,17 @@ describe("AnimeGameData quest converter", () => {
     });
     expect(first.records.every((record) => record.segments?.length === 2)).toBe(true);
     expect(first.records.every((record) => record.metadata.provenance)).toBe(true);
+    expect(first.records.every((record) => record.quest?.visibility === "public")).toBe(true);
+    expect(first.records.every((record) => record.quest?.completeness === "complete")).toBe(true);
+    expect(first.manifest.accounting.accountedCoverage).toBe(1);
+  });
+
+  it("classifies temporary rows without relying on numeric id guesses", () => {
+    expect(classifyQuestVisibility({ showType: "QUEST_HIDDEN" }, "可见标题")).toBe(
+      "hidden_show_type",
+    );
+    expect(classifyQuestVisibility({}, "测试任务$HIDDEN")).toBe("hidden_show_type");
+    expect(classifyQuestVisibility({}, "Quest 12345")).toBe("unresolved_title");
+    expect(classifyQuestVisibility({}, "真实任务")).toBe("public");
   });
 });

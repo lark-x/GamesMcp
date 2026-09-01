@@ -129,6 +129,34 @@ export const rollbackRequestSchema = z.object({
   reason: z.string().trim().min(1).max(2_000),
 });
 
+export const importFileSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine(
+      (value) => !value.includes("/") && !value.includes("\\") && value !== "." && value !== "..",
+      {
+        message: "File name must not contain path separators",
+      },
+    ),
+  contentBase64: z.string().min(1).max(16_000_000),
+});
+export type ImportFile = z.infer<typeof importFileSchema>;
+
+export const createImportRequestSchema = z
+  .object({
+    gameId: gameIdSchema,
+    sourceId: z.string().uuid(),
+    path: z.string().trim().min(1).max(2_000).optional(),
+    files: z.array(importFileSchema).min(1).max(50).optional(),
+  })
+  .refine((value) => Boolean(value.path) !== Boolean(value.files?.length), {
+    message: "Provide either path or files",
+  });
+export type CreateImportRequest = z.infer<typeof createImportRequestSchema>;
+
 export const verificationStatusSchema = z.enum([
   "exact_match",
   "formatting_only",
@@ -212,3 +240,166 @@ export type SearchResult = {
   indexStatus: string;
   debug?: Record<string, unknown>;
 };
+
+/** Lightweight, name-only data used to build the public archive landing page. */
+export type ArchiveHomeEntry = {
+  id: string;
+  name: string;
+  kind: "entity" | "document";
+  type: string;
+  locale?: string | null;
+};
+
+export type ArchiveHomeCategory = {
+  id: string;
+  label: string;
+  description: string;
+  count: number;
+  entries: ArchiveHomeEntry[];
+};
+
+export type ArchiveHomeResponse = {
+  gameId: string;
+  revision: string;
+  locale: string;
+  categories: ArchiveHomeCategory[];
+};
+
+export const genshinElementSchema = z.enum([
+  "anemo",
+  "geo",
+  "electro",
+  "dendro",
+  "hydro",
+  "pyro",
+  "cryo",
+]);
+export type GenshinElement = z.infer<typeof genshinElementSchema>;
+
+export const genshinWeaponTypeSchema = z.enum(["sword", "claymore", "polearm", "bow", "catalyst"]);
+export type GenshinWeaponType = z.infer<typeof genshinWeaponTypeSchema>;
+
+export const genshinMaterialCategorySchema = z.enum([
+  "character_development",
+  "weapon_development",
+  "local_specialty",
+  "currency",
+  "consumable",
+  "quest_item",
+  "forging",
+  "cooking",
+  "furnishing",
+  "other",
+]);
+export type GenshinMaterialCategory = z.infer<typeof genshinMaterialCategorySchema>;
+
+export const genshinAchievementCategorySchema = z.enum([
+  "wonders_of_the_world",
+  "memories_of_the_heart",
+  "teyvat_fishing_guide",
+  "challenger",
+  "elemental_specialist",
+  "other",
+]);
+export type GenshinAchievementCategory = z.infer<typeof genshinAchievementCategorySchema>;
+
+export const genshinEnemyCategorySchema = z.enum([
+  "common",
+  "elite",
+  "normal_boss",
+  "weekly_boss",
+  "wildlife",
+  "other",
+]);
+export type GenshinEnemyCategory = z.infer<typeof genshinEnemyCategorySchema>;
+
+export const structuredBindingSchema = z.object({
+  stableId: z.string().min(1),
+  documentId: documentIdSchema.optional(),
+  segmentId: segmentIdSchema.optional(),
+  sourceKey: z.string().min(1).optional(),
+  relation: z.enum(["primary_text", "story", "lore", "quote", "source_record"]),
+});
+export type StructuredBinding = z.infer<typeof structuredBindingSchema>;
+
+const structuredBaseSchema = z.object({
+  id: z.string().uuid(),
+  gameId: gameIdSchema,
+  revisionId: revisionIdSchema,
+  stableId: z.string().min(1),
+  sourceKey: z.string().min(1),
+  name: z.string().min(1),
+  locale: z.string().min(1).default("und"),
+  gameVersion: z.string().nullable().optional(),
+  sourceId: z.string().uuid().nullable().optional(),
+  sourceSnapshotId: z.string().uuid().nullable().optional(),
+  provenance: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const genshinCharacterSchema = structuredBaseSchema.extend({
+  title: z.string().nullable().optional(),
+  rarity: z.number().int().min(4).max(5).nullable().optional(),
+  element: genshinElementSchema.nullable().optional(),
+  weaponType: genshinWeaponTypeSchema.nullable().optional(),
+  region: z.string().nullable().optional(),
+  affiliation: z.string().nullable().optional(),
+  birthday: z.string().nullable().optional(),
+  constellation: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  profile: z.record(z.string(), z.unknown()).default({}),
+});
+export type GenshinCharacter = z.infer<typeof genshinCharacterSchema>;
+
+export const genshinWeaponSchema = structuredBaseSchema.extend({
+  weaponType: genshinWeaponTypeSchema,
+  rarity: z.number().int().min(1).max(5),
+  baseAttack: z.number().nullable().optional(),
+  subStat: z.string().nullable().optional(),
+  passiveName: z.string().nullable().optional(),
+  passiveDescription: z.string().nullable().optional(),
+  ascensionMaterials: z.array(z.string()).default([]),
+  description: z.string().nullable().optional(),
+});
+export type GenshinWeapon = z.infer<typeof genshinWeaponSchema>;
+
+export const genshinArtifactSetSchema = structuredBaseSchema.extend({
+  maxRarity: z.number().int().min(1).max(5).nullable().optional(),
+  twoPieceBonus: z.string().nullable().optional(),
+  fourPieceBonus: z.string().nullable().optional(),
+  pieces: z.array(z.string()).default([]),
+});
+export type GenshinArtifactSet = z.infer<typeof genshinArtifactSetSchema>;
+
+export const genshinArtifactSchema = structuredBaseSchema.extend({
+  setStableId: z.string().nullable().optional(),
+  slot: z.string().nullable().optional(),
+  rarity: z.number().int().min(1).max(5).nullable().optional(),
+  description: z.string().nullable().optional(),
+});
+export type GenshinArtifact = z.infer<typeof genshinArtifactSchema>;
+
+export const genshinMaterialSchema = structuredBaseSchema.extend({
+  category: genshinMaterialCategorySchema,
+  rarity: z.number().int().min(1).max(5).nullable().optional(),
+  description: z.string().nullable().optional(),
+  sources: z.array(z.string()).default([]),
+  usedBy: z.array(z.string()).default([]),
+});
+export type GenshinMaterial = z.infer<typeof genshinMaterialSchema>;
+
+export const genshinAchievementSchema = structuredBaseSchema.extend({
+  category: genshinAchievementCategorySchema,
+  requirement: z.string().nullable().optional(),
+  rewardPrimogems: z.number().int().min(0).nullable().optional(),
+  hidden: z.boolean().default(false),
+});
+export type GenshinAchievement = z.infer<typeof genshinAchievementSchema>;
+
+export const genshinEnemySchema = structuredBaseSchema.extend({
+  category: genshinEnemyCategorySchema,
+  family: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  drops: z.array(z.string()).default([]),
+  resistances: z.record(z.string(), z.unknown()).default({}),
+});
+export type GenshinEnemy = z.infer<typeof genshinEnemySchema>;

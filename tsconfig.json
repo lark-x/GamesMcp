@@ -7,6 +7,7 @@
     { "path": "packages/database" },
     { "path": "packages/ingestion" },
     { "path": "packages/retrieval" },
+    { "path": "packages/search" },
     { "path": "packages/qa" },
     { "path": "apps/api" },
     { "path": "apps/worker" },

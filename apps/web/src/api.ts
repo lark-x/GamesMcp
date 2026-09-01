@@ -28,6 +28,7 @@ export type Build = {
   indexStatus?: string;
   createdAt?: string;
 };
+export type BlockingReasonInfo = { code: string; message?: string };
 export type Candidate = {
   id: string;
   gameId: string;
@@ -37,6 +38,8 @@ export type Candidate = {
   baseRevisionId?: string | null;
   importBatchIds?: string[];
   builds?: Build[];
+  readiness?: { ready: boolean; blockingReasons?: BlockingReasonInfo[] };
+  checks?: CandidateCheck[];
 };
 export type Issue = {
   id: string;
@@ -150,6 +153,9 @@ export type QuestDetail = QuestSearchHit & {
     revision: string;
   }>;
   warnings: string[];
+  totalDialogueNodes?: number;
+  loadedDialogueNodes?: number;
+  hasMore?: boolean;
   nextCursor?: string | null;
 };
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -162,9 +168,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json() as Promise<T>;
+  const text = await r.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  if (!r.ok) {
+    if (r.status === 401)
+      throw new Error("需要管理员令牌：请在管理后台右上角设置 ADMIN_TOKEN 对应的访问令牌");
+    const error = data as {
+      error?: { message?: string; code?: string; details?: unknown };
+      message?: string;
+    };
+    const detailText =
+      error.error?.details != null ? ` (${JSON.stringify(error.error.details)})` : "";
+    throw new Error(
+      `${error.error?.code ? `${error.error.code}: ${error.error?.message ?? ""}` : (error.error?.message ?? error.message ?? `${r.status} ${r.statusText}`)}${detailText}`,
+    );
+  }
+  return data as T;
 }
+
+export const apiFetch = <T>(path: string, init?: RequestInit, adminToken?: string): Promise<T> =>
+  request<T>(path, withAdminToken(init, adminToken));
+
+function withAdminToken(init: RequestInit | undefined, adminToken?: string): RequestInit {
+  if (!adminToken?.trim()) return init ?? {};
+  const headers = new Headers(init?.headers);
+  headers.set("authorization", "Bearer " + adminToken.trim());
+  return { ...(init ?? {}), headers };
+}
+
 export const api = {
   games: () => request<{ games: GameSummary[] }>("/api/games"),
   sources: (gameId?: string) =>
@@ -175,15 +211,24 @@ export const api = {
     request<{ imports: ImportSummary[] }>(
       `/api/admin/imports${gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`,
     ),
-  createImport: (input: { gameId: string; sourceId: string; path: string }) =>
+  createImport: (input: { gameId: string; sourceId: string; path?: string }) =>
+    request<{ id: string; batchId?: string }>("/api/admin/imports", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createImportUpload: (input: {
+    gameId: string;
+    sourceId: string;
+    files: Array<{ name: string; contentBase64: string }>;
+  }) =>
     request<{ id: string; batchId?: string }>("/api/admin/imports", {
       method: "POST",
       body: JSON.stringify(input),
     }),
   importStatus: (id: string) => request<Record<string, unknown>>(`/api/admin/imports/${id}`),
-  candidates: (gameId?: string) =>
+  candidates: (gameId?: string, includeDetail = true) =>
     request<{ candidates: Candidate[] }>(
-      `/api/admin/release-candidates${gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`,
+      `/api/admin/release-candidates?include=${includeDetail ? "detail" : "summary"}${gameId ? `&gameId=${encodeURIComponent(gameId)}` : ""}`,
     ),
   candidate: (id: string) =>
     request<{ candidate: Candidate }>(`/api/admin/release-candidates/${id}`),

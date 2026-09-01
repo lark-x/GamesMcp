@@ -320,9 +320,13 @@ test("从预发布详情报告问题并进入问题工作台", async ({ page }) 
 test("导入提交显示自动 Candidate 说明", async ({ page }) => {
   await mockApi(page);
   await page.goto("/#admin/intake");
-  await page.getByLabel("选择游戏").selectOption("g1");
-  await page.getByLabel("选择数据来源").selectOption("s1");
-  await page.getByPlaceholder(/例如 F:/).fill("/tmp/data");
+  await page.getByRole("combobox").nth(1).click();
+  await page.getByText("Fixture source · local_json").last().click();
+  await page.setInputFiles("input[type=file]", {
+    name: "fixture.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify([{ id: "a" }])),
+  });
   await page.getByRole("button", { name: "创建导入任务" }).click();
   await expect(page.getByRole("status")).toContainText("导入任务已创建：import-1");
 });
@@ -352,7 +356,9 @@ test("问题页上传证据并创建 Patch", async ({ page }) => {
     .setInputFiles({ name: "evidence.png", mimeType: "image/png", buffer: Buffer.from("png") });
   await page.getByRole("button", { name: "上传截图证据" }).click();
   await expect.poll(() => evidenceBody).toContain("dataBase64");
-  await page.getByRole("button", { name: "生成 Patch 与 Build N+1" }).click();
+  const patchButton = page.getByRole("button", { name: "生成 Patch 与 Build N+1" });
+  await expect(patchButton).toBeEnabled();
+  await patchButton.click({ force: true });
   await expect.poll(() => patchBody).toContain("issueId");
   await expect(page).toHaveURL(/#preview\/c1\/b2/);
 });
@@ -367,6 +373,7 @@ test("历史页回滚提交原因", async ({ page }) => {
   await page.goto("/#admin/history");
   await page.getByLabel("回滚原因 r1").fill("安全回退");
   await page.getByRole("button", { name: "切换到此 Revision" }).click();
+  await page.getByRole("button", { name: "确认切换" }).click();
   await expect.poll(() => body).toContain("安全回退");
 });
 

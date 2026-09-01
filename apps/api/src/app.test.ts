@@ -4,10 +4,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig, type RuntimeConfig } from "@gip/config";
 import type { GameSummary, SearchResult } from "@gip/contracts";
-import type { DocumentDetail, ImportBatch, KnowledgeRepository } from "@gip/domain";
+import type {
+  DocumentDetail,
+  GenshinStructuredRepository,
+  ImportBatch,
+  KnowledgeRepository,
+} from "@gip/domain";
 import { createApp } from "./app.js";
 
 const gameId = "00000000-0000-0000-0000-000000000001";
+const sourceId = "00000000-0000-0000-0000-000000000030";
 const entityId = "00000000-0000-0000-0000-000000000002";
 const revisionId = "00000000-0000-0000-0000-000000000003";
 const game: GameSummary = {
@@ -26,7 +32,36 @@ const searchResult: SearchResult = {
   indexStatus: "ready",
 };
 
+const unusedGenshinWrite = async () => {
+  throw new Error("not used");
+};
+
+const genshinRepository = {
+  upsertCharacter: unusedGenshinWrite,
+  getCharacter: async () => null,
+  listCharacters: async () => [],
+  upsertWeapon: unusedGenshinWrite,
+  getWeapon: async () => null,
+  listWeapons: async () => [],
+  upsertArtifactSet: unusedGenshinWrite,
+  getArtifactSet: async () => null,
+  listArtifactSets: async () => [],
+  upsertArtifact: unusedGenshinWrite,
+  getArtifact: async () => null,
+  listArtifacts: async () => [],
+  upsertMaterial: unusedGenshinWrite,
+  getMaterial: async () => null,
+  listMaterials: async () => [],
+  upsertAchievement: unusedGenshinWrite,
+  getAchievement: async () => null,
+  listAchievements: async () => [],
+  upsertEnemy: unusedGenshinWrite,
+  getEnemy: async () => null,
+  listEnemies: async () => [],
+} satisfies GenshinStructuredRepository;
+
 const repository = {
+  genshin: genshinRepository,
   health: async () => ({ database: "up", currentRevision: "available", searchIndex: "ready" }),
   listGames: async () => [game],
   getGame: async (id: string) => (id === gameId ? game : null),
@@ -37,6 +72,28 @@ const repository = {
     { capability: "relationships" as const, enabled: true },
     { capability: "evidence_qa" as const, enabled: true },
   ],
+  getArchiveHome: async () => ({
+    gameId,
+    revision: "r1",
+    locale: "zh-CN",
+    categories: [
+      {
+        id: "quests",
+        label: "任务剧情",
+        description: "任务文本",
+        count: 1,
+        entries: [
+          {
+            id: "doc-1",
+            name: "捕风的异乡人",
+            kind: "document" as const,
+            type: "archon_quest",
+            locale: "zh-CN",
+          },
+        ],
+      },
+    ],
+  }),
   listEntities: async () => [],
   getEntity: async () => null,
   getRelationships: async () => [],
@@ -82,10 +139,25 @@ const repository = {
 const testConfig = loadConfig({ NODE_ENV: "test" });
 
 function appWith(overrides: Partial<KnowledgeRepository> = {}, config: RuntimeConfig = testConfig) {
-  return createApp({ repository: { ...repository, ...overrides }, config });
+  return createApp({
+    repository: { ...repository, ...overrides, genshin: overrides.genshin ?? repository.genshin },
+    config,
+  });
 }
 
 describe("API", () => {
+  it("serves the lightweight game-like archive home", async () => {
+    const app = appWith();
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/home?locale=zh-CN`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().categories[0].entries[0].name).toBe("捕风的异乡人");
+    expect(JSON.stringify(response.json())).not.toContain("sourceKey");
+    await app.close();
+  });
+
   it("returns stable health and readiness responses", async () => {
     const app = appWith();
     const health = await app.inject({ method: "GET", url: "/api/health" });
@@ -446,15 +518,91 @@ describe("API", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/admin/imports",
-      payload: { gameId, sourceId, path: "/private/fixture.json" },
+      payload: { gameId, sourceId, path: join(testConfig.dataDir, "imports", "fixture.json") },
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().status).toBe("pending");
     expect(queued).toMatchObject({
       type: "parse_import",
       idempotencyKey: `parse_import:${batchId}`,
-      payload: { batchId, gameId, sourceId, path: "/private/fixture.json" },
+      payload: {
+        batchId,
+        gameId,
+        sourceId,
+        path: join(testConfig.dataDir, "imports", "fixture.json"),
+      },
     });
+    await app.close();
+  });
+
+  it("rejects import paths outside the import root", async () => {
+    const app = appWith({
+      getSource: async () => ({
+        id: sourceId,
+        gameId,
+        name: "Fixture",
+        type: "local_json",
+        pathLabel: "fixture.json",
+        enabled: true,
+        parserType: "builtin",
+      }),
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/imports",
+      payload: { gameId, sourceId, path: "/etc/passwd" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("path_outside_import_root");
+    await app.close();
+  });
+
+  it("accepts uploaded import files and stages them under the import root", async () => {
+    const pendingBatch: ImportBatch = {
+      id: "00000000-0000-0000-0000-000000000041",
+      gameId,
+      sourceId: "00000000-0000-0000-0000-000000000030",
+      sourceSnapshotId: null,
+      status: "pending",
+      parserVersion: "1.0.0",
+      successCount: 0,
+      failureCount: 0,
+      errors: [],
+      warnings: [],
+      confirmedDeletionKeys: [],
+      createdAt: new Date(),
+      completedAt: null,
+    };
+    let queued: Record<string, unknown> | undefined;
+    const app = appWith({
+      getSource: async () => ({
+        id: sourceId,
+        gameId,
+        name: "Fixture",
+        type: "local_json",
+        pathLabel: "fixture.json",
+        enabled: true,
+        parserType: "builtin",
+      }),
+      createPendingImport: async () => pendingBatch,
+      enqueueJob: async (job) => {
+        queued = job;
+      },
+    });
+    const content = Buffer.from(JSON.stringify([{ id: "a" }])).toString("base64");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/imports",
+      payload: {
+        gameId,
+        sourceId,
+        files: [{ name: "fixture.json", contentBase64: content }],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const payloadPath = (queued?.payload as { path?: string } | undefined)?.path;
+    expect(payloadPath).toContain(join(testConfig.dataDir, "imports", "uploads"));
+    expect(payloadPath?.endsWith("fixture.json")).toBe(true);
     await app.close();
   });
 

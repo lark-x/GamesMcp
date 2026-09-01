@@ -1,0 +1,71 @@
+.codex-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.codex-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.codex-nav button {
+  border: 1px solid var(--border-color, #d8d4c8);
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.codex-nav button.active {
+  background: var(--accent-color, #4a6df0);
+  color: #fff;
+  border-color: var(--accent-color, #4a6df0);
+}
+
+.codex-grid,
+.codex-set-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.codex-card {
+  border: 1px solid var(--border-color, #d8d4c8);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--card-bg, #fffdf7);
+}
+
+.codex-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.codex-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.codex-subtitle {
+  font-size: 12px;
+  color: var(--muted-color, #8a8578);
+}
+
+.codex-card p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.codex-loading,
+.codex-empty {
+  color: var(--muted-color, #8a8578);
+  font-size: 14px;
+  padding: 24px 0;
+  text-align: center;
+}

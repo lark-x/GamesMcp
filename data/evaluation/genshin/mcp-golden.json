@@ -1,0 +1,61 @@
+{
+  "description": "MCP tool-call KPI golden cases from the refactor plan section 37/38. Each case must be answerable within maxToolCalls using game-semantic tools.",
+  "cases": [
+    {
+      "id": "hutao-element",
+      "question": "胡桃是什么元素",
+      "expectedTool": "get_character",
+      "entityName": "胡桃",
+      "requiredField": "element",
+      "maxToolCalls": 1
+    },
+    {
+      "id": "hutao-rarity",
+      "question": "胡桃几星",
+      "expectedTool": "get_character",
+      "entityName": "胡桃",
+      "requiredField": "rarity",
+      "maxToolCalls": 1
+    },
+    {
+      "id": "albedo-element",
+      "question": "阿贝多是什么元素",
+      "expectedTool": "get_character",
+      "entityName": "Albedo",
+      "requiredField": "element",
+      "maxToolCalls": 1
+    },
+    {
+      "id": "nichang-category",
+      "question": "霓裳花是什么类别",
+      "expectedTool": "get_material",
+      "entityName": "霓裳花",
+      "requiredField": "category",
+      "maxToolCalls": 1
+    },
+    {
+      "id": "dull-blade-type",
+      "question": "无锋之剑是什么武器类型",
+      "expectedTool": "get_material",
+      "entityName": "Dull Blade",
+      "requiredField": "type",
+      "maxToolCalls": 1
+    },
+    {
+      "id": "slime-drops",
+      "question": "史莱姆掉落什么",
+      "expectedTool": "get_material",
+      "entityName": "Slime",
+      "requiredField": "drops",
+      "maxToolCalls": 1
+    },
+    {
+      "id": "resolve-zhongli-alias",
+      "question": "摩拉克斯是谁",
+      "expectedTool": "resolve_entity",
+      "entityName": "摩拉克斯",
+      "requiredField": "canonicalName",
+      "maxToolCalls": 1
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "description": "Search core baseline: tiered ranking and entity resolution expectations over fixture-shaped candidates.",
+  "notes": "Structured candidates mirror Game Data Core fixtures; dialogue hits exercise speaker/quest boosts.",
+  "cases": [
+    {
+      "id": "structured_character_exact",
+      "category": "structured",
+      "query": "胡桃",
+      "candidates": [
+        { "kind": "character", "name": "胡桃", "aliases": ["堂主"], "body": "往生堂七十七代堂主" },
+        { "kind": "weapon", "name": "护摩之杖", "aliases": [], "body": "胡桃的专属武器" }
+      ],
+      "expectTopName": "胡桃",
+      "expectTier": "exactTitle",
+      "expectMinScore": 10
+    },
+    {
+      "id": "structured_alias_rank",
+      "category": "structured",
+      "query": "摩拉克斯",
+      "candidates": [
+        { "kind": "character", "name": "钟离", "aliases": ["摩拉克斯"], "body": "岩王帝君" }
+      ],
+      "expectTopName": "钟离",
+      "expectTier": "exactAlias",
+      "expectMinScore": 9
+    },
+    {
+      "id": "structured_prefix_rank",
+      "category": "structured",
+      "query": "霓裳",
+      "candidates": [{ "kind": "material", "name": "霓裳花", "aliases": [], "body": "璃月特产" }],
+      "expectTopName": "霓裳花",
+      "expectTier": "titlePrefix",
+      "expectMinScore": 8
+    },
+    {
+      "id": "dialogue_speaker_boost",
+      "category": "dialogue",
+      "query": "派蒙",
+      "dialogue": [
+        {
+          "title": "魔神任务序章",
+          "body": "派蒙是最好的应急食品。",
+          "speaker": "派蒙",
+          "questTitle": "魔神任务 序章",
+          "questType": "archon_quest"
+        },
+        {
+          "title": "野猪肉的料理",
+          "body": "派蒙不喜欢吃冷掉的肉。",
+          "speaker": "安柏",
+          "questTitle": "飞行冠军的日常",
+          "questType": "world_quest"
+        }
+      ],
+      "expectTopSpeaker": "派蒙",
+      "expectMinScore": 7
+    },
+    {
+      "id": "dialogue_quest_title_boost",
+      "category": "dialogue",
+      "query": "风魔龙",
+      "dialogue": [
+        {
+          "title": "与巨龙的相遇",
+          "body": "风魔龙就在眼前。",
+          "speaker": "安柏",
+          "questTitle": "风魔龙废墟的战斗",
+          "questType": "archon_quest"
+        },
+        {
+          "title": "古老的传说",
+          "body": "风魔龙是古老的风之魔龙。",
+          "speaker": "派蒙",
+          "questTitle": "世界任务",
+          "questType": "world_quest"
+        }
+      ],
+      "expectTopContains": "巨龙",
+      "expectMinScore": 7
+    },
+    {
+      "id": "ambiguous_traveler_candidates",
+      "category": "ambiguous",
+      "query": "旅行者",
+      "resolver": [
+        { "id": "aether", "entityType": "character", "canonicalName": "空", "aliases": ["旅行者"] },
+        { "id": "lumine", "entityType": "character", "canonicalName": "荧", "aliases": ["旅行者"] }
+      ],
+      "expectAmbiguous": true,
+      "expectMinCandidates": 2
+    },
+    {
+      "id": "resolve_alias_confidence",
+      "category": "resolver",
+      "query": "摩拉克斯",
+      "resolver": [
+        {
+          "id": "zhongli",
+          "entityType": "character",
+          "canonicalName": "钟离",
+          "aliases": ["摩拉克斯"]
+        }
+      ],
+      "expectMatchedBy": "alias",
+      "expectConfidence": 0.95
+    },
+    {
+      "id": "body_rank_below_title",
+      "category": "ranking",
+      "query": "应急食品",
+      "candidates": [
+        { "kind": "concept", "name": "应急食品", "aliases": [], "body": "派蒙的绰号" },
+        { "kind": "character", "name": "派蒙", "aliases": [], "body": "应急食品说的就是派蒙。" }
+      ],
+      "expectTopName": "应急食品",
+      "expectMinScore": 10
+    }
+  ],
+  "targets": {
+    "minPassRate": 1.0
+  }
+}

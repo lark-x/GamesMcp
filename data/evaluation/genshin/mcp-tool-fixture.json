@@ -1,0 +1,15 @@
+{
+  "characters": [
+    { "name": "胡桃", "element": "pyro", "rarity": 5, "weaponType": "polearm" },
+    { "name": "Albedo", "element": "geo", "rarity": 5, "weaponType": "sword" }
+  ],
+  "materials": [
+    { "name": "霓裳花", "category": "local_specialty" },
+    { "name": "Slime", "drops": ["slime-condensate"] },
+    { "name": "Dull Blade", "type": "sword" }
+  ],
+  "entities": [
+    { "canonicalName": "钟离", "aliases": ["摩拉克斯"] },
+    { "canonicalName": "胡桃", "aliases": ["堂主"] }
+  ]
+}

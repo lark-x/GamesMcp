@@ -132,7 +132,7 @@ describe("MCP server", () => {
     expect(createMcpServer(repository)).toBeDefined();
   });
 
-  it("exposes the nine-tool and four-resource public contract", async () => {
+  it("exposes the thirteen-tool and four-resource public contract", async () => {
     const server = createMcpServer(repository);
     const client = new Client(
       { name: "contract-test-client", version: "0.1.0" },
@@ -144,12 +144,16 @@ describe("MCP server", () => {
 
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
+      "get_character",
       "get_entity",
       "get_game_capabilities",
       "get_lore_document",
+      "get_material",
       "get_quest",
       "get_relationships",
       "list_games",
+      "resolve_entity",
+      "search_dialogue",
       "search_entities",
       "search_lore",
       "search_quests",
@@ -278,6 +282,103 @@ describe("MCP server", () => {
     const resourceOutput = resultJson(resource) as { body?: string; truncated?: boolean };
     expect(resourceOutput.body).toHaveLength(8_000);
     expect(resourceOutput.truncated).toBe(true);
+    await client.close();
+    await server.close();
+  });
+
+  it("serves structured character and material tools over the shared domain service", async () => {
+    const character = {
+      id: "00000000-0000-0000-0000-0000000000b1",
+      gameId,
+      revisionId: "00000000-0000-0000-0000-000000000010",
+      stableId: "char/hutao",
+      sourceKey: "structured/char/hutao",
+      name: "胡桃",
+      locale: "zh-CN",
+      provenance: {},
+      profile: {},
+      rarity: 5,
+      element: "pyro",
+      weaponType: "polearm",
+    };
+    const structuredRepository = {
+      ...repository,
+      genshin: {
+        listCharacters: async () => [character],
+        listWeapons: async () => [],
+        listArtifacts: async () => [],
+        listArtifactSets: async () => [],
+        listMaterials: async () => [
+          {
+            id: "00000000-0000-0000-0000-0000000000c1",
+            gameId,
+            revisionId: "00000000-0000-0000-0000-000000000010",
+            stableId: "material/nichang",
+            sourceKey: "structured/material/nichang",
+            name: "霓裳花",
+            locale: "zh-CN",
+            provenance: {},
+            category: "local_specialty",
+            sources: [],
+            usedBy: [],
+          },
+        ],
+        listAchievements: async () => [],
+        listEnemies: async () => [],
+        getCharacter: async () => character,
+        getWeapon: async () => null,
+        getArtifact: async () => null,
+        getArtifactSet: async () => null,
+        getMaterial: async () => ({
+          id: "00000000-0000-0000-0000-0000000000c1",
+          gameId,
+          revisionId: "00000000-0000-0000-0000-000000000010",
+          stableId: "material/nichang",
+          sourceKey: "structured/material/nichang",
+          name: "霓裳花",
+          locale: "zh-CN",
+          provenance: {},
+          category: "local_specialty",
+          sources: [],
+          usedBy: [],
+        }),
+        getAchievement: async () => null,
+        getEnemy: async () => null,
+      },
+    } as unknown as KnowledgeRepository;
+    const server = createMcpServer(structuredRepository);
+    const client = new Client(
+      { name: "structured-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    const hutao = await client.callTool({
+      name: "get_character",
+      arguments: { game_id: gameId, name: "胡桃" },
+    });
+    const hutaoBody = resultJson(hutao) as { character?: { name?: string; rarity?: number } };
+    expect(hutaoBody.character?.name).toBe("胡桃");
+    expect(hutaoBody.character?.rarity).toBe(5);
+
+    const material = await client.callTool({
+      name: "get_material",
+      arguments: { game_id: gameId, name: "霓裳花" },
+    });
+    const materialBody = resultJson(material) as { material?: { name?: string } };
+    expect(materialBody.material?.name).toBe("霓裳花");
+
+    const missing = await client.callTool({
+      name: "get_character",
+      arguments: { game_id: gameId, name: "不存在的角色" },
+    });
+    expect(missing.isError).toBe(true);
+    expect((resultJson(missing) as { error?: { code?: string } })?.error?.code).toBe(
+      "character_not_found",
+    );
+
     await client.close();
     await server.close();
   });

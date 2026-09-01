@@ -14,7 +14,13 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { ClaimCandidate, ImportDiff, NormalizedRecord, ValidationIssue } from "@gip/domain";
+import type {
+  ClaimCandidate,
+  ImportDiff,
+  NormalizedRecord,
+  StructuredImportRecords,
+  ValidationIssue,
+} from "@gip/domain";
 
 export const platform = pgSchema("platform");
 export const knowledge = pgSchema("knowledge");
@@ -210,6 +216,7 @@ export const importBatches = knowledge.table(
     warnings: jsonb("warnings").$type<ValidationIssue[]>().notNull().default([]),
     diff: jsonb("diff").$type<ImportDiff>(),
     stagedRecords: jsonb("staged_records").$type<NormalizedRecord[]>(),
+    structuredRecords: jsonb("structured_records").$type<StructuredImportRecords>(),
     reviewNote: text("review_note"),
     confirmedDeletionKeys: jsonb("confirmed_deletion_keys").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -298,6 +305,7 @@ export const datasetRevisions = knowledge.table(
     isCurrent: boolean("is_current").notNull().default(false),
     indexStatus: text("index_status").notNull().default("pending"),
     normalizedRecords: jsonb("normalized_records").$type<NormalizedRecord[]>(),
+    structuredRecords: jsonb("structured_records").$type<StructuredImportRecords>(),
     manifestId: uuid("manifest_id"),
     activatedAt: timestamp("activated_at", { withTimezone: true }),
     activationBuildId: uuid("activation_build_id"),
@@ -551,6 +559,7 @@ export const entities = knowledge.table(
     uniqueIndex("entities_game_source_key_unique").on(table.gameId, table.sourceKey),
     index("entities_game_name_index").on(table.gameId, table.normalizedName),
     index("entities_game_type_index").on(table.gameId, table.type),
+    index("entities_game_type_name_index").on(table.gameId, table.type, table.canonicalName),
   ],
 );
 
@@ -602,6 +611,13 @@ export const documents = knowledge.table(
     ),
     index("documents_game_title_index").on(table.gameId, table.normalizedTitle),
     index("documents_revision_type_locale_index").on(table.revisionId, table.type, table.locale),
+    index("documents_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
+    index("documents_public_catalog_index").on(
+      table.revisionId,
+      table.locale,
+      table.type,
+      table.normalizedTitle,
+    ),
   ],
 );
 
@@ -632,6 +648,7 @@ export const documentSegments = knowledge.table(
       .on(table.documentId, table.segmentKey)
       .where(sql`${table.segmentKey} IS NOT NULL`),
     index("document_segments_search_index").on(table.searchText),
+    index("document_segments_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
   ],
 );
 
@@ -695,6 +712,12 @@ export const questDialogueNodes = knowledge.table(
     ),
     index("quest_dialogue_nodes_document_index").on(table.documentId, table.ordinal),
     index("quest_dialogue_nodes_speaker_index").on(table.revisionId, table.speakerKey),
+    index("quest_dialogue_nodes_document_subquest_ordinal_index").on(
+      table.documentId,
+      table.subquestKey,
+      table.ordinal,
+    ),
+    index("quest_dialogue_nodes_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
   ],
 );
 
@@ -867,6 +890,349 @@ export const embeddings = knowledge.table(
       table.spaceId,
     ),
     index("embeddings_revision_index").on(table.revisionId),
+  ],
+);
+
+export const gameVersions = knowledge.table(
+  "game_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    version: text("version").notNull(),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("game_versions_game_version_unique").on(table.gameId, table.version)],
+);
+
+export const provenanceRefs = knowledge.table(
+  "provenance_refs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id").references(() => sources.id),
+    sourceSnapshotId: uuid("source_snapshot_id").references(() => sourceSnapshots.id),
+    sourceKey: text("source_key").notNull(),
+    upstreamPath: text("upstream_path"),
+    upstreamId: text("upstream_id"),
+    upstreamHash: text("upstream_hash"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("provenance_refs_revision_source_key_unique").on(table.revisionId, table.sourceKey),
+    index("provenance_refs_game_revision_index").on(table.gameId, table.revisionId),
+  ],
+);
+
+export const structuredBindings = knowledge.table(
+  "structured_bindings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    stableId: text("stable_id").notNull(),
+    structuredType: text("structured_type").notNull(),
+    sourceKey: text("source_key"),
+    documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }),
+    segmentId: uuid("segment_id").references(() => documentSegments.id, { onDelete: "cascade" }),
+    relation: text("relation").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    uniqueIndex("structured_bindings_revision_type_source_unique").on(
+      table.revisionId,
+      table.structuredType,
+      table.sourceKey,
+      table.relation,
+    ),
+    index("structured_bindings_revision_stable_index").on(table.revisionId, table.stableId),
+    index("structured_bindings_document_index").on(table.documentId),
+  ],
+);
+
+const genshinBaseColumns = {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gameId: uuid("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  revisionId: uuid("revision_id")
+    .notNull()
+    .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+  stableId: text("stable_id").notNull(),
+  sourceKey: text("source_key").notNull(),
+  name: text("name").notNull(),
+  normalizedName: text("normalized_name").notNull(),
+  locale: text("locale").notNull().default("und"),
+  gameVersion: text("game_version"),
+  sourceId: uuid("source_id").references(() => sources.id),
+  sourceSnapshotId: uuid("source_snapshot_id").references(() => sourceSnapshots.id),
+  provenance: jsonb("provenance").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+};
+
+export const genshinCharacters = knowledge.table(
+  "genshin_characters",
+  {
+    ...genshinBaseColumns,
+    title: text("title"),
+    rarity: integer("rarity"),
+    element: text("element"),
+    weaponType: text("weapon_type"),
+    region: text("region"),
+    affiliation: text("affiliation"),
+    birthday: text("birthday"),
+    constellation: text("constellation"),
+    description: text("description"),
+    profile: jsonb("profile").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    uniqueIndex("genshin_characters_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_characters_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_characters_game_revision_index").on(table.gameId, table.revisionId),
+    index("genshin_characters_name_index").on(table.revisionId, table.normalizedName),
+  ],
+);
+
+export const genshinWeapons = knowledge.table(
+  "genshin_weapons",
+  {
+    ...genshinBaseColumns,
+    weaponType: text("weapon_type").notNull(),
+    rarity: integer("rarity").notNull(),
+    baseAttack: real("base_attack"),
+    subStat: text("sub_stat"),
+    passiveName: text("passive_name"),
+    passiveDescription: text("passive_description"),
+    ascensionMaterials: jsonb("ascension_materials").$type<string[]>().notNull().default([]),
+    description: text("description"),
+  },
+  (table) => [
+    uniqueIndex("genshin_weapons_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_weapons_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_weapons_game_revision_index").on(table.gameId, table.revisionId),
+    index("genshin_weapons_type_index").on(table.revisionId, table.weaponType),
+  ],
+);
+
+export const genshinArtifactSets = knowledge.table(
+  "genshin_artifact_sets",
+  {
+    ...genshinBaseColumns,
+    maxRarity: integer("max_rarity"),
+    twoPieceBonus: text("two_piece_bonus"),
+    fourPieceBonus: text("four_piece_bonus"),
+    pieces: jsonb("pieces").$type<string[]>().notNull().default([]),
+  },
+  (table) => [
+    uniqueIndex("genshin_artifact_sets_revision_stable_unique").on(
+      table.revisionId,
+      table.stableId,
+    ),
+    uniqueIndex("genshin_artifact_sets_revision_source_unique").on(
+      table.revisionId,
+      table.sourceKey,
+    ),
+    index("genshin_artifact_sets_game_revision_index").on(table.gameId, table.revisionId),
+  ],
+);
+
+export const genshinArtifacts = knowledge.table(
+  "genshin_artifacts",
+  {
+    ...genshinBaseColumns,
+    setStableId: text("set_stable_id"),
+    slot: text("slot"),
+    rarity: integer("rarity"),
+    description: text("description"),
+  },
+  (table) => [
+    uniqueIndex("genshin_artifacts_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_artifacts_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_artifacts_game_revision_index").on(table.gameId, table.revisionId),
+    index("genshin_artifacts_set_index").on(table.revisionId, table.setStableId),
+  ],
+);
+
+export const genshinMaterials = knowledge.table(
+  "genshin_materials",
+  {
+    ...genshinBaseColumns,
+    category: text("category").notNull(),
+    rarity: integer("rarity"),
+    description: text("description"),
+    sources: jsonb("sources").$type<string[]>().notNull().default([]),
+    usedBy: jsonb("used_by").$type<string[]>().notNull().default([]),
+  },
+  (table) => [
+    uniqueIndex("genshin_materials_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_materials_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_materials_game_revision_index").on(table.gameId, table.revisionId),
+    index("genshin_materials_category_index").on(table.revisionId, table.category),
+  ],
+);
+
+export const genshinAchievements = knowledge.table(
+  "genshin_achievements",
+  {
+    ...genshinBaseColumns,
+    category: text("category").notNull(),
+    requirement: text("requirement"),
+    rewardPrimogems: integer("reward_primogems"),
+    hidden: boolean("hidden").notNull().default(false),
+  },
+  (table) => [
+    uniqueIndex("genshin_achievements_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_achievements_revision_source_unique").on(
+      table.revisionId,
+      table.sourceKey,
+    ),
+    index("genshin_achievements_game_revision_index").on(table.gameId, table.revisionId),
+    index("genshin_achievements_category_index").on(table.revisionId, table.category),
+    index("genshin_achievements_name_trgm_index").using(
+      "gin",
+      table.normalizedName.op("gin_trgm_ops"),
+    ),
+  ],
+);
+
+export const genshinEnemies = knowledge.table(
+  "genshin_enemies",
+  {
+    ...genshinBaseColumns,
+    category: text("category").notNull(),
+    family: text("family"),
+    description: text("description"),
+    drops: jsonb("drops").$type<string[]>().notNull().default([]),
+    resistances: jsonb("resistances").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    uniqueIndex("genshin_enemies_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_enemies_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_enemies_game_revision_index").on(table.gameId, table.revisionId),
+    index("genshin_enemies_category_index").on(table.revisionId, table.category),
+  ],
+);
+
+export const genshinBooks = knowledge.table(
+  "genshin_books",
+  {
+    ...genshinBaseColumns,
+    volume: integer("volume"),
+    series: text("series"),
+    body: text("body").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("genshin_books_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_books_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_books_game_revision_index").on(table.gameId, table.revisionId),
+  ],
+);
+
+export const genshinCharacterStories = knowledge.table(
+  "genshin_character_stories",
+  {
+    ...genshinBaseColumns,
+    characterStableId: text("character_stable_id").notNull(),
+    storyKey: text("story_key").notNull(),
+    unlockCondition: text("unlock_condition"),
+    body: text("body").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("genshin_character_stories_revision_story_unique").on(
+      table.revisionId,
+      table.characterStableId,
+      table.storyKey,
+    ),
+    uniqueIndex("genshin_character_stories_revision_source_unique").on(
+      table.revisionId,
+      table.sourceKey,
+    ),
+    index("genshin_character_stories_character_index").on(
+      table.revisionId,
+      table.characterStableId,
+    ),
+  ],
+);
+
+export const genshinItemDescriptions = knowledge.table(
+  "genshin_item_descriptions",
+  {
+    ...genshinBaseColumns,
+    itemStableId: text("item_stable_id"),
+    body: text("body").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("genshin_item_descriptions_revision_stable_unique").on(
+      table.revisionId,
+      table.stableId,
+    ),
+    uniqueIndex("genshin_item_descriptions_revision_source_unique").on(
+      table.revisionId,
+      table.sourceKey,
+    ),
+    index("genshin_item_descriptions_item_index").on(table.revisionId, table.itemStableId),
+  ],
+);
+
+export const genshinVoiceLines = knowledge.table(
+  "genshin_voice_lines",
+  {
+    ...genshinBaseColumns,
+    characterStableId: text("character_stable_id").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    contentHash: text("content_hash").notNull(),
+  },
+  (table) => [
+    uniqueIndex("genshin_voice_lines_revision_stable_unique").on(table.revisionId, table.stableId),
+    uniqueIndex("genshin_voice_lines_revision_source_unique").on(table.revisionId, table.sourceKey),
+    index("genshin_voice_lines_character_index").on(table.revisionId, table.characterStableId),
+  ],
+);
+
+export const searchDocuments = knowledge.table(
+  "search_documents",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    stableId: text("stable_id").notNull(),
+    targetType: text("target_type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    locale: text("locale").notNull().default("und"),
+    contentHash: text("content_hash").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("search_documents_revision_target_unique").on(
+      table.revisionId,
+      table.targetType,
+      table.stableId,
+      table.locale,
+    ),
+    index("search_documents_game_revision_index").on(table.gameId, table.revisionId),
+    index("search_documents_title_body_trgm_index").using("gin", table.title.op("gin_trgm_ops")),
+    index("search_documents_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
   ],
 );
 

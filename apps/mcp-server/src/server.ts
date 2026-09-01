@@ -1,6 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { KnowledgeRepository } from "@gip/domain";
-import { DomainError, KnowledgeService } from "@gip/domain";
+import { DomainError, GameDomainService, KnowledgeService } from "@gip/domain";
 import {
   documentIdSchema,
   documentTypeSchema,
@@ -33,6 +33,7 @@ function errorResultFrom(error: unknown, fallbackCode: string, fallbackMessage: 
 export function createMcpServer(repository: KnowledgeRepository): McpServer {
   const server = new McpServer({ name: "game-intelligence-platform", version: "0.1.0" });
   const domain = new KnowledgeService(repository);
+  const gameDomain = new GameDomainService(repository);
   const gameId = z.string().uuid();
 
   server.tool("list_games", "List games registered in the knowledge platform.", {}, async () => {
@@ -57,9 +58,103 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     },
   );
 
+  const nameInput = z.string().trim().min(1).max(120);
+
+  server.tool(
+    "get_character",
+    "Get one Genshin character by display name with structured facts.",
+    { game_id: gameId, name: nameInput },
+    async ({ game_id, name }) => {
+      try {
+        const character = await gameDomain.findStructuredByName(game_id, "character", name);
+        if (!character)
+          return errorResult("character_not_found", `Character was not found: ${name}`);
+        return textResult({ character });
+      } catch (error) {
+        return errorResultFrom(error, "get_character_failed", "Character could not be loaded");
+      }
+    },
+  );
+
+  server.tool(
+    "get_material",
+    "Get one Genshin material by display name, including usage and sources.",
+    { game_id: gameId, name: nameInput },
+    async ({ game_id, name }) => {
+      try {
+        const material = await gameDomain.findStructuredByName(game_id, "material", name);
+        if (!material) return errorResult("material_not_found", `Material was not found: ${name}`);
+        return textResult({ material });
+      } catch (error) {
+        return errorResultFrom(error, "get_material_failed", "Material could not be loaded");
+      }
+    },
+  );
+
+  server.tool(
+    "resolve_entity",
+    "Resolve a display name or alias to the canonical entity with confidence.",
+    { game_id: gameId, query: z.string().trim().min(1).max(200) },
+    async ({ game_id, query }) => {
+      try {
+        const entity = await gameDomain.resolveAlias(game_id, query);
+        if (!entity) return errorResult("entity_not_found", `Entity was not found: ${query}`);
+        return textResult({
+          entityType: entity.type,
+          id: entity.id,
+          canonicalName: entity.name,
+          matchedText: query,
+          sourceKey: entity.sourceKey,
+          aliases: entity.aliases,
+        });
+      } catch (error) {
+        return errorResultFrom(error, "resolve_entity_failed", "Entity resolution failed");
+      }
+    },
+  );
+
+  server.tool(
+    "search_dialogue",
+    "Search published quest dialogue lines with citations.",
+    {
+      game_id: gameId,
+      query: z.string().trim().min(1).max(500),
+      limit: z.number().int().min(1).max(10).default(5),
+    },
+    async ({ game_id, query, limit }) => {
+      try {
+        await gameDomain.requireCapability(game_id, "lore_search");
+        const revisionId = await gameDomain.requirePublicRevision(game_id);
+        if (!repository.searchQuests)
+          throw new DomainError("quest_tools_not_ready", "Quest search is not implemented");
+        const quests = await repository.searchQuests(game_id, {
+          query,
+          limit,
+          revisionId,
+        });
+        return textResult({
+          hits: quests.slice(0, limit).map((quest) => ({
+            quest: quest.title,
+            questKey: quest.questKey,
+            type: quest.type,
+            documentId: quest.documentId,
+            citation: {
+              documentId: quest.documentId,
+              locale: quest.locale,
+              questKey: quest.questKey,
+              revision: quest.revision,
+            },
+          })),
+        });
+      } catch (error) {
+        return errorResultFrom(error, "search_dialogue_failed", "Dialogue search failed");
+      }
+    },
+  );
+
   server.tool(
     "search_entities",
-    "Search entities by canonical name or alias.",
+    "[Deprecated] Prefer get_character / get_material / resolve_entity. Search entities by canonical name or alias.",
     {
       game_id: gameId,
       query: z.string().min(1).max(500),
@@ -89,7 +184,7 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
 
   server.tool(
     "get_entity",
-    "Get entity details, relationships, documents and evidence claims.",
+    "[Deprecated] Prefer get_character for structured facts. Get entity details, relationships, documents and evidence claims.",
     { game_id: gameId, entity_id: entityIdSchema },
     async ({ game_id, entity_id }) => {
       try {
@@ -104,7 +199,7 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
 
   server.tool(
     "search_lore",
-    "Search published lore documents and evidence-bearing segments.",
+    "[Deprecated] Prefer search_dialogue for quest text. Search published lore documents and evidence-bearing segments.",
     {
       game_id: gameId,
       query: z.string().min(1).max(500),
@@ -368,21 +463,7 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
 /** Snapshot the public read boundary once per request. Preview, retired, stale and
  * unindexed revisions are intentionally invisible to MCP. */
 async function requirePublicRevision(repository: KnowledgeRepository, gameId: string) {
-  const revision = (await repository.listRevisions(gameId)).find(
-    (item) =>
-      item.isCurrent &&
-      item.lifecycleStatus === "published" &&
-      item.indexStatus === "ready" &&
-      Boolean(item.manifestId),
-  );
-  if (!revision)
-    throw new DomainError(
-      "index_not_ready",
-      "No searchable Dataset Revision is ready",
-      undefined,
-      503,
-    );
-  return revision.id;
+  return new GameDomainService(repository).requirePublicRevision(gameId);
 }
 
 function truncateDocument(

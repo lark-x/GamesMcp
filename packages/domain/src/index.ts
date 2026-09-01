@@ -9,6 +9,29 @@ import type {
   RelationshipPredicate,
   SearchRequest,
   SearchResult,
+  GenshinAchievement,
+  GenshinArtifact,
+  GenshinArtifactSet,
+  GenshinCharacter,
+  GenshinEnemy,
+  GenshinMaterial,
+  GenshinWeapon,
+} from "@gip/contracts";
+
+export type {
+  GenshinAchievement,
+  GenshinAchievementCategory,
+  GenshinArtifact,
+  GenshinArtifactSet,
+  GenshinCharacter,
+  GenshinElement,
+  GenshinEnemy,
+  GenshinEnemyCategory,
+  GenshinMaterial,
+  GenshinMaterialCategory,
+  GenshinWeapon,
+  GenshinWeaponType,
+  StructuredBinding,
 } from "@gip/contracts";
 
 export type Id = string;
@@ -58,6 +81,8 @@ export type NormalizedSegment = {
 
 export type QuestCompleteness = "complete" | "partial" | "metadata_only";
 
+export type QuestVisibility = "public" | "hidden" | "unreleased" | "test" | "unresolved";
+
 export type QuestSubquestPayload = {
   subquestKey: string;
   subquestId: string | number;
@@ -99,6 +124,9 @@ export type QuestRecordPayload = {
   series?: string;
   order?: number;
   completeness: QuestCompleteness;
+  /** Records outside the public game-facing catalogue remain available to admin preview only. */
+  visibility?: QuestVisibility;
+  visibilityReason?: string;
   prerequisites?: string[];
   subquests: QuestSubquestPayload[];
   dialogueNodes: QuestDialogueNodePayload[];
@@ -123,6 +151,33 @@ export type NormalizedRecord = {
   metadata: Record<string, unknown>;
   contentHash: string;
   parserVersion: string;
+};
+
+export type GenshinVoiceLine = {
+  id: Id;
+  gameId: Id;
+  revisionId: Id;
+  stableId: string;
+  sourceKey: string;
+  characterStableId: string;
+  name: string;
+  title: string;
+  body: string;
+  locale: string;
+  gameVersion?: string | null;
+  provenance: Record<string, unknown>;
+  contentHash: string;
+};
+
+export type StructuredImportRecords = {
+  characters?: GenshinCharacter[];
+  weapons?: GenshinWeapon[];
+  artifactSets?: GenshinArtifactSet[];
+  artifacts?: GenshinArtifact[];
+  materials?: GenshinMaterial[];
+  achievements?: GenshinAchievement[];
+  enemies?: GenshinEnemy[];
+  voices?: GenshinVoiceLine[];
 };
 
 export type ValidationIssue = {
@@ -182,6 +237,7 @@ export type ImportBatch = {
   errors: ValidationIssue[];
   diff?: ImportDiff;
   stagedRecords?: NormalizedRecord[];
+  structuredRecords?: StructuredImportRecords;
   reviewNote?: string | null;
   confirmedDeletionKeys: string[];
   createdAt: Date;
@@ -198,6 +254,7 @@ export type DatasetRevision = {
   publishedAt: Date;
   isCurrent: boolean;
   indexStatus: "pending" | "ready" | "stale" | "failed";
+  structuredRecords?: StructuredImportRecords;
   manifestId?: Id | null;
   sourceId?: Id | null;
   gameVersion?: string | null;
@@ -357,7 +414,7 @@ export type DocumentProvenance = {
 
 export type ProvenanceLineage = {
   relativeFile?: string;
-  upstreamId?: string | number | Record<string, unknown>;
+  upstreamId?: string | number | Array<string | number> | Record<string, unknown>;
   hash?: string;
   valueHash?: string;
   readablePath?: string | null;
@@ -514,6 +571,83 @@ export type ReleaseCandidateReadiness = PublishReadiness & {
   contentChecksum?: string;
 };
 
+export type GenshinStructuredListOptions = {
+  revisionId: Id;
+  query?: string;
+  limit: number;
+  offset?: number;
+};
+
+export interface GenshinStructuredRepository {
+  upsertCharacter(
+    input: Omit<import("@gip/contracts").GenshinCharacter, "id">,
+  ): Promise<import("@gip/contracts").GenshinCharacter>;
+  getCharacter(
+    revisionId: Id,
+    stableId: string,
+  ): Promise<import("@gip/contracts").GenshinCharacter | null>;
+  listCharacters(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinCharacter[]>;
+  upsertWeapon(
+    input: Omit<import("@gip/contracts").GenshinWeapon, "id">,
+  ): Promise<import("@gip/contracts").GenshinWeapon>;
+  getWeapon(
+    revisionId: Id,
+    stableId: string,
+  ): Promise<import("@gip/contracts").GenshinWeapon | null>;
+  listWeapons(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinWeapon[]>;
+  upsertArtifactSet(
+    input: Omit<import("@gip/contracts").GenshinArtifactSet, "id">,
+  ): Promise<import("@gip/contracts").GenshinArtifactSet>;
+  getArtifactSet(
+    revisionId: Id,
+    stableId: string,
+  ): Promise<import("@gip/contracts").GenshinArtifactSet | null>;
+  listArtifactSets(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinArtifactSet[]>;
+  upsertArtifact(
+    input: Omit<import("@gip/contracts").GenshinArtifact, "id">,
+  ): Promise<import("@gip/contracts").GenshinArtifact>;
+  getArtifact(
+    revisionId: Id,
+    stableId: string,
+  ): Promise<import("@gip/contracts").GenshinArtifact | null>;
+  listArtifacts(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinArtifact[]>;
+  upsertMaterial(
+    input: Omit<import("@gip/contracts").GenshinMaterial, "id">,
+  ): Promise<import("@gip/contracts").GenshinMaterial>;
+  getMaterial(
+    revisionId: Id,
+    stableId: string,
+  ): Promise<import("@gip/contracts").GenshinMaterial | null>;
+  listMaterials(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinMaterial[]>;
+  upsertAchievement(
+    input: Omit<import("@gip/contracts").GenshinAchievement, "id">,
+  ): Promise<import("@gip/contracts").GenshinAchievement>;
+  getAchievement(
+    revisionId: Id,
+    stableId: string,
+  ): Promise<import("@gip/contracts").GenshinAchievement | null>;
+  listAchievements(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinAchievement[]>;
+  upsertEnemy(
+    input: Omit<import("@gip/contracts").GenshinEnemy, "id">,
+  ): Promise<import("@gip/contracts").GenshinEnemy>;
+  getEnemy(revisionId: Id, stableId: string): Promise<import("@gip/contracts").GenshinEnemy | null>;
+  listEnemies(
+    options: GenshinStructuredListOptions,
+  ): Promise<import("@gip/contracts").GenshinEnemy[]>;
+}
+
 export type RepositoryHealth = {
   database: "up" | "down";
   currentRevision: "available" | "missing";
@@ -554,6 +688,8 @@ export type QuestSearchRequest = {
   locale?: string;
   gameVersion?: string;
   limit: number;
+  /** Public callers use the curated, readable catalogue by default. */
+  publicOnly?: boolean;
   revisionId?: Id;
 };
 
@@ -594,6 +730,9 @@ export type QuestDialoguePage = {
     revision: string;
   }>;
   warnings: string[];
+  totalDialogueNodes?: number;
+  loadedDialogueNodes?: number;
+  hasMore?: boolean;
   nextCursor?: string | null;
 };
 
@@ -602,15 +741,26 @@ export type GetQuestRequest = {
   locale?: string;
   nodeLimit: number;
   cursor?: string;
+  subquestId?: string;
+  /** Defaults to true for public APIs; admin preview can explicitly disable it. */
+  publicOnly?: boolean;
   revisionId?: Id;
 };
 
+export type ArchiveHome = import("@gip/contracts").ArchiveHomeResponse;
+
 export interface KnowledgeRepository {
+  readonly genshin: GenshinStructuredRepository;
+
   health(): Promise<RepositoryHealth>;
   listGames(): Promise<GameSummary[]>;
   getGame(gameId: Id): Promise<GameSummary | null>;
   getGameBySlug(slug: string): Promise<GameSummary | null>;
   getCapabilities(gameId: Id): Promise<CapabilityRecord[]>;
+  getArchiveHome?(
+    gameId: Id,
+    options: { locale?: string; revisionId?: Id; limit?: number },
+  ): Promise<ArchiveHome>;
   listEntities(
     gameId: Id,
     options: {
@@ -638,6 +788,7 @@ export interface KnowledgeRepository {
     options: {
       query?: string;
       type?: DocumentType;
+      locale?: string;
       limit: number;
       offset: number;
       revisionId?: Id;
@@ -674,7 +825,8 @@ export interface KnowledgeRepository {
     sourceId: Id;
     sourceSnapshotId: Id;
     parserVersion: string;
-    stagedRecords: NormalizedRecord[];
+    stagedRecords?: NormalizedRecord[];
+    structuredRecords?: StructuredImportRecords;
     errors: ValidationIssue[];
     warnings: ValidationIssue[];
     diff: ImportDiff;
@@ -688,7 +840,8 @@ export interface KnowledgeRepository {
   updateImportStaged?(input: {
     batchId: Id;
     sourceSnapshotId: Id;
-    stagedRecords: NormalizedRecord[];
+    stagedRecords?: NormalizedRecord[];
+    structuredRecords?: StructuredImportRecords;
     errors: ValidationIssue[];
     warnings: ValidationIssue[];
     diff: ImportDiff;
@@ -1270,5 +1423,333 @@ export class KnowledgeService {
     if (!document)
       throw new DomainError("document_not_found", "Document was not found", undefined, 404);
     return document;
+  }
+}
+
+export type CitationView = {
+  documentId: Id;
+  locale: string;
+  questKey?: string;
+  subquestKey?: string;
+  dialogueNodeKey?: string;
+  segmentId?: Id;
+  revision: string;
+};
+
+export type SectionReadRequest = {
+  gameId: Id;
+  documentId: Id;
+  revisionId?: Id;
+  section?: string;
+  maxChars?: number;
+};
+
+export type SectionReadResult = {
+  documentId: Id;
+  title: string;
+  locale: string;
+  revision: string;
+  headingPath: string[];
+  body: string;
+  truncated: boolean;
+  citations: CitationView[];
+};
+
+/**
+ * Shared read-model service for Game Codex API and Game MCP. Both consumers
+ * must go through this service instead of calling each other or reaching into
+ * repository internals directly.
+ */
+export class GameDomainService {
+  constructor(private readonly repository: KnowledgeRepository) {}
+
+  async requireGame(gameId: Id): Promise<GameSummary> {
+    const game = await this.repository.getGame(gameId);
+    if (!game) throw new DomainError("game_not_found", "Game was not found", undefined, 404);
+    return game;
+  }
+
+  async requireCapability(gameId: Id, capability: Capability): Promise<void> {
+    await this.requireGame(gameId);
+    const capabilities = await this.repository.getCapabilities(gameId);
+    if (!capabilities.some((item) => item.capability === capability && item.enabled)) {
+      throw new DomainError(
+        "capability_not_available",
+        `Capability is not available: ${capability}`,
+        undefined,
+        404,
+      );
+    }
+  }
+
+  /** Resolve the current public, searchable, published revision. */
+  async requirePublicRevision(gameId: Id): Promise<Id> {
+    await this.requireGame(gameId);
+    const revision = (await this.repository.listRevisions(gameId)).find(
+      (item) =>
+        item.isCurrent &&
+        item.lifecycleStatus === "published" &&
+        item.indexStatus === "ready" &&
+        Boolean(item.manifestId),
+    );
+    if (!revision)
+      throw new DomainError(
+        "index_not_ready",
+        "No searchable Dataset Revision is ready",
+        undefined,
+        503,
+      );
+    return revision.id;
+  }
+
+  /** Alias resolution over structured entities plus legacy entity aliases. */
+  async resolveAlias(gameId: Id, query: string, revisionId?: Id): Promise<EntitySummary | null> {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const result = await this.repository.search(gameId, {
+      query,
+      types: ["entity"],
+      limit: 1,
+      revisionId: revision,
+      debug: false,
+    });
+    return result.entities[0] ?? null;
+  }
+
+  async listCharacters(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listCharacters({
+      revisionId: revision,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
+    });
+  }
+
+  async getCharacter(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const character = await this.repository.genshin.getCharacter(revision, stableId);
+    if (!character)
+      throw new DomainError("character_not_found", "Character was not found", undefined, 404);
+    return character;
+  }
+
+  async listMaterials(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; limit?: number; offset?: number } = {},
+  ) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listMaterials({
+      revisionId: revision,
+      query: options.query,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      offset: options.offset ?? 0,
+    });
+  }
+
+  async getMaterial(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const material = await this.repository.genshin.getMaterial(revision, stableId);
+    if (!material)
+      throw new DomainError("material_not_found", "Material was not found", undefined, 404);
+    return material;
+  }
+
+  async listWeapons(gameId: Id, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listWeapons({
+      revisionId: revision,
+      limit: 100,
+    });
+  }
+
+  async getWeapon(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const weapon = await this.repository.genshin.getWeapon(revision, stableId);
+    if (!weapon) throw new DomainError("weapon_not_found", "Weapon was not found", undefined, 404);
+    return weapon;
+  }
+
+  async listArtifacts(gameId: Id, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listArtifacts({
+      revisionId: revision,
+      limit: 100,
+    });
+  }
+
+  async getArtifact(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const artifact = await this.repository.genshin.getArtifact(revision, stableId);
+    if (!artifact)
+      throw new DomainError("artifact_not_found", "Artifact was not found", undefined, 404);
+    return artifact;
+  }
+
+  async listArtifactSets(gameId: Id, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listArtifactSets({
+      revisionId: revision,
+      limit: 100,
+    });
+  }
+
+  async getArtifactSet(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const artifactSet = await this.repository.genshin.getArtifactSet(revision, stableId);
+    if (!artifactSet)
+      throw new DomainError("artifact_set_not_found", "Artifact set was not found", undefined, 404);
+    return artifactSet;
+  }
+
+  async listAchievements(gameId: Id, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listAchievements({
+      revisionId: revision,
+      limit: 100,
+    });
+  }
+
+  async getAchievement(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const achievement = await this.repository.genshin.getAchievement(revision, stableId);
+    if (!achievement)
+      throw new DomainError("achievement_not_found", "Achievement was not found", undefined, 404);
+    return achievement;
+  }
+
+  async listEnemies(gameId: Id, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.listEnemies({
+      revisionId: revision,
+      limit: 100,
+    });
+  }
+
+  async getEnemy(gameId: Id, stableId: string, revisionId?: Id) {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const enemy = await this.repository.genshin.getEnemy(revision, stableId);
+    if (!enemy) throw new DomainError("enemy_not_found", "Enemy was not found", undefined, 404);
+    return enemy;
+  }
+
+  /**
+   * Find one structured entity by display name within the public revision.
+   * Used by MCP get_* tools so agents never need internal stable IDs.
+   */
+  async findStructuredByName(
+    gameId: Id,
+    kind:
+      "character" | "weapon" | "artifact" | "artifact_set" | "material" | "achievement" | "enemy",
+    name: string,
+    revisionId?: Id,
+  ): Promise<unknown | null> {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const wanted = name.trim().toLocaleLowerCase("zh-CN");
+    const lists: Record<string, Array<{ name: string; stableId: string }>> = {
+      character: await this.repository.genshin.listCharacters({
+        revisionId: revision,
+        limit: 100,
+      }),
+      weapon: await this.repository.genshin.listWeapons({ revisionId: revision, limit: 100 }),
+      artifact: await this.repository.genshin.listArtifacts({ revisionId: revision, limit: 100 }),
+      artifact_set: await this.repository.genshin.listArtifactSets({
+        revisionId: revision,
+        limit: 100,
+      }),
+      material: await this.repository.genshin.listMaterials({ revisionId: revision, limit: 100 }),
+      achievement: await this.repository.genshin.listAchievements({
+        revisionId: revision,
+        limit: 100,
+      }),
+      enemy: await this.repository.genshin.listEnemies({ revisionId: revision, limit: 100 }),
+    };
+    const match = lists[kind]?.find(
+      (item) => item.name.trim().toLocaleLowerCase("zh-CN") === wanted,
+    );
+    if (!match) return null;
+    switch (kind) {
+      case "character":
+        return this.repository.genshin.getCharacter(revision, match.stableId);
+      case "weapon":
+        return this.repository.genshin.getWeapon(revision, match.stableId);
+      case "artifact":
+        return this.repository.genshin.getArtifact(revision, match.stableId);
+      case "artifact_set":
+        return this.repository.genshin.getArtifactSet(revision, match.stableId);
+      case "material":
+        return this.repository.genshin.getMaterial(revision, match.stableId);
+      case "achievement":
+        return this.repository.genshin.getAchievement(revision, match.stableId);
+      case "enemy":
+        return this.repository.genshin.getEnemy(revision, match.stableId);
+    }
+  }
+
+  /**
+   * Section-aware text read over a published document. When a section heading
+   * is given, the smallest matching segment is returned with citations; the
+   * whole document body is only returned without a section filter.
+   */
+  async readSection(request: SectionReadRequest): Promise<SectionReadResult> {
+    await this.requireCapability(request.gameId, "lore_search");
+    const revision = request.revisionId ?? (await this.requirePublicRevision(request.gameId));
+    const document = await this.repository.getDocument(
+      request.gameId,
+      request.documentId,
+      revision,
+    );
+    if (!document)
+      throw new DomainError("document_not_found", "Document was not found", undefined, 404);
+    const maxChars = Math.min(Math.max(request.maxChars ?? 800, 100), 8000);
+    const wanted = request.section?.trim().toLocaleLowerCase("zh-CN");
+    const matching = wanted
+      ? document.segments.filter((segment) =>
+          segment.headingPath.some((heading) =>
+            heading.toLocaleLowerCase("zh-CN").includes(wanted),
+          ),
+        )
+      : [];
+    const chosen = matching[0];
+    const joinedBody = document.segments.map((segment) => segment.body).join("\n\n");
+    const fullBody = chosen ? chosen.body : joinedBody || document.body;
+    const truncated = fullBody.length > maxChars;
+    return {
+      documentId: document.id,
+      title: document.title,
+      locale: document.locale ?? "",
+      revision: document.revision ?? "",
+      headingPath: chosen?.headingPath ?? [],
+      body: truncated ? fullBody.slice(0, maxChars) : fullBody,
+      truncated,
+      citations: [
+        {
+          documentId: document.id,
+          locale: document.locale ?? "",
+          segmentId: chosen?.id ?? undefined,
+          revision: document.revision ?? "",
+        },
+      ],
+    };
   }
 }

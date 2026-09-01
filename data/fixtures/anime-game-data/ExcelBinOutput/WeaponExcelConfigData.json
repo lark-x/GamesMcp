@@ -1,0 +1,11 @@
+[
+  {
+    "id": 11001,
+    "nameTextMapHash": 1101,
+    "descTextMapHash": 1102,
+    "weaponType": "WEAPON_SWORD_ONE_HAND",
+    "rankLevel": 4,
+    "weaponBaseExp": 42,
+    "skillNameTextMapHash": 1103
+  }
+]

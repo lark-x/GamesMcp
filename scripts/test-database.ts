@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 import { createDatabase, createPool } from "../packages/database/src/client.ts";
 import { SqlKnowledgeRepository, stableEntityId } from "../packages/database/src/repository.ts";
 import { gameCapabilities, games, jobs } from "../packages/database/src/schema.ts";
-import type { NormalizedRecord } from "../packages/domain/src/index.ts";
+import type { NormalizedRecord, StructuredImportRecords } from "../packages/domain/src/index.ts";
 import { applyMigrations } from "../packages/database/src/migration-runner.ts";
 
 const databaseUrl = process.env.GIP_DB_TEST_URL;
@@ -408,6 +408,184 @@ async function main() {
       ).entities.length,
       0,
     );
+
+    const structuredSource = await repository.createSource({
+      gameId: gameA.id,
+      name: "结构化 AnimeGameData 来源",
+      type: "local_json",
+      pathLabel: "structured/manifest.json",
+      licenseNote: "test",
+      enabled: true,
+      parserType: "anime-game-data:structured",
+    });
+    const structuredSnapshot = await repository.createSnapshot({
+      sourceId: structuredSource.id,
+      contentHash: `snapshot-structured-${randomUUID()}`,
+      storagePath: "snapshots/db-test-structured.json",
+      metadata: { fixture: true },
+    });
+    const structuredBase = {
+      gameId: gameA.id,
+      revisionId: revisionA3.id,
+      sourceId: structuredSource.id,
+      sourceSnapshotId: structuredSnapshot.id,
+      locale: "zh-CN",
+      gameVersion: "test-structured-1",
+      provenance: {
+        upstreamCommit: "db-test-structured-commit",
+        rawContentHash: "a".repeat(64),
+      },
+    };
+    const structuredRecords: StructuredImportRecords = {
+      characters: [
+        {
+          ...structuredBase,
+          id: randomUUID(),
+          stableId: "genshin:character:nahida",
+          sourceKey: "AvatarExcelConfigData:10000073",
+          name: "纳西妲",
+          title: "白草净华",
+          rarity: 5,
+          element: "dendro",
+          weaponType: "catalyst",
+          region: "须弥",
+          affiliation: "须弥城",
+          birthday: "10-27",
+          constellation: "智慧主座",
+          description: "结构化角色测试记录。",
+          profile: { fixture: true },
+        },
+      ],
+      weapons: [
+        {
+          ...structuredBase,
+          id: randomUUID(),
+          stableId: "genshin:weapon:a-thousand-floating-dreams",
+          sourceKey: "WeaponExcelConfigData:14511",
+          name: "千夜浮梦",
+          weaponType: "catalyst",
+          rarity: 5,
+          baseAttack: 542,
+          subStat: "元素精通",
+          passiveName: "千夜的曙歌",
+          passiveDescription: "结构化武器测试记录。",
+          ascensionMaterials: ["genshin:material:oasis-gardens-truth"],
+          description: "测试用法器。",
+        },
+      ],
+      voices: [
+        {
+          ...structuredBase,
+          id: randomUUID(),
+          stableId: "genshin:voice:nahida:about-us-dreams",
+          sourceKey: "AvatarVoiceExcelConfigData:10000073:about-us-dreams",
+          characterStableId: "genshin:character:nahida",
+          name: "纳西妲",
+          title: "关于我们·梦",
+          body: "梦境是很重要的素材。",
+          contentHash: "b".repeat(64),
+        },
+      ],
+    };
+    const structuredKeys = Object.values(structuredRecords).flatMap((records) =>
+      (records ?? []).map((record) => record.sourceKey),
+    );
+    const structuredBatch = await repository.createImport({
+      gameId: gameA.id,
+      sourceId: structuredSource.id,
+      sourceSnapshotId: structuredSnapshot.id,
+      parserVersion: "db-test-structured",
+      stagedRecords: [],
+      structuredRecords,
+      errors: [],
+      warnings: [],
+      diff: {
+        added: structuredKeys,
+        modified: [],
+        deletionCandidates: [],
+        unchanged: [],
+        conflicts: [],
+        unparsed: [],
+      },
+    });
+    assert.equal(structuredBatch.successCount, 3);
+    await repository.reviewImport(structuredBatch.id, true, "结构化发布测试", []);
+    const structuredRevision = await repository.publishImport(
+      structuredBatch.id,
+      "第四次测试发布：结构化物化",
+    );
+    assert.equal(structuredRevision.revisionNumber, 4);
+    assert.equal((await repository.getGame(gameA.id))?.currentRevision, "r4");
+    assert.equal(
+      (await repository.genshin.getCharacter(structuredRevision.id, "genshin:character:nahida"))
+        ?.name,
+      "纳西妲",
+    );
+    assert.equal(
+      await repository.genshin.getCharacter(revisionA3.id, "genshin:character:nahida"),
+      null,
+    );
+    const structuredCounts = await pool.query(
+      `select
+        (select count(*)::int from knowledge.genshin_characters where revision_id = $1) as characters,
+        (select count(*)::int from knowledge.genshin_weapons where revision_id = $1) as weapons,
+        (select count(*)::int from knowledge.genshin_voice_lines where revision_id = $1) as voices,
+        (select structured_records is not null from knowledge.dataset_revisions where id = $1) as has_structured_records`,
+      [structuredRevision.id],
+    );
+    assert.equal(structuredCounts.rows[0]?.characters, 1);
+    assert.equal(structuredCounts.rows[0]?.weapons, 1);
+    assert.equal(structuredCounts.rows[0]?.voices, 1);
+    assert.equal(structuredCounts.rows[0]?.has_structured_records, true);
+    await completePendingJobs(repository, "db-test-worker-structured");
+
+    const invalidStructuredSnapshot = await repository.createSnapshot({
+      sourceId: structuredSource.id,
+      contentHash: `snapshot-structured-invalid-${randomUUID()}`,
+      storagePath: "snapshots/db-test-structured-invalid.json",
+      metadata: { fixture: true },
+    });
+    const invalidStructuredRecords: StructuredImportRecords = {
+      characters: [
+        {
+          ...structuredRecords.characters![0]!,
+          id: randomUUID(),
+          sourceKey: "AvatarExcelConfigData:invalid-fk",
+          sourceId: randomUUID(),
+          sourceSnapshotId: invalidStructuredSnapshot.id,
+          name: "非法外键角色",
+        },
+      ],
+    };
+    const invalidStructuredBatch = await repository.createImport({
+      gameId: gameA.id,
+      sourceId: structuredSource.id,
+      sourceSnapshotId: invalidStructuredSnapshot.id,
+      parserVersion: "db-test-structured",
+      stagedRecords: [],
+      structuredRecords: invalidStructuredRecords,
+      errors: [],
+      warnings: [],
+      diff: {
+        added: ["AvatarExcelConfigData:invalid-fk"],
+        modified: [],
+        deletionCandidates: [],
+        unchanged: [],
+        conflicts: [],
+        unparsed: [],
+      },
+    });
+    await repository.reviewImport(invalidStructuredBatch.id, true, "结构化事务失败测试", []);
+    const structuredRevisionCountBeforeFailure = (await repository.listRevisions(gameA.id)).length;
+    await assert.rejects(
+      () => repository.publishImport(invalidStructuredBatch.id, "结构化失败发布"),
+      /violates foreign key constraint|insert or update/i,
+    );
+    assert.equal(
+      (await repository.listRevisions(gameA.id)).length,
+      structuredRevisionCountBeforeFailure,
+    );
+    assert.equal((await repository.getGame(gameA.id))?.currentRevision, "r4");
 
     const retryId = randomUUID();
     await db.insert(jobs).values({

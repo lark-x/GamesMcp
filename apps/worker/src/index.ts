@@ -3,6 +3,7 @@ import { loadConfig } from "@gip/config";
 import { createDatabase, createPool, SqlKnowledgeRepository } from "@gip/database";
 import {
   adapterFor,
+  assertPathInsideImportRoot,
   computeDiff,
   normalizeSnapshot,
   validateImport,
@@ -47,6 +48,7 @@ async function processOne(): Promise<boolean> {
       const source = await repository.getSource(payload.sourceId);
       if (!source || source.gameId !== payload.gameId)
         throw new Error("Import source was not found");
+      assertPathInsideImportRoot(payload.path, config.dataDir);
       const adapter = adapterFor(source.type as SourceType);
       const input = {
         sourceId: source.id,

@@ -1,5 +1,32 @@
 # 操作手册
 
+## 评测与质量门
+
+不依赖数据库的评测命令可在任意环境直接运行：
+
+```bash
+pnpm eval:search-core   # 搜索核心排序/解析基线（8 用例）
+pnpm eval:mcp-tools     # MCP 结构化工具 KPI（7 用例，平均 1 次调用）
+```
+
+需要数据库的评测在 `pnpm db:up && pnpm db:migrate` 并导入样例数据后运行：
+
+```bash
+pnpm eval:retrieval     # 109 条检索 golden（ENFORCE_RETRIEVAL_TARGETS=1 强制达标）
+pnpm eval:qa            # 证据 QA golden（ENFORCE_QA_TARGETS=1 强制达标）
+```
+
+发布前建议至少完整跑一轮上述命令并记录输出。
+
+## Game Codex / Game MCP 工具面
+
+- REST：`/api/games/:gameId/genshin/{characters,materials,weapons,artifacts,achievements,enemies}`
+  为只读结构化接口，响应经共享 Zod 契约校验。
+- MCP：`get_character`、`get_material`、`resolve_entity`、`search_dialogue`
+  等游戏语义工具接受显示名，内部通过 `GameDomainService` 解析；旧的通用
+  工具仍可用，计划在清理阶段（Phase 12）标记弃用。
+- 结构化数据页：Web `#codex/<kind>`（角色/材料/武器/圣遗物/成就/敌人）。
+
 ## 日常启动
 
 ```bash
@@ -26,6 +53,31 @@ API_PORT=14100 WEB_PORT=14173 pnpm dev
 ```
 
 ## 导入、审核和发布
+
+### AnimeGameData 任务快照
+
+任务转换器会读取外置盘上的固定 AnimeGameData Commit，并只把中英文均有明确标题、完整子任务和对话图的真实任务写入公开记录。隐藏、未发布、测试/占位、元数据-only 或双语不成对的记录会保留在 Manifest 的排除统计中，不会出现在公开 Revision。
+
+```bash
+pnpm data:convert:anime-quests -- --commit=26df1dfbdf05a82bbb1d97506859f3e1c40718d8 --game-version=7.0.0 --version-label=CNRELWin7.0.0
+ANIME_GAME_CATEGORY=quest pnpm data:import:anime
+```
+
+转换器会先执行外置存储预检，并核对实际 Git HEAD；输出位于 `DATA_DIR/imports/normalized/anime-game-data/<commit>/quests/`。Manifest 的 `accounting.accountedCoverage` 必须为 1，`unexplainedMissing` 必须为空。
+
+### 清理历史后重建
+
+清理命令默认只展示将要清理的表；执行前请先 `pnpm data:backup`。由于该操作会同时删除业务历史和审计日志，必须显式提供两个确认值：
+
+```bash
+pnpm data:reset:history -- --dry-run=true
+pnpm data:backup
+pnpm data:reset:history -- --confirm=DELETE_ALL_HISTORY --audit-confirm=DELETE_AUDIT_LOG
+pnpm db:migrate
+pnpm db:seed
+```
+
+该命令不会删除 `platform.games`、能力配置、数据库结构或外置盘原始快照；数据库备份仍可用于恢复。生产环境会被拒绝执行。
 
 1. 在 Web 的“数据管理”中选择已有来源，或创建 `local_json`、`local_markdown`、`local_text`、`local_directory` 来源。
 2. 输入 API/Worker 都能读取的本地路径，发起导入。API 只创建 `pending` 批次和 PostgreSQL `parse_import` 任务。

@@ -9,7 +9,7 @@ import type {
   RelationshipCandidate,
   ValidationIssue,
 } from "@gip/domain";
-import { validateNormalizedRecords } from "@gip/domain";
+import { DomainError, validateNormalizedRecords } from "@gip/domain";
 
 export const PARSER_VERSION = "1.0.0";
 
@@ -21,6 +21,24 @@ export type SourceInput = {
   path: string;
   storageDir: string;
 };
+
+export function resolveImportRoot(dataDir: string): string {
+  return resolve(dataDir, "imports");
+}
+
+export function assertPathInsideImportRoot(path: string, dataDir: string): string {
+  const importRoot = resolveImportRoot(dataDir);
+  const absolutePath = resolve(path);
+  const relativePath = relative(importRoot, absolutePath);
+  if (relativePath.startsWith("..") || resolve(importRoot, relativePath) !== absolutePath)
+    throw new DomainError(
+      "path_outside_import_root",
+      `Import path must stay inside the import root (${importRoot})`,
+      { importRoot },
+      400,
+    );
+  return absolutePath;
+}
 
 export type SourceInspection = {
   type: SourceType;
