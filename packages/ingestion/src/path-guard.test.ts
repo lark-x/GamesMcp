@@ -14,7 +14,10 @@ describe("assertPathInsideImportRoot", () => {
 
   it("rejects paths outside the import root", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "gip-data-"));
-    expect(() => assertPathInsideImportRoot("/etc/passwd", dataDir)).toThrowError(/import root/i);
+    // A path on a different drive (Windows) or an absolute POSIX path (Linux/macOS)
+    // both resolve outside the import root.
+    const outside = process.platform === "win32" ? "Q:\\elsewhere\\x.json" : "/etc/passwd";
+    expect(() => assertPathInsideImportRoot(outside, dataDir)).toThrowError(/import root/i);
     expect(() =>
       assertPathInsideImportRoot(join(dataDir, "elsewhere", "x.json"), dataDir),
     ).toThrowError(/import root/i);
@@ -27,6 +30,7 @@ describe("assertPathInsideImportRoot", () => {
   });
 
   it("exposes the deterministic import root", () => {
-    expect(resolveImportRoot("/srv/data")).toBe("/srv/data/imports");
+    const expected = join("/srv/data", "imports");
+    expect(resolveImportRoot("/srv/data")).toBe(expected);
   });
 });
