@@ -1647,19 +1647,13 @@ export class RepositoryReadModels {
     // Historical/preview revisions still use their immutable candidate payload
     // so their membership remains exact.
     if (revision.isCurrent) {
+      // Full scan over the game's entities: lexical scoring is done in JS and
+      // cannot be expressed as a SQL pre-filter without losing recall (the query
+      // may be a longer phrase containing the entity name).
       const rows = await this.db
         .select()
         .from(entities)
-        .where(
-          and(
-            eq(entities.gameId, gameId),
-            eq(entities.deleted, false),
-            or(
-              sql`${entities.canonicalName} % ${request.query}`,
-              sql`${entities.normalizedName} % ${request.query}`,
-            ),
-          ),
-        );
+        .where(and(eq(entities.gameId, gameId), eq(entities.deleted, false)));
       const aliases = await getAliases(
         this.db,
         rows.map((row) => row.id),
