@@ -104,6 +104,9 @@ importers:
       '@gip/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@gip/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@gip/search':
         specifier: workspace:*
         version: link:../../packages/search
@@ -217,6 +220,19 @@ importers:
       '@gip/domain':
         specifier: workspace:*
         version: link:../domain
+
+  packages/providers:
+    dependencies:
+      '@gip/search':
+        specifier: workspace:*
+        version: link:../search
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.17.0
+        version: 1.30.0(zod@3.25.76)
+    devDependencies:
+      zod:
+        specifier: ^3.24.3
+        version: 3.25.76
 
   packages/qa:
     dependencies:

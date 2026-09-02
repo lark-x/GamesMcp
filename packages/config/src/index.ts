@@ -39,6 +39,15 @@ const environmentSchema = z.object({
   EMBEDDING_DIMENSION: z.coerce.number().int().positive().default(1536),
   SEARCH_INDEX_VERSION: z.coerce.number().int().positive().default(1),
   LOCAL_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  GAMESMCP_ISTAROTH_ENABLED: z
+    .enum(["true", "false", "1", "0"])
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  GAMESMCP_ISTAROTH_URL: optionalString,
+  GAMESMCP_ISTAROTH_GAME_SLUG: z.string().trim().min(1).max(64).default("genshin"),
+  GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
+  GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  GAMESMCP_PROVIDER_HEALTH_CACHE_MS: z.coerce.number().int().positive().default(15_000),
 });
 
 export type RuntimeConfig = {
@@ -65,11 +74,30 @@ export type RuntimeConfig = {
     indexVersion: number;
   };
   localRateLimitPerMinute: number;
+  providers: {
+    istaroth?: {
+      enabled: boolean;
+      url?: string;
+      gameSlug: string;
+      connectTimeoutMs: number;
+      requestTimeoutMs: number;
+      healthCacheMs: number;
+    };
+  };
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): RuntimeConfig {
   if (env === process.env) loadLocalEnvironment();
   const parsed = environmentSchema.parse(env);
+  if (parsed.GAMESMCP_ISTAROTH_ENABLED) {
+    if (!parsed.GAMESMCP_ISTAROTH_URL)
+      throw new Error("GAMESMCP_ISTAROTH_URL is required when Istaroth provider is enabled");
+    try {
+      new URL(parsed.GAMESMCP_ISTAROTH_URL);
+    } catch {
+      throw new Error("GAMESMCP_ISTAROTH_URL must be a valid URL");
+    }
+  }
   return {
     nodeEnv: parsed.NODE_ENV,
     host: parsed.HOST,
@@ -97,6 +125,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       indexVersion: parsed.SEARCH_INDEX_VERSION,
     },
     localRateLimitPerMinute: parsed.LOCAL_RATE_LIMIT_PER_MINUTE,
+    providers: {
+      istaroth: {
+        enabled: parsed.GAMESMCP_ISTAROTH_ENABLED,
+        url: parsed.GAMESMCP_ISTAROTH_URL,
+        gameSlug: parsed.GAMESMCP_ISTAROTH_GAME_SLUG,
+        connectTimeoutMs: parsed.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS,
+        requestTimeoutMs: parsed.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS,
+        healthCacheMs: parsed.GAMESMCP_PROVIDER_HEALTH_CACHE_MS,
+      },
+    },
   };
 }
 

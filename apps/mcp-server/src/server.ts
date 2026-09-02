@@ -17,6 +17,9 @@ import {
 } from "@gip/contracts";
 import { z } from "zod";
 import { DEFAULT_MCP_RESPONSE_BUDGET, shapeForBudget } from "@gip/search";
+import type { GameProviderRegistry } from "@gip/providers";
+import { normalizeGameSlug } from "@gip/providers";
+import { registerGameProviderTools } from "./tools/provider-tools.js";
 
 const questTypeSchema = z.enum([
   "archon_quest",
@@ -134,7 +137,14 @@ function errorResultFrom(error: unknown, fallbackCode: string, fallbackMessage: 
     : errorResult(fallbackCode, fallbackMessage);
 }
 
-export function createMcpServer(repository: KnowledgeRepository): McpServer {
+export interface McpServerOptions {
+  providers?: GameProviderRegistry;
+}
+
+export function createMcpServer(
+  repository: KnowledgeRepository,
+  options: McpServerOptions = {},
+): McpServer {
   const server = new McpServer({ name: "game-intelligence-platform", version: "0.1.0" });
   const domain = new KnowledgeService(repository);
   const gameDomain = new GameDomainService(repository);
@@ -161,11 +171,29 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
 
   server.tool("list_games", "List games registered in the knowledge platform.", {}, async () => {
     try {
-      return textResult({ games: await repository.listGames() });
+      const games = await repository.listGames();
+      const providerHealth = options.providers ? await options.providers.health() : [];
+      return textResult({
+        games: games.map((game) => {
+          const health = providerHealth.filter(
+            (provider) => normalizeGameSlug(provider.game) === normalizeGameSlug(game.slug),
+          );
+          return {
+            ...game,
+            providers: health.reduce<Record<string, string>>((accumulator, provider) => {
+              accumulator[provider.kind] = provider.status;
+              accumulator[provider.id] = provider.status;
+              return accumulator;
+            }, {}),
+          };
+        }),
+      });
     } catch (error) {
       return errorResultFrom(error, "list_games_failed", "Games could not be loaded");
     }
   });
+
+  registerGameProviderTools(server, options.providers);
 
   server.tool(
     "get_game_capabilities",

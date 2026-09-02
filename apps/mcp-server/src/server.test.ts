@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "./server.js";
 import type { KnowledgeRepository } from "@gip/domain";
+import { GameProviderRegistry, type GameKnowledgeProvider } from "@gip/providers";
 
 const gameId = "00000000-0000-0000-0000-000000000001";
 const entityId = "00000000-0000-0000-0000-000000000002";
@@ -195,7 +196,7 @@ describe("MCP server", () => {
     expect(createMcpServer(repository)).toBeDefined();
   });
 
-  it("exposes the nineteen-tool and four-resource public contract", async () => {
+  it("exposes the provider-gateway tool and four-resource public contract", async () => {
     const server = createMcpServer(repository);
     const client = new Client(
       { name: "contract-test-client", version: "0.1.0" },
@@ -212,6 +213,9 @@ describe("MCP server", () => {
       "get_entity",
       "get_entity_texts",
       "get_game_capabilities",
+      "get_game_document",
+      "get_game_document_hierarchy",
+      "get_game_provider_status",
       "get_item_text",
       "get_lore_document",
       "get_material",
@@ -222,6 +226,7 @@ describe("MCP server", () => {
       "resolve_entity",
       "search_dialogue",
       "search_entities",
+      "search_game_knowledge",
       "search_items",
       "search_lore",
       "search_mechanics",
@@ -794,4 +799,164 @@ describe("MCP server", () => {
       await server.close();
     },
   );
+
+  it("routes provider gateway tools through the registry and shapes results", async () => {
+    const registry = new GameProviderRegistry();
+    registry.register(fakeKnowledgeProvider());
+    const server = createMcpServer(repository, { providers: registry });
+    const client = new Client(
+      { name: "provider-gateway-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const search = await client.callTool({
+      name: "search_game_knowledge",
+      arguments: { game: "genshin", query: "芙宁娜 枫丹预言", mode: "hybrid", limit: 2 },
+    });
+    const searchJson = resultJson(search) as {
+      hits?: Array<{ documentId?: string; excerpt?: string }>;
+      returnedCount?: number;
+      estimatedBytes?: number;
+    };
+    expect(search.isError).not.toBe(true);
+    expect(searchJson.returnedCount).toBe(2);
+    expect(searchJson.hits?.[0]?.documentId).toBe("doc-1");
+    expect(searchJson.hits?.[0]?.excerpt?.length).toBeLessThanOrEqual(500);
+    expect(searchJson.estimatedBytes).toBeGreaterThan(0);
+
+    const document = await client.callTool({
+      name: "get_game_document",
+      arguments: { game: "genshin-impact", document_id: "doc-1", cursor: 1, limit: 2 },
+    });
+    expect(resultJson(document)).toMatchObject({
+      game: "genshin",
+      documentId: "doc-1",
+      content: "line2\nline3",
+      hasMore: true,
+      nextCursor: 3,
+    });
+
+    const hierarchy = await client.callTool({
+      name: "get_game_document_hierarchy",
+      arguments: { game: "genshin", document_id: "doc-1" },
+    });
+    expect(resultJson(hierarchy)).toMatchObject({
+      documentId: "doc-1",
+      hierarchy: { sections: [{ title: "第一章" }] },
+    });
+
+    const status = await client.callTool({
+      name: "get_game_provider_status",
+      arguments: { game: "genshin" },
+    });
+    expect(resultJson(status)).toMatchObject({
+      game: "genshin",
+      providers: [{ id: "istaroth", status: "available" }],
+    });
+
+    await client.close();
+    await server.close();
+  });
+
+  it("keeps old MCP behavior when no provider registry is configured", async () => {
+    const server = createMcpServer(repository);
+    const client = new Client(
+      { name: "provider-missing-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const providerResult = await client.callTool({
+      name: "search_game_knowledge",
+      arguments: { game: "genshin", query: "芙宁娜" },
+    });
+    expect(providerResult.isError).toBe(true);
+    expect((resultJson(providerResult) as { error?: { code?: string } }).error?.code).toBe(
+      "game_provider_not_found",
+    );
+
+    const games = await client.callTool({ name: "list_games", arguments: {} });
+    expect((resultJson(games) as { games?: Array<{ slug?: string }> })?.games?.[0]?.slug).toBe(
+      "genshin-impact",
+    );
+
+    await client.close();
+    await server.close();
+  });
 });
+
+function fakeKnowledgeProvider(): GameKnowledgeProvider {
+  return {
+    id: "istaroth",
+    gameSlug: "genshin",
+    kind: "knowledge",
+    capabilities: ["knowledge_search", "keyword_search", "document_read", "document_hierarchy"],
+    health: async () => ({
+      id: "istaroth",
+      game: "genshin",
+      kind: "knowledge",
+      status: "available",
+      capabilities: ["knowledge_search", "keyword_search", "document_read", "document_hierarchy"],
+      latencyMs: 2,
+      checkedAt: new Date(0).toISOString(),
+    }),
+    search: async (request) => ({
+      game: request.game,
+      provider: "istaroth",
+      mode: request.mode ?? "hybrid",
+      hits: [
+        {
+          game: request.game,
+          provider: "istaroth",
+          documentId: "doc-1",
+          title: "枫丹预言",
+          excerpt: "芙宁娜与枫丹预言相关。".repeat(80),
+        },
+        {
+          game: request.game,
+          provider: "istaroth",
+          documentId: "doc-2",
+          title: "谕示裁定枢机",
+          excerpt: "第二条结果。",
+        },
+        {
+          game: request.game,
+          provider: "istaroth",
+          documentId: "doc-3",
+          excerpt: "第三条结果。",
+        },
+      ],
+      truncated: false,
+    }),
+    getDocument: async (request) => {
+      const lines = ["line1", "line2", "line3", "line4"];
+      const cursor = request.cursor ?? 0;
+      const limit = request.limit ?? 20;
+      const page = lines.slice(cursor, cursor + limit);
+      const nextCursor = cursor + page.length;
+      return {
+        game: request.game,
+        provider: "istaroth",
+        documentId: request.documentId,
+        content: page.join("\n"),
+        cursor,
+        returnedLines: page.length,
+        hasMore: nextCursor < lines.length,
+        nextCursor: nextCursor < lines.length ? nextCursor : null,
+        truncated: nextCursor < lines.length,
+      };
+    },
+    getHierarchy: async (request) => ({
+      game: request.game,
+      provider: "istaroth",
+      documentId: request.documentId,
+      hierarchy: { sections: [{ title: "第一章" }] },
+      truncated: false,
+    }),
+  };
+}

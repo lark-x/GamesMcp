@@ -5,7 +5,9 @@
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/domain" },
-    { "path": "../../packages/database" }
+    { "path": "../../packages/database" },
+    { "path": "../../packages/providers" },
+    { "path": "../../packages/search" }
   ],
   "include": ["src/**/*.ts"]
 }

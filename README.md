@@ -27,6 +27,8 @@ API 默认监听 `http://127.0.0.1:4100`，Web 默认监听 `http://127.0.0.1:41
 AnimeGameData 首阶段的固定 Commit、确定性转换、出处核验和游戏内抽样步骤见
 [`docs/anime-game-verification.md`](docs/anime-game-verification.md)。采集和转换不需要安装游戏；只有最终人工抽样需要客户端。
 
+外部游戏知识 Provider 网关见 [`docs/providers.md`](docs/providers.md)。第一轮支持通过 MCP Streamable HTTP 接入 Istaroth，新增 `search_game_knowledge`、`get_game_document`、`get_game_document_hierarchy` 和 `get_game_provider_status`，旧工具保持原本本地 PostgreSQL 行为。
+
 导入并发布 `data/fixtures/genshin.sample.json` 后，可以运行 `pnpm eval:retrieval` 检查 109 条黄金查询，运行 `pnpm eval:qa` 检查 12 条证据问答，运行 `GAME_ID=<uuid> pnpm benchmark:search` 检查实体/全文/混合检索延迟。完整部署、异步 Worker 导入、操作、备份和恢复见 [`docs/deployment.md`](docs/deployment.md)、[`docs/operations.md`](docs/operations.md) 和 [`docs/backup-and-recovery.md`](docs/backup-and-recovery.md)。
 
 ## 数据边界
