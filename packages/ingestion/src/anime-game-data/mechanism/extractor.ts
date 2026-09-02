@@ -118,6 +118,8 @@ type CategoryAttempt = {
 
 const TITLE_FIELDS = [
   "titleTextMapHash",
+  "tipsTitleTextMapHash",
+  "subtitleTextMapHash",
   "tutorialTitleTextMapHash",
   "guideTitleTextMapHash",
   "nameTextMapHash",
@@ -130,6 +132,11 @@ const TITLE_FIELDS = [
 
 const BODY_FIELDS = [
   "contentTextMapHash",
+  "subtitleTextMapHash",
+  "tipsDescTextMapHash",
+  "descriptTextMapHash",
+  "commentTextMapHash",
+  "labelTextMapHash",
   "tutorialContentTextMapHash",
   "guideContentTextMapHash",
   "detailTextMapHash",
@@ -156,6 +163,7 @@ const ID_FIELDS = [
   "tutorialId",
   "detailId",
   "guideId",
+  "pushTipsId",
   "tipsId",
   "catalogId",
 ] as const;
@@ -431,14 +439,24 @@ export function mapMechanismCategory(row: JsonObject): MechanismCategory {
   return classifyCategory(row).category;
 }
 
-function stableIdFor(row: JsonObject, objectKey?: string): string | undefined {
+function stableIdFor(row: JsonObject, sourcePath: string, objectKey?: string): string | undefined {
   const explicit = text(row.mechanismStableId) ?? text(row.stableId);
   if (explicit) return explicit;
   const idField = firstDefined(row, ID_FIELDS.slice(2));
   const id = idField ? idText(idField.value) : undefined;
-  if (id) return `mechanism/${id}`;
+  if (id) {
+    // Scope by the source table so ids that repeat across upstream tables
+    // (e.g. pushTipsId 1001 and loadingTips id 1001) stay distinct.
+    const sourceKey =
+      sourcePath
+        .split("/")
+        .pop()
+        ?.replace(/ExcelConfigData\.json$/, "")
+        .replace(/Excel$/, "") ?? "row";
+    return `mechanism/${sourceKey}/${id}`;
+  }
   const keyedId = text(objectKey);
-  return keyedId ? `mechanism/${keyedId}` : undefined;
+  return keyedId ? `mechanism/${objectKey}` : undefined;
 }
 
 function relatedEntityStableId(value: unknown): string | undefined {
@@ -602,7 +620,7 @@ async function extractMechanismRecords(ctx: AnimeContext): Promise<MechanismExtr
   };
 
   for (const sourceRow of sourceRows) {
-    const stableId = stableIdFor(sourceRow.row, sourceRow.objectKey);
+    const stableId = stableIdFor(sourceRow.row, sourceRow.sourcePath, sourceRow.objectKey);
     const upstreamId = sourceUpstreamId(sourceRow, stableId);
     if (!stableId) {
       increment(fieldCoverage, "missingIds");

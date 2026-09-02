@@ -84,7 +84,7 @@ describe("MechanismExtractor", () => {
       const result = await new MechanismExtractor().extract(await context(root));
       expect(result.coverage).toEqual({ discovered: 15, converted: 15, failed: 0, coverage: 1 });
       const expectedCategories: Array<[string, string]> = categories.map((category, index) => [
-        `mechanism/${index + 1}`,
+        `mechanism/Tutorial/${index + 1}`,
         category,
       ]);
       expect(
@@ -92,13 +92,15 @@ describe("MechanismExtractor", () => {
       ).toEqual(
         new Map<string, string>([
           ...expectedCategories,
-          ["mechanism/99", "other"],
-          ["mechanism/100", "other"],
+          ["mechanism/Tutorial/99", "other"],
+          ["mechanism/Tutorial/100", "other"],
         ]),
       );
       expect(result.records[0]?.documentType).toBe("mechanism");
       expect(
-        result.records.find((record) => record.mechanismStableId === "mechanism/1"),
+        result.records.find(
+          (record) => record.mechanismStableId === "mechanism/Tutorial/1",
+        ),
       ).toMatchObject({
         relatedEntities: ["enemy/2", "gadget/1"],
         textResolution: { method: "textmap", locale: "zh-CN", resolved: true },
@@ -106,8 +108,8 @@ describe("MechanismExtractor", () => {
       expect(result.fieldCoverage.unknownCategory).toBe(2);
       expect(result.warnings).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ code: "mechanism_category_unknown", upstreamId: "99" }),
-          expect.objectContaining({ code: "mechanism_category_unknown", upstreamId: "100" }),
+          expect.objectContaining({ code: "mechanism_category_unknown", upstreamId: "Tutorial/99" }),
+          expect.objectContaining({ code: "mechanism_category_unknown", upstreamId: "Tutorial/100" }),
         ]),
       );
       expect(mapMechanismCategory({ category: "not-a-category" })).toBe("other");
@@ -127,7 +129,7 @@ describe("MechanismExtractor", () => {
       expect(result.coverage).toEqual({ discovered: 1, converted: 0, failed: 1, coverage: 0 });
       expect(result.fieldCoverage.missingTitle).toBe(1);
       expect(result.failures).toContainEqual(
-        expect.objectContaining({ code: "title_missing", upstreamId: "7" }),
+        expect.objectContaining({ code: "title_missing", upstreamId: "Tutorial/7" }),
       );
     } finally {
       await rm(root, { recursive: true, force: true });

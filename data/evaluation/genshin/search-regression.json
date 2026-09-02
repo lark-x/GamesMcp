@@ -943,6 +943,6 @@
       "reason": "excluded: pinned snapshot has no readable canonical mechanism/help source"
     }
   },
-  "generatedAt": "2026-09-02T08:12:02.737Z",
+  "generatedAt": "2026-09-02T09:01:45.984Z",
   "pinnedUpstreamCommit": "26df1dfbdf05a82bbb1d97506859f3e1c40718d8"
 }
