@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertPathInsideImportRoot, resolveImportRoot } from "./index.js";
 
@@ -30,7 +30,9 @@ describe("assertPathInsideImportRoot", () => {
   });
 
   it("exposes the deterministic import root", () => {
-    const expected = join("/srv/data", "imports");
+    // resolve() is platform-aware: on Windows "/srv/data" resolves against the
+    // current drive, matching the implementation's own normalization.
+    const expected = resolve("/srv/data", "imports");
     expect(resolveImportRoot("/srv/data")).toBe(expected);
   });
 });
