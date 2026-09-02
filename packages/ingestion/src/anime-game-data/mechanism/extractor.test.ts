@@ -98,9 +98,7 @@ describe("MechanismExtractor", () => {
       );
       expect(result.records[0]?.documentType).toBe("mechanism");
       expect(
-        result.records.find(
-          (record) => record.mechanismStableId === "mechanism/Tutorial/1",
-        ),
+        result.records.find((record) => record.mechanismStableId === "mechanism/Tutorial/1"),
       ).toMatchObject({
         relatedEntities: ["enemy/2", "gadget/1"],
         textResolution: { method: "textmap", locale: "zh-CN", resolved: true },
@@ -108,8 +106,14 @@ describe("MechanismExtractor", () => {
       expect(result.fieldCoverage.unknownCategory).toBe(2);
       expect(result.warnings).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ code: "mechanism_category_unknown", upstreamId: "Tutorial/99" }),
-          expect.objectContaining({ code: "mechanism_category_unknown", upstreamId: "Tutorial/100" }),
+          expect.objectContaining({
+            code: "mechanism_category_unknown",
+            upstreamId: "Tutorial/99",
+          }),
+          expect.objectContaining({
+            code: "mechanism_category_unknown",
+            upstreamId: "Tutorial/100",
+          }),
         ]),
       );
       expect(mapMechanismCategory({ category: "not-a-category" })).toBe("other");

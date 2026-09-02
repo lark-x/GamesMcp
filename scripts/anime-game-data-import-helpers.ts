@@ -8,6 +8,8 @@ export function failureSourceKey(category: unknown, upstreamId: unknown): string
     if (avatarId && fetterId) return `character/${avatarId}/story/${fetterId}`;
   }
   if (category === "item_description") return `item-codex/${upstreamId}`;
+  if (category === "mechanism")
+    return upstreamId.startsWith("mechanism/") ? upstreamId : `mechanism/${upstreamId}`;
   if (category === "quest")
     return upstreamId.startsWith("quest/") ? upstreamId : `quest/${upstreamId}`;
   return undefined;

@@ -214,6 +214,7 @@ const animeCategoryFiles = {
   book: "books.json",
   character_story: "character-stories.json",
   item_description: "items.json",
+  mechanism: "mechanisms.json",
   quest: "quests.json",
 } as const;
 
@@ -221,6 +222,7 @@ const animeCategoryPlural = {
   book: "books",
   character_story: "characterStories",
   item_description: "itemDescriptions",
+  mechanism: "mechanisms",
   quest: "quests",
 } as const;
 
@@ -765,7 +767,7 @@ try {
   ).rows[0];
   const currentManifestHash = currentDatasetManifest?.rootHash;
   const manifestAccounting = asRecord(manifest?.value.accounting);
-  const requiredAccountingKeys = ["books", "characterStories", "itemDescriptions"];
+  const requiredAccountingKeys = ["books", "characterStories", "itemDescriptions", "mechanisms"];
   const accountingComplete =
     requiredAccountingKeys.every((key) => {
       const entry = asRecord(manifestAccounting[key]);

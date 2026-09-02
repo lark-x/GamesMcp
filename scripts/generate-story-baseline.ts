@@ -2,6 +2,9 @@ import { execFile as execFileCallback } from "node:child_process";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { format } from "prettier";
+import { convertAnimeGameData } from "./anime-game-data-converter.js";
+import { convertStructuredAnimeGameData } from "./anime-game-data-structured-converter.js";
 
 /**
  * Generate the raw upstream story/text/mechanism baseline.
@@ -35,15 +38,13 @@ const files = {
   documents: "ExcelBinOutput/DocumentExcelConfigData.json",
   fetterStory: "ExcelBinOutput/FetterStoryExcelConfigData.json",
   material: "ExcelBinOutput/MaterialExcelConfigData.json",
+  achievementGoal: "ExcelBinOutput/AchievementGoalExcelConfigData.json",
+  achievement: "ExcelBinOutput/AchievementExcelConfigData.json",
   npc: "ExcelBinOutput/NpcExcelConfigData.json",
 } as const;
 
 const absentDomains = {
   voiceLines: ["ExcelBinOutput/AvatarVoiceExcelConfigData.json"],
-  achievements: [
-    "ExcelBinOutput/AchievementExcelConfigData.json",
-    "ExcelBinOutput/AchievementGoalExcelConfigData.json",
-  ],
   tutorials: [],
   mechanisms: [],
   segments: [],
@@ -110,6 +111,8 @@ async function main(): Promise<void> {
     documentsValue,
     fetterStoryValue,
     materialValue,
+    achievementGoalValue,
+    achievementValue,
     npcValue,
   ] = await Promise.all(Object.values(files).map(readJson));
 
@@ -125,6 +128,8 @@ async function main(): Promise<void> {
   const documentRows = rows(documentsValue);
   const fetterStoryRows = rows(fetterStoryValue);
   const materialRows = rows(materialValue);
+  const achievementGoalRows = rows(achievementGoalValue);
+  const achievementRows = rows(achievementValue);
   const npcRows = rows(npcValue);
 
   const subquestMainIds = new Set(
@@ -205,6 +210,30 @@ async function main(): Promise<void> {
   const readableFiles = await readableFileCount();
   const upstreamDate = await gitOutput(["show", "-s", "--format=%cI", upstreamCommit]);
   const upstreamVersion = await gitOutput(["show", "-s", "--format=%s", upstreamCommit]);
+  const gameVersion =
+    /(?:CNRELWin|OSRELWin)(\d+\.\d+\.\d+)/.exec(upstreamVersion)?.[1] ?? "unknown";
+  const textConversion = await convertAnimeGameData({
+    upstreamDir: UPSTREAM_DIR,
+    context: {
+      upstreamCommit,
+      upstreamCommitDate: upstreamDate,
+      upstreamVersion,
+      upstreamVersionLabel: upstreamVersion,
+      gameVersion,
+    },
+  });
+  const structuredConversion = await convertStructuredAnimeGameData({
+    upstreamDir: UPSTREAM_DIR,
+    context: {
+      gameId: "00000000-0000-0000-0000-000000000030",
+      revisionId: "00000000-0000-0000-0000-000000000030",
+      upstreamCommit,
+      upstreamVersion,
+      gameVersion,
+    },
+  });
+  const mechanismAccounting = textConversion.manifest.accounting.mechanisms;
+  const achievementAccounting = structuredConversion.manifest.accounting.achievements;
 
   const baseline = {
     schemaVersion: 1,
@@ -228,9 +257,9 @@ async function main(): Promise<void> {
       voiceLines: 0,
       items: materialRows.length,
       materials: materialRows.filter((row) => row.itemType === "ITEM_MATERIAL").length,
-      achievements: 0,
+      achievements: structuredConversion.records.achievements.length,
       tutorials: 0,
-      mechanisms: 0,
+      mechanisms: textConversion.records.mechanisms.length,
       unresolvedTitles,
       unresolvedSpeakers,
       metadataOnlyQuests,
@@ -294,16 +323,28 @@ async function main(): Promise<void> {
         rows: materialRows.filter((row) => row.itemType === "ITEM_MATERIAL").length,
       },
       achievements: {
-        files: [...absentDomains.achievements],
-        field: "0: achievement source files absent in pinned snapshot",
+        files: [files.achievement, files.achievementGoal],
+        field:
+          "converted achievement records from AchievementExcelConfigData with category mapping from AchievementGoalExcelConfigData",
+        rows: structuredConversion.records.achievements.length,
+        discovered: achievementAccounting.discovered,
+        excluded: achievementAccounting.excluded,
+        achievementRows: achievementRows.length,
+        goalRows: achievementGoalRows.length,
       },
       tutorials: {
         files: [],
         field: "0: no canonical tutorial/help source table identified in pinned snapshot",
       },
       mechanisms: {
-        files: [],
-        field: "0: no canonical mechanism/help source table identified in pinned snapshot",
+        files: Object.keys(textConversion.manifest.inputHashes).filter(
+          (path) => path.includes("Tips") || path.includes("Tutorial") || path.includes("Guide"),
+        ),
+        field:
+          "converted mechanism/help documents from canonical tutorial/guide/help text-bearing source tables",
+        rows: textConversion.records.mechanisms.length,
+        discovered: mechanismAccounting.discovered,
+        excluded: mechanismAccounting.excluded,
       },
       unresolvedTitles: {
         files: [files.mainQuest, files.textMap, files.textMapMedium],
@@ -332,7 +373,7 @@ async function main(): Promise<void> {
       "Counts are raw upstream inventory counts, not converted/published coverage.",
       "Text resolution uses merged TextMapCHS.json and TextMap_MediumCHS.json for the zh-CN baseline locale.",
       "TalkExcelConfigData_0 and _1 are both read; dialogue node/edge counts come from the single DialogExcelConfigData table.",
-      "Weapon, achievement, voice-line, tutorial/help, mechanism/help, and explicit segment tables are absent or not represented in this snapshot; those required domains remain 0.",
+      "Voice-line, tutorial/help, and explicit segment tables are absent or not represented as standalone baseline sources in this snapshot; those required domains remain 0.",
     ],
   };
 

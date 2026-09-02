@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { DocumentSummary } from "@gip/contracts";
 import { documentIdSchema, gameIdSchema, revisionIdSchema } from "@gip/contracts";
-import type { GameDomainService, TextBindingType } from "@gip/domain";
+import type { DocumentDetail, GameDomainService, TextBindingType } from "@gip/domain";
 import type { KnowledgeRepository } from "@gip/domain";
 import { DEFAULT_MCP_RESPONSE_BUDGET, shapeForBudget } from "@gip/search";
 import { parseQuery } from "./route-utils.js";
@@ -93,6 +93,83 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function materialCandidatesForItemDocument(
+  document: DocumentSummary | (DocumentSummary & { provenance?: Record<string, unknown> }),
+): string[] {
+  const sourceKey = document.sourceKey ?? "";
+  const sourceMatch = /^item\/(.+)$/u.exec(sourceKey);
+  const upstreamId = sourceMatch?.[1];
+  const provenance = "provenance" in document ? document.provenance : undefined;
+  const upstreamIds =
+    provenance?.upstreamIds && typeof provenance.upstreamIds === "object"
+      ? (provenance.upstreamIds as Record<string, unknown>)
+      : {};
+  const materialId = numberOrStringValue(upstreamIds.materialId);
+  return [
+    ...(materialId ? [`genshin:material:${materialId}`, `material/${materialId}`] : []),
+    ...(upstreamId ? [`genshin:material:${upstreamId}`, `material/${upstreamId}`] : []),
+    sourceKey,
+  ].filter((value, index, values): value is string =>
+    Boolean(value && value.trim() && values.indexOf(value) === index),
+  );
+}
+
+async function materialForItemDocument(
+  repository: KnowledgeRepository,
+  revisionId: string,
+  document: DocumentSummary,
+) {
+  for (const stableId of materialCandidatesForItemDocument(document)) {
+    try {
+      const material = await repository.genshin.getMaterial(revisionId, stableId);
+      if (material) return material;
+    } catch {
+      // Item text remains authoritative; material enrichment is optional.
+    }
+  }
+  return null;
+}
+
+async function shapeItemDocument(
+  repository: KnowledgeRepository,
+  revisionId: string,
+  document: DocumentSummary | DocumentDetail,
+) {
+  const material = await materialForItemDocument(repository, revisionId, document);
+  const body = "body" in document ? document.body : undefined;
+  return {
+    id: document.id,
+    stableId: document.id,
+    materialStableId: material?.stableId,
+    sourceKey: document.sourceKey,
+    name: document.title,
+    title: document.title,
+    category: material?.category ?? "other",
+    rarity: material?.rarity ?? null,
+    description: body ?? document.snippet,
+    excerpt: document.snippet ?? body,
+    sources: material?.sources ?? [],
+    usedBy: material?.usedBy ?? [],
+    gameVersion: document.gameVersion,
+    locale: document.locale,
+    revisionId,
+    provenance: "provenance" in document ? (document.provenance ?? {}) : {},
+  };
+}
+
+async function hydrateItemDocument(
+  repository: KnowledgeRepository,
+  gameId: string,
+  revisionId: string,
+  document: DocumentSummary,
+): Promise<DocumentSummary | DocumentDetail> {
+  try {
+    return (await repository.getDocument(gameId, document.id, revisionId)) ?? document;
+  } catch {
+    return document;
+  }
+}
+
 type BookVolume = {
   stableId: string;
   bookStableId: string;
@@ -166,8 +243,8 @@ export function registerTextRoutes(
     const shaped = shapeForBudget(
       bindings.map((binding) => ({
         ...binding,
-        title: binding.bindingType,
-        excerpt: JSON.stringify(binding.metadata),
+        title: binding.documentTitle ?? binding.bindingType,
+        excerpt: binding.excerpt ?? JSON.stringify(binding.metadata),
       })),
       budgetForLimit(query.limit),
     );
@@ -185,25 +262,36 @@ export function registerTextRoutes(
     const params = z.object({ gameId: gameIdSchema }).parse(request.params);
     const query = itemSearchQuerySchema.parse(parseQuery(request));
     const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
-    const materials = await gameDomain.listMaterials(params.gameId, revisionId, {
-      query: query.query,
-      limit: query.limit,
-    });
-    const filtered = query.item_type
-      ? materials.filter(
-          (material) => material.category.toLowerCase() === query.item_type?.toLowerCase(),
-        )
-      : materials;
-    const shaped = shapeForBudget(
-      filtered.map((material) => ({
-        id: material.stableId,
-        name: material.name,
-        category: material.category,
-        title: material.name,
-        excerpt: material.description ?? undefined,
-      })),
-      budgetForLimit(query.limit),
+    const itemDocuments = query.query
+      ? (
+          await repository.search(params.gameId, {
+            query: query.query,
+            types: ["document"],
+            documentTypes: ["item_description"],
+            limit: query.item_type ? Math.min(query.limit * 4, 100) : query.limit,
+            revisionId,
+            debug: false,
+          })
+        ).documents
+      : await repository.listDocuments(params.gameId, {
+          type: "item_description",
+          limit: query.item_type ? Math.min(query.limit * 4, 500) : query.limit,
+          offset: 0,
+          revisionId,
+        });
+    const itemTexts = await Promise.all(
+      itemDocuments.map(async (document) =>
+        shapeItemDocument(
+          repository,
+          revisionId,
+          await hydrateItemDocument(repository, params.gameId, revisionId, document),
+        ),
+      ),
     );
+    const filtered = query.item_type
+      ? itemTexts.filter((item) => item.category.toLowerCase() === query.item_type?.toLowerCase())
+      : itemTexts;
+    const shaped = shapeForBudget(filtered, budgetForLimit(query.limit));
     return {
       gameId: params.gameId,
       revisionId,
@@ -382,11 +470,18 @@ export function registerTextRoutes(
     const params = itemParamsSchema.parse(request.params);
     const query = z.object({ revisionId: revisionIdSchema.optional() }).parse(parseQuery(request));
     const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
-    const item = await gameDomain.getMaterial(
-      params.gameId,
-      decodeStableId(params.stableId),
-      revisionId,
-    );
+    const stableId = decodeStableId(params.stableId);
+    const document = documentIdSchema.safeParse(stableId).success
+      ? await repository.getDocument(params.gameId, stableId, revisionId)
+      : null;
+    if (document?.type === "item_description") {
+      return {
+        gameId: params.gameId,
+        revisionId,
+        item: await shapeItemDocument(repository, revisionId, document),
+      };
+    }
+    const item = await gameDomain.getMaterial(params.gameId, stableId, revisionId);
     return { gameId: params.gameId, revisionId, item };
   });
 
@@ -394,16 +489,44 @@ export function registerTextRoutes(
     const params = z.object({ gameId: gameIdSchema }).parse(request.params);
     const query = mechanicsQuerySchema.parse(parseQuery(request));
     const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
+    const result = await repository.search(params.gameId, {
+      query: query.query,
+      types: ["document", "segment"],
+      documentTypes: ["mechanism"],
+      limit: query.limit,
+      revisionId,
+      debug: false,
+    });
+    const hits = [
+      ...result.documents.map((doc) => ({
+        kind: "document" as const,
+        id: doc.id,
+        sourceKey: doc.sourceKey,
+        title: doc.title,
+        type: doc.type,
+        excerpt: doc.snippet,
+      })),
+      ...result.segments.map((seg) => ({
+        kind: "segment" as const,
+        id: seg.id,
+        sourceKey: seg.sourceKey,
+        segmentId: seg.segmentId,
+        title: seg.title,
+        type: seg.type,
+        excerpt: seg.snippet,
+      })),
+    ];
+    const shaped = shapeForBudget(hits, budgetForLimit(query.limit));
     return {
       gameId: params.gameId,
       revisionId,
       query: query.query,
       category: query.category ?? null,
       limit: query.limit,
-      hits: [],
-      truncated: false,
-      corpusStatus: "mechanism_source_missing",
-      note: "The pinned upstream snapshot (26df1df) contains no tutorial/mechanism body tables; no records are fabricated.",
+      hits: shaped.items,
+      truncated: shaped.truncated,
+      estimatedBytes: shaped.estimatedBytes,
+      corpusStatus: hits.length ? "available" : "mechanism_source_empty",
     };
   });
 }

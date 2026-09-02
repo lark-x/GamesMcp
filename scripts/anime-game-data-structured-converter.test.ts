@@ -55,7 +55,9 @@ describe("AnimeGameData structured converter", () => {
       enemies: 1,
       voices: 1,
     });
+    expect(result.manifest.excluded).toEqual([]);
     expect(result.manifest.failures).toEqual([]);
+    expect(result.manifest.warnings).toEqual([]);
     expect(result.records.characters[0]).toMatchObject({
       stableId: "genshin:character:10001",
       sourceKey: "anime-game-data/character/10001",
@@ -261,6 +263,15 @@ describe("AnimeGameData structured converter", () => {
       achievements: 1,
       enemies: 1,
       voices: 1,
+    });
+    expect(first.manifest.accountedCoverage).toEqual(first.manifest.coverage);
+    expect(first.manifest.accounting.achievements).toEqual({
+      discovered: 6,
+      converted: 6,
+      excluded: 0,
+      failures: 0,
+      accounted: 6,
+      coverage: 1,
     });
     expect(first.manifest.fieldCoverage.characters.name).toBe(1);
     expect(first.manifest.fieldCoverage.weapons.weaponType).toBe(1);

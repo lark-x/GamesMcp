@@ -406,7 +406,15 @@ export type CodexMechanicsResult = {
   limit: number;
   corpusStatus: string;
   note?: string | null;
-  hits: Array<{ title: string; excerpt: string; citation?: Record<string, unknown> }>;
+  hits: Array<{
+    id?: string;
+    sourceKey?: string;
+    segmentId?: string;
+    type?: string;
+    title: string;
+    excerpt: string;
+    citation?: Record<string, unknown>;
+  }>;
   truncated: boolean;
 };
 
@@ -631,11 +639,15 @@ export function mapMechanicsResponse(value: unknown): CodexMechanicsResult {
     query: asString(raw.query),
     category: nullableString(raw.category),
     limit: asCount(raw.limit),
-    corpusStatus: asString(raw.corpusStatus, "mechanism_source_missing"),
+    corpusStatus: asString(raw.corpusStatus, "mechanism_source_empty"),
     note: nullableString(raw.note),
     hits: rawHits.map((value, index) => {
       const hit = asRecord(value);
       return {
+        id: optionalString(hit.id),
+        sourceKey: optionalString(hit.sourceKey),
+        segmentId: optionalString(hit.segmentId),
+        type: optionalString(hit.type),
         title: asString(hit.title, `机制条目 ${index + 1}`),
         excerpt: asString(hit.excerpt, asString(hit.body)),
         citation: asRecord(hit.citation),

@@ -391,23 +391,42 @@ async function ensureStructuredAnimeAcquisitionIntegrity(
     );
   const manifest = manifestInfo.value;
   const converted = asRecord(manifest.converted);
-  const coverage = asRecord(manifest.coverage);
+  const coverage = asRecord(manifest.accountedCoverage ?? manifest.coverage);
+  const accounting = asRecord(manifest.accounting);
   const stableIdCoverage = asRecord(manifest.stableIdCoverage);
   const missingOrIncomplete = (Object.keys(structuredRecordFiles) as StructuredKind[]).filter(
     (kind) =>
       typeof converted[kind] !== "number" || coverage[kind] !== 1 || stableIdCoverage[kind] !== 1,
   );
+  const invalidAccounting = [
+    ...(Object.keys(structuredRecordFiles) as StructuredKind[]).filter((kind) => {
+      const entry = asRecord(accounting[kind]);
+      const discovered = typeof entry.discovered === "number" ? entry.discovered : undefined;
+      const convertedCount = typeof entry.converted === "number" ? entry.converted : undefined;
+      const excluded = typeof entry.excluded === "number" ? entry.excluded : undefined;
+      const failures = typeof entry.failures === "number" ? entry.failures : undefined;
+      const accounted = typeof entry.accounted === "number" ? entry.accounted : undefined;
+      const counts = [discovered, convertedCount, excluded, failures, accounted];
+      return (
+        !counts.every((count): count is number => Number.isSafeInteger(count)) ||
+        accounted !== convertedCount! + excluded! + failures! ||
+        accounted !== discovered
+      );
+    }),
+    ...Object.keys(accounting).filter((kind) => !(kind in structuredRecordFiles)),
+  ];
   if (
     manifest.converterVersion !== "anime-game-data-structured-v1" ||
     typeof manifest.upstreamCommit !== "string" ||
     typeof manifest.gameVersion !== "string" ||
     typeof manifest.contentHash !== "string" ||
-    missingOrIncomplete.length
+    missingOrIncomplete.length ||
+    invalidAccounting.length
   )
     throw new DomainError(
       "acquisition_manifest_incomplete",
       "Structured AnimeGameData Manifest is incomplete",
-      { batchId: batch.id, missingOrIncomplete },
+      { batchId: batch.id, missingOrIncomplete, invalidAccounting },
     );
 
   const declaredRecordsRoot = safeRelative(manifest.outputRecordsPath);

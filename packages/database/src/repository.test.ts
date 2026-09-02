@@ -220,10 +220,10 @@ describe("Genshin structured repository", () => {
     ]);
 
     const query = new PgDialect().sqlToQuery(calls[0] as SQL);
-    expect(query.sql).toContain("from knowledge.text_bindings");
+    expect(query.sql).toContain("from knowledge.text_bindings tb");
     expect(query.sql).toContain("revision_id = $1::uuid");
     expect(query.sql).toContain("entity_stable_id = $2");
-    expect(query.sql).toContain("binding_type = $3");
+    expect(query.sql).toContain("tb.binding_type = $3");
     expect(query.params).toEqual([
       characterInput.revisionId,
       characterInput.stableId,
@@ -297,6 +297,23 @@ describe("PostgreSQL search port", () => {
     expect(shape).toContain("revision_id");
   });
 
+  it("pushes structured kind selection into generated SQL branches", async () => {
+    const { db, calls } = fakeSearchDb([[]]);
+    const repository = new SqlSearchRepositoryPort(db);
+
+    await repository.listStructuredAtRevision({
+      gameId: "game-id",
+      revisionId: "revision-id",
+      query: "霓裳花",
+      kinds: ["material"],
+    });
+
+    const shape = new PgDialect().sqlToQuery(calls[0] as SQL).sql;
+    expect(shape).toContain("knowledge.genshin_materials");
+    expect(shape).not.toContain("knowledge.genshin_characters");
+    expect(shape).not.toContain("knowledge.genshin_voice_lines");
+  });
+
   it("pushes dialogue filters into the revision-scoped SQL query", async () => {
     const { db, calls } = fakeSearchDb([
       [
@@ -363,5 +380,29 @@ describe("PostgreSQL search port", () => {
         matchType: "fts",
       },
     ]);
+  });
+
+  it("pushes document type and locale filters into document candidate SQL", async () => {
+    const { db, calls } = fakeSearchDb([[], []]);
+    const repository = new SqlSearchRepositoryPort(db);
+
+    await repository.listDocumentHits({
+      gameId: "game-id",
+      revisionId: "revision-id",
+      query: "霓裳",
+      documentTypes: ["item_description"],
+      locales: ["zh-CN"],
+      includeDocuments: true,
+      includeSegments: true,
+    });
+
+    const documentShape = new PgDialect().sqlToQuery(calls[0] as SQL).sql;
+    const segmentShape = new PgDialect().sqlToQuery(calls[1] as SQL).sql;
+    expect(documentShape).toContain("d.type in");
+    expect(documentShape).toContain("d.locale in");
+    expect(segmentShape).toContain("d.type in");
+    expect(segmentShape).toContain("d.locale in");
+    expect(documentShape).not.toContain("similarity(lower(d.body)");
+    expect(segmentShape).toContain("ds.search_text %");
   });
 });

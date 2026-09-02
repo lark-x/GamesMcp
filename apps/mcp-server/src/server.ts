@@ -7,6 +7,7 @@ import {
   type TextBindingType,
 } from "@gip/domain";
 import {
+  type DocumentSummary,
   documentIdSchema,
   documentTypeSchema,
   entityIdSchema,
@@ -28,7 +29,7 @@ const questTypeSchema = z.enum([
 ]);
 
 function textResult(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
 }
 
 function errorResult(code: string, message: string) {
@@ -46,6 +47,85 @@ function shapeSearchForBudget(
   budget = DEFAULT_MCP_RESPONSE_BUDGET,
 ) {
   return shapeForBudget(items, budget);
+}
+
+function materialCandidatesForItemDocument(
+  document: DocumentSummary & { provenance?: Record<string, unknown> },
+): string[] {
+  const sourceKey = document.sourceKey ?? "";
+  const sourceMatch = /^item\/(.+)$/u.exec(sourceKey);
+  const upstreamId = sourceMatch?.[1];
+  const provenance = "provenance" in document ? document.provenance : undefined;
+  const upstreamIds =
+    provenance?.upstreamIds && typeof provenance.upstreamIds === "object"
+      ? (provenance.upstreamIds as Record<string, unknown>)
+      : {};
+  const materialId =
+    typeof upstreamIds.materialId === "number" || typeof upstreamIds.materialId === "string"
+      ? String(upstreamIds.materialId)
+      : undefined;
+  return [
+    ...(materialId ? [`genshin:material:${materialId}`, `material/${materialId}`] : []),
+    ...(upstreamId ? [`genshin:material:${upstreamId}`, `material/${upstreamId}`] : []),
+    sourceKey,
+  ].filter((value, index, values): value is string =>
+    Boolean(value && value.trim() && values.indexOf(value) === index),
+  );
+}
+
+async function materialForItemDocument(
+  repository: KnowledgeRepository,
+  revisionId: string,
+  document: DocumentSummary & { provenance?: Record<string, unknown> },
+) {
+  for (const stableId of materialCandidatesForItemDocument(document)) {
+    try {
+      const material = await repository.genshin.getMaterial(revisionId, stableId);
+      if (material) return material;
+    } catch {
+      // Item text search should not fail when optional structured enrichment is absent.
+    }
+  }
+  return null;
+}
+
+async function shapeItemDocument(
+  repository: KnowledgeRepository,
+  revisionId: string,
+  document: DocumentSummary & { body?: string; provenance?: Record<string, unknown> },
+) {
+  const material = await materialForItemDocument(repository, revisionId, document);
+  return {
+    id: document.id,
+    stableId: document.id,
+    materialStableId: material?.stableId,
+    sourceKey: document.sourceKey,
+    name: document.title,
+    title: document.title,
+    category: material?.category ?? "other",
+    rarity: material?.rarity ?? null,
+    description: document.body ?? document.snippet,
+    excerpt: document.snippet ?? document.body,
+    sources: material?.sources ?? [],
+    usedBy: material?.usedBy ?? [],
+    gameVersion: document.gameVersion,
+    locale: document.locale,
+    revisionId,
+    provenance: document.provenance ?? {},
+  };
+}
+
+async function hydrateItemDocument(
+  repository: KnowledgeRepository,
+  gameId: string,
+  revisionId: string,
+  document: DocumentSummary,
+): Promise<DocumentSummary & { body?: string; provenance?: Record<string, unknown> }> {
+  try {
+    return (await repository.getDocument(gameId, document.id, revisionId)) ?? document;
+  } catch {
+    return document;
+  }
 }
 
 function errorResultFrom(error: unknown, fallbackCode: string, fallbackMessage: string) {
@@ -221,8 +301,8 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
           locale,
         };
         const hits = await repository.searchDialogue(game_id, request);
-        return textResult({
-          hits: hits.slice(0, limit).map((hit) => ({
+        const shaped = shapeSearchForBudget(
+          hits.slice(0, limit).map((hit) => ({
             quest: hit.quest,
             subquest: hit.subquest,
             speaker: hit.speaker,
@@ -230,7 +310,16 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
             dialogueNodeKey: hit.dialogueNodeKey,
             score: hit.score,
             citation: hit.citation,
+            title: hit.quest,
+            excerpt: hit.text,
           })),
+        );
+        return textResult({
+          hits: shaped.items,
+          returnedCount: shaped.items.length,
+          truncated: shaped.truncated,
+          nextCursor: null,
+          estimatedBytes: shaped.estimatedBytes,
         });
       } catch (error) {
         return errorResultFrom(error, "search_dialogue_failed", "Dialogue search failed");
@@ -277,7 +366,9 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
           revision: result.revision,
           indexStatus: result.indexStatus,
           entities: shapedEntities.items,
+          returnedCount: shapedEntities.items.length,
           truncated: shapedEntities.truncated,
+          nextCursor: null,
           estimatedBytes: shapedEntities.estimatedBytes,
         });
       } catch (error) {
@@ -346,7 +437,9 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
           revision: result.revision,
           indexStatus: result.indexStatus,
           hits: shapedLore.items,
+          returnedCount: shapedLore.items.length,
           truncated: shapedLore.truncated,
+          nextCursor: null,
           estimatedBytes: shapedLore.estimatedBytes,
         });
       } catch (error) {
@@ -373,15 +466,27 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
         const revisionId = await requirePublicRevision(repository, game_id);
         if (!repository.searchQuests)
           throw new DomainError("quest_tools_not_ready", "Quest search is not implemented");
+        const quests = await repository.searchQuests(game_id, {
+          query,
+          questTypes: quest_type ? [quest_type] : undefined,
+          locale,
+          gameVersion: game_version,
+          limit,
+          revisionId,
+        });
+        const shaped = shapeSearchForBudget(
+          quests.map((quest) => ({
+            ...quest,
+            title: quest.title,
+            excerpt: quest.match,
+          })),
+        );
         return textResult({
-          quests: await repository.searchQuests(game_id, {
-            query,
-            questTypes: quest_type ? [quest_type] : undefined,
-            locale,
-            gameVersion: game_version,
-            limit,
-            revisionId,
-          }),
+          quests: shaped.items,
+          returnedCount: shaped.items.length,
+          truncated: shaped.truncated,
+          nextCursor: null,
+          estimatedBytes: shaped.estimatedBytes,
         });
       } catch (error) {
         return errorResultFrom(error, "search_quests_failed", "Quest search failed");
@@ -515,14 +620,17 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
             confidence: binding.confidence,
             documentId: binding.documentId,
             segmentId: binding.segmentId ?? undefined,
-            title: binding.bindingType,
-            excerpt: binding.metadata ? JSON.stringify(binding.metadata) : undefined,
+            title: binding.documentTitle ?? binding.bindingType,
+            excerpt:
+              binding.excerpt ?? (binding.metadata ? JSON.stringify(binding.metadata) : undefined),
           })),
         );
         return textResult({
           entity_id,
           bindings: shaped.items,
+          returnedCount: shaped.items.length,
           truncated: shaped.truncated,
+          nextCursor: null,
           estimatedBytes: shaped.estimatedBytes,
         });
       } catch (error) {
@@ -543,30 +651,36 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id: gameIdInput, query, item_type, limit }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
-        const materials = await gameDomain.listMaterials(game_id, undefined, {
+        const revisionId = await requirePublicRevision(repository, game_id);
+        const result = await repository.search(game_id, {
           query,
-          limit,
+          types: ["document"],
+          documentTypes: ["item_description"],
+          limit: item_type ? Math.min(limit * 4, 100) : limit,
+          revisionId,
+          debug: false,
         });
-        const filtered = item_type
-          ? materials.filter(
-              (material) =>
-                (material as { category?: string }).category?.toLowerCase() ===
-                item_type.toLowerCase(),
-            )
-          : materials;
-        const shaped = shapeSearchForBudget(
-          filtered.map((material) => ({
-            id: material.stableId,
-            name: material.name,
-            title: material.name,
-            excerpt: material.description ?? undefined,
-            category: (material as { category?: string }).category,
-          })),
+        if (!result.revision)
+          return errorResult("index_not_ready", "No searchable Dataset Revision is ready");
+        const itemTexts = await Promise.all(
+          result.documents.map(async (document) =>
+            shapeItemDocument(
+              repository,
+              revisionId,
+              await hydrateItemDocument(repository, game_id, revisionId, document),
+            ),
+          ),
         );
+        const filtered = item_type
+          ? itemTexts.filter((item) => item.category.toLowerCase() === item_type.toLowerCase())
+          : itemTexts;
+        const shaped = shapeSearchForBudget(filtered);
         return textResult({
           query,
           items: shaped.items,
+          returnedCount: shaped.items.length,
           truncated: shaped.truncated,
+          nextCursor: null,
           estimatedBytes: shaped.estimatedBytes,
         });
       } catch (error) {
@@ -582,6 +696,15 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     async ({ game_id: gameIdInput, item_id }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
+        const revisionId = await requirePublicRevision(repository, game_id);
+        const document = documentIdSchema.safeParse(item_id).success
+          ? await repository.getDocument(game_id, item_id, revisionId)
+          : null;
+        if (document?.type === "item_description") {
+          return textResult({
+            item: await shapeItemDocument(repository, revisionId, document),
+          });
+        }
         const material = await gameDomain.getMaterial(game_id, item_id);
         return textResult({ item: material });
       } catch (error) {
@@ -592,23 +715,63 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
 
   server.tool(
     "search_mechanics",
-    "Search official in-game mechanism and tutorial explanations. Returns an explicit empty contract while the mechanism corpus is absent from the pinned upstream snapshot.",
+    "Search official in-game mechanism and tutorial explanations.",
     {
       game_id: optionalGameId,
       query: z.string().trim().min(1).max(200),
       category: z.string().trim().min(1).max(60).optional(),
       limit: z.number().int().min(1).max(20).default(5),
     },
-    async ({ query, category, limit }) => {
-      return textResult({
-        query,
-        category: category ?? null,
-        limit,
-        hits: [],
-        truncated: false,
-        corpusStatus: "mechanism_source_missing",
-        note: "The pinned upstream snapshot (26df1df) contains no tutorial/mechanism body tables; discovered=0 is recorded in story-coverage.json. No records are fabricated.",
-      });
+    async ({ game_id: gameIdInput, query, category, limit }) => {
+      try {
+        const game_id = await resolveGameId(gameIdInput);
+        await domain.requireCapability(game_id, "lore_search");
+        const revisionId = await requirePublicRevision(repository, game_id);
+        const result = await repository.search(game_id, {
+          query,
+          types: ["document", "segment"],
+          documentTypes: ["mechanism"],
+          limit,
+          revisionId,
+          debug: false,
+        });
+        if (!result.revision)
+          return errorResult("index_not_ready", "No searchable Dataset Revision is ready");
+        const hits = [
+          ...result.documents.map((doc) => ({
+            kind: "document" as const,
+            id: doc.id,
+            sourceKey: doc.sourceKey,
+            title: doc.title,
+            type: doc.type,
+            excerpt: doc.snippet,
+          })),
+          ...result.segments.map((seg) => ({
+            kind: "segment" as const,
+            id: seg.id,
+            sourceKey: seg.sourceKey,
+            segmentId: seg.segmentId,
+            title: seg.title,
+            type: seg.type,
+            excerpt: seg.snippet,
+          })),
+        ];
+        const shaped = shapeSearchForBudget(hits);
+        return textResult({
+          query,
+          category: category ?? null,
+          revision: result.revision,
+          indexStatus: result.indexStatus,
+          hits: shaped.items,
+          returnedCount: shaped.items.length,
+          truncated: shaped.truncated,
+          nextCursor: null,
+          estimatedBytes: shaped.estimatedBytes,
+          corpusStatus: hits.length ? "available" : "mechanism_source_empty",
+        });
+      } catch (error) {
+        return errorResultFrom(error, "search_mechanics_failed", "Mechanism search failed");
+      }
     },
   );
 

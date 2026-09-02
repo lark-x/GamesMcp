@@ -1,8 +1,7 @@
 import { strict as assert } from "node:assert";
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { and, eq, sql } from "../packages/database/node_modules/drizzle-orm";
@@ -62,6 +61,7 @@ const PINNED_UPSTREAM_COMMIT = "26df1dfbdf05a82bbb1d97506859f3e1c40718d8";
 const GAME_SLUG = "genshin-impact";
 const RUNS = readRunCount("STORY_PERFORMANCE_RUNS", 20);
 const WARMUP_RUNS = readPositiveInteger("STORY_PERFORMANCE_WARMUP_RUNS", 2);
+const CONCURRENCY_LEVELS = readConcurrencyLevels("STORY_PERFORMANCE_CONCURRENCY", [1, 4, 16]);
 
 const TARGETS = {
   entity: 100,
@@ -69,26 +69,6 @@ const TARGETS = {
   lore: 400,
   documentRead: 150,
 } as const;
-
-const STRUCTURED_OVERLAY_FILES = [
-  "TextMap/TextMap_MediumCHS.json",
-  "ExcelBinOutput/AvatarExcelConfigData.json",
-  "ExcelBinOutput/WeaponExcelConfigData.json",
-  "ExcelBinOutput/ReliquarySetExcelConfigData.json",
-  "ExcelBinOutput/ReliquaryAffixExcelConfigData.json",
-  "ExcelBinOutput/ReliquaryExcelConfigData.json",
-  "ExcelBinOutput/MaterialExcelConfigData.json",
-  "ExcelBinOutput/AchievementGoalExcelConfigData.json",
-  "ExcelBinOutput/AchievementExcelConfigData.json",
-  "ExcelBinOutput/MonsterExcelConfigData.json",
-  "ExcelBinOutput/AvatarVoiceExcelConfigData.json",
-] as const;
-
-const REQUIRED_STRUCTURED_FILES = new Set([
-  "TextMap/TextMap_MediumCHS.json",
-  "ExcelBinOutput/AchievementGoalExcelConfigData.json",
-  "ExcelBinOutput/AchievementExcelConfigData.json",
-]);
 
 type StoryCorpus = {
   upstreamCommit: string;
@@ -98,6 +78,7 @@ type StoryCorpus = {
   books: AnimeGameRecord[];
   characterStories: AnimeGameRecord[];
   items: AnimeGameRecord[];
+  mechanisms: AnimeGameRecord[];
   achievements: StructuredImportRecords["achievements"];
   stagedRecords: NormalizedRecord[];
   structuredRecords: StructuredImportRecords;
@@ -110,6 +91,7 @@ type StoryQueries = {
   quest: string;
   book: string;
   item: string;
+  mechanism: string;
   questKey: string;
   documentSourceKey: string;
   section?: string;
@@ -141,6 +123,15 @@ type QueryMetric = {
   warmP95Ms: number;
   coldP50Ms: number;
   coldP95Ms: number;
+  concurrency: Array<{
+    level: number;
+    runs: number;
+    p50Ms: number;
+    p95Ms: number;
+    p99Ms: number;
+    throughputPerSecond: number;
+    errorRate: number;
+  }>;
 };
 
 function readPositiveInteger(name: string, fallback: number): number {
@@ -154,6 +145,18 @@ function readRunCount(name: string, fallback: number): number {
   const value = readPositiveInteger(name, fallback);
   if (value < 20) throw new Error(`${name} must be at least 20 for warm and cold measurements`);
   return value;
+}
+
+function readConcurrencyLevels(name: string, fallback: number[]): number[] {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const values = raw
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value >= 1 && value <= 64);
+  if (!values.length)
+    throw new Error(`${name} must contain comma-separated integers between 1 and 64`);
+  return [...new Set(values)].sort((left, right) => left - right);
 }
 
 function cleanText(value: string): string {
@@ -184,56 +187,6 @@ async function gitOutput(upstreamDir: string, args: string[]): Promise<string> {
   return String(result.stdout).trim();
 }
 
-async function readGitBlob(upstreamDir: string, relativePath: string): Promise<string> {
-  const result = await execFile("git", ["-C", upstreamDir, "show", `HEAD:${relativePath}`], {
-    encoding: "utf8",
-    env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return String(result.stdout);
-}
-
-/**
- * The pinned checkout is intentionally sparse.  Use a temporary overlay so
- * the converters see the same paths as a full checkout, while missing blobs
- * are read from the pinned Git object database without fetching anything.
- */
-async function createStructuredOverlay(upstreamDir: string): Promise<string> {
-  const overlay = await mkdtemp(join(tmpdir(), "gip-story-performance-"));
-  try {
-    for (const relativePath of STRUCTURED_OVERLAY_FILES) {
-      const destination = join(overlay, relativePath);
-      await mkdir(dirname(destination), { recursive: true });
-      const source = resolve(upstreamDir, relativePath);
-      try {
-        await access(source);
-        await symlink(source, destination);
-        continue;
-      } catch {
-        // The sparse checkout omitted this path; use its pinned Git blob.
-      }
-      try {
-        await writeFile(destination, await readGitBlob(upstreamDir, relativePath), "utf8");
-      } catch (error) {
-        if (REQUIRED_STRUCTURED_FILES.has(relativePath)) {
-          throw new Error(
-            `Pinned upstream blob is missing for required structured file ${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        // The structured converter has a complete input contract.  These
-        // absent categories are outside this story benchmark, so an explicit
-        // empty input keeps the achievement conversion honest without
-        // inventing records.
-        await writeFile(destination, "[]\n", "utf8");
-      }
-    }
-    return overlay;
-  } catch (error) {
-    await rm(overlay, { recursive: true, force: true });
-    throw error;
-  }
-}
-
 async function loadRealCorpus(upstreamDir: string): Promise<StoryCorpus> {
   const upstreamCommit = await gitOutput(upstreamDir, ["rev-parse", "HEAD"]);
   if (upstreamCommit !== PINNED_UPSTREAM_COMMIT) {
@@ -255,23 +208,16 @@ async function loadRealCorpus(upstreamDir: string): Promise<StoryCorpus> {
   };
 
   const [structuredConversion, textConversion, questConversion] = await Promise.all([
-    (async () => {
-      const overlay = await createStructuredOverlay(upstreamDir);
-      try {
-        return await convertStructuredAnimeGameData({
-          upstreamDir: overlay,
-          context: {
-            gameId: "00000000-0000-0000-0000-000000000020",
-            revisionId: "00000000-0000-0000-0000-000000000020",
-            upstreamCommit,
-            upstreamVersion,
-            gameVersion,
-          },
-        });
-      } finally {
-        await rm(overlay, { recursive: true, force: true });
-      }
-    })(),
+    convertStructuredAnimeGameData({
+      upstreamDir,
+      context: {
+        gameId: "00000000-0000-0000-0000-000000000020",
+        revisionId: "00000000-0000-0000-0000-000000000020",
+        upstreamCommit,
+        upstreamVersion,
+        gameVersion,
+      },
+    }),
     convertAnimeGameData({
       upstreamDir,
       language: "CHS",
@@ -299,12 +245,19 @@ async function loadRealCorpus(upstreamDir: string): Promise<StoryCorpus> {
   const items = [...textConversion.records.items].sort((left, right) =>
     left.sourceKey.localeCompare(right.sourceKey),
   );
+  const mechanisms = [...textConversion.records.mechanisms].sort((left, right) =>
+    left.sourceKey.localeCompare(right.sourceKey),
+  );
   const achievements = [...structuredConversion.records.achievements].sort((left, right) =>
     left.stableId.localeCompare(right.stableId),
   );
-  const stagedRecords = [...questRecords, ...books, ...characterStories, ...items].sort(
-    (left, right) => left.sourceKey.localeCompare(right.sourceKey),
-  );
+  const stagedRecords = [
+    ...questRecords,
+    ...books,
+    ...characterStories,
+    ...items,
+    ...mechanisms,
+  ].sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
   const structuredRecords: StructuredImportRecords = { achievements };
 
   const minimumCounts = {
@@ -316,6 +269,7 @@ async function loadRealCorpus(upstreamDir: string): Promise<StoryCorpus> {
     book: books.length,
     character_story: characterStories.length,
     item: items.length,
+    mechanism: mechanisms.length,
     achievement: achievements.length,
   };
   for (const [category, count] of Object.entries(minimumCounts)) {
@@ -330,6 +284,7 @@ async function loadRealCorpus(upstreamDir: string): Promise<StoryCorpus> {
     books,
     characterStories,
     items,
+    mechanisms,
     achievements,
     stagedRecords,
     structuredRecords,
@@ -363,6 +318,8 @@ function selectQueries(corpus: StoryCorpus): StoryQueries {
   if (!book) throw new Error("Real corpus contains no book record");
   const item = corpus.items[0];
   if (!item) throw new Error("Real corpus contains no item record");
+  const mechanism = corpus.mechanisms[0];
+  if (!mechanism) throw new Error("Real corpus contains no mechanism record");
   const section = questRecord.segments?.find((segment) => segment.headingPath?.length)
     ?.headingPath[0];
   const dialogueBody = questRecord.quest.dialogueNodes.find((node) => nonEmpty(node.body))?.body;
@@ -375,6 +332,7 @@ function selectQueries(corpus: StoryCorpus): StoryQueries {
     quest: queryFromText(questRecord.title ?? questRecord.quest.questKey),
     book: queryFromText(book.title),
     item: queryFromText(item.title),
+    mechanism: queryFromText(mechanism.title),
     questKey: questRecord.quest.questKey,
     documentSourceKey: questRecord.sourceKey,
     ...(section ? { section } : {}),
@@ -447,16 +405,42 @@ async function measureOperation(
     warmP95Ms: roundMs(percentile(warmSamples, 0.95)),
     coldP50Ms: roundMs(percentile(coldSamples, 0.5)),
     coldP95Ms: roundMs(percentile(coldSamples, 0.95)),
+    concurrency: await measureConcurrency(operation, warmContext),
   };
 }
 
-function emptyMechanismSearch(query: string) {
-  return {
-    query,
-    hits: [],
-    truncated: false,
-    corpusStatus: "mechanism_source_missing" as const,
-  };
+async function measureConcurrency(
+  operation: BenchmarkOperation,
+  context: BenchmarkContext,
+): Promise<QueryMetric["concurrency"]> {
+  const iterations = Math.max(5, Math.ceil(RUNS / 4));
+  const results: QueryMetric["concurrency"] = [];
+  for (const level of CONCURRENCY_LEVELS) {
+    const samples: number[] = [];
+    let errors = 0;
+    const startedAt = performance.now();
+    for (let iteration = 0; iteration < iterations; iteration += 1) {
+      const settled = await Promise.allSettled(
+        Array.from({ length: level }, () => timed(() => operation.run(context))),
+      );
+      for (const item of settled) {
+        if (item.status === "fulfilled") samples.push(item.value);
+        else errors += 1;
+      }
+    }
+    const elapsedSeconds = Math.max((performance.now() - startedAt) / 1000, 0.001);
+    const total = samples.length + errors;
+    results.push({
+      level,
+      runs: total,
+      p50Ms: roundMs(percentile(samples, 0.5)),
+      p95Ms: roundMs(percentile(samples, 0.95)),
+      p99Ms: roundMs(percentile(samples, 0.99)),
+      throughputPerSecond: roundMs(samples.length / elapsedSeconds),
+      errorRate: roundMs(errors / Math.max(total, 1)),
+    });
+  }
+  return results;
 }
 
 function operationDefinitions(
@@ -530,9 +514,17 @@ function operationDefinitions(
         }),
     },
     {
-      name: "mechanism_search_empty",
+      name: "mechanism_search",
       target: TARGETS.lore,
-      run: async () => emptyMechanismSearch("元素反应"),
+      run: (context) =>
+        context.repository.search(gameId, {
+          query: queries.mechanism,
+          types: ["document", "segment"],
+          documentTypes: ["mechanism"],
+          limit: 10,
+          revisionId,
+          debug: false,
+        }),
     },
     {
       name: "get_quest_page",
@@ -760,7 +752,7 @@ async function materializedCorpusSizes(
     character_story: corpus.characterStories.length,
     item: corpus.items.length,
     achievement: achievementsCount,
-    mechanism: 0,
+    mechanism: corpus.mechanisms.length,
     documents: documentsCount,
     segments: segmentsCount,
     entities: entitiesCount,
@@ -797,14 +789,10 @@ async function verifyBenchmarkOperations(
   assert.ok(hasSearchHits(results.get("book_search")), "book search must hit a real document");
   assert.ok(hasSearchHits(results.get("item_search")), "item search must hit a real document");
 
-  const mechanism = results.get("mechanism_search_empty");
-  assert.ok(mechanism && typeof mechanism === "object");
-  assert.deepEqual(
-    (mechanism as { hits?: unknown }).hits,
-    [],
-    "mechanism benchmark must use the explicit empty contract",
+  assert.ok(
+    hasSearchHits(results.get("mechanism_search")),
+    "mechanism search must hit a real document",
   );
-  assert.equal((mechanism as { corpusStatus?: unknown }).corpusStatus, "mechanism_source_missing");
 
   const questPage = results.get("get_quest_page");
   assert.ok(questPage && typeof questPage === "object", "get quest must return a real page");
@@ -838,6 +826,7 @@ async function writeReport(
       warmRunsPerQuery: RUNS,
       coldRunsPerQuery: RUNS,
       warmupRuns: WARMUP_RUNS,
+      concurrencyLevels: CONCURRENCY_LEVELS,
       coldMode: "new_database_pool_per_sample",
       aggregation: "warm_and_cold_samples",
     },
@@ -899,13 +888,14 @@ async function main(): Promise<void> {
           output: OUTPUT_PATH,
           upstreamCommit: corpus.upstreamCommit,
           corpusSizes,
-          queries: metrics.map(({ name, runs, p50Ms, p95Ms, target, pass }) => ({
+          queries: metrics.map(({ name, runs, p50Ms, p95Ms, target, pass, concurrency }) => ({
             name,
             runs,
             p50Ms,
             p95Ms,
             target,
             pass,
+            concurrency,
           })),
         },
         null,

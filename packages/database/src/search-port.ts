@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
 import type {
+  DocumentSearchRequest,
   DialogueSearchFilters,
   EntityCandidateSearchRequest,
   ResolverCandidate,
   SearchMatchType,
   SearchRepositoryPort,
+  StructuredSearchRequest,
   StructuredSearchKind,
 } from "@gip/search";
 import type { DocumentType } from "@gip/contracts";
@@ -26,16 +28,114 @@ type DocumentDbHit = {
 
 type SegmentDbHit = DocumentDbHit & {
   documentId: string;
+  segmentId: string;
   segmentBody: string;
 };
 
 export class SqlSearchRepositoryPort implements SearchRepositoryPort {
   constructor(private readonly db: Database) {}
 
-  async listStructuredAtRevision(gameId: string, revisionId: string, query: string) {
+  async listStructuredAtRevision(
+    requestOrGameId: StructuredSearchRequest | string,
+    maybeRevisionId?: string,
+    maybeQuery?: string,
+  ) {
+    const request =
+      typeof requestOrGameId === "string"
+        ? {
+            gameId: requestOrGameId,
+            revisionId: maybeRevisionId ?? "",
+            query: maybeQuery ?? "",
+          }
+        : requestOrGameId;
+    const { gameId, revisionId, query } = request;
     const normalizedQuery = normalize(query);
     if (!normalizedQuery) return [];
     const prefix = `${escapeLike(normalizedQuery)}%`;
+    const allowedKinds = new Set<StructuredSearchKind>(
+      request.kinds?.length
+        ? request.kinds
+        : [
+            "character",
+            "weapon",
+            "artifact_set",
+            "artifact",
+            "material",
+            "achievement",
+            "enemy",
+            "voice",
+          ],
+    );
+    const branches: ReturnType<typeof sql>[] = [];
+    if (allowedKinds.has("character"))
+      branches.push(sql`
+        select 'character'::text as kind, r.stable_id, r.name,
+               coalesce(array_remove(array[r.title], null), array[]::text[]) as aliases,
+               coalesce(r.description, '') as body, r.normalized_name, r.search_vector,
+               t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_characters r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("weapon"))
+      branches.push(sql`
+        select 'weapon'::text as kind, r.stable_id, r.name,
+               coalesce(array_remove(array[r.passive_name], null), array[]::text[]) as aliases,
+               coalesce(r.description, '') || ' ' || coalesce(r.passive_description, '') as body,
+               r.normalized_name, r.search_vector, t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_weapons r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("artifact_set"))
+      branches.push(sql`
+        select 'artifact_set'::text as kind, r.stable_id, r.name, array[]::text[] as aliases,
+               coalesce(r.two_piece_bonus, '') || ' ' || coalesce(r.four_piece_bonus, '') as body,
+               r.normalized_name, r.search_vector, t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_artifact_sets r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("artifact"))
+      branches.push(sql`
+        select 'artifact'::text as kind, r.stable_id, r.name, array[]::text[] as aliases,
+               coalesce(r.description, '') as body, r.normalized_name, r.search_vector,
+               t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_artifacts r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("material"))
+      branches.push(sql`
+        select 'material'::text as kind, r.stable_id, r.name, array[]::text[] as aliases,
+               coalesce(r.description, '') as body, r.normalized_name, r.search_vector,
+               t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_materials r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("achievement"))
+      branches.push(sql`
+        select 'achievement'::text as kind, r.stable_id, r.name, array[]::text[] as aliases,
+               coalesce(r.requirement, '') as body, r.normalized_name, r.search_vector,
+               t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_achievements r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("enemy"))
+      branches.push(sql`
+        select 'enemy'::text as kind, r.stable_id, r.name,
+               coalesce(array_remove(array[r.family], null), array[]::text[]) as aliases,
+               coalesce(r.description, '') as body, r.normalized_name, r.search_vector,
+               t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_enemies r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (allowedKinds.has("voice"))
+      branches.push(sql`
+        select 'voice'::text as kind, r.stable_id, r.name, array[]::text[] as aliases,
+               r.body, r.normalized_name, r.search_vector,
+               t.normalized_query, t.prefix, t.plain_query, t.web_query
+        from knowledge.genshin_voice_lines r cross join search_terms t
+        where r.game_id = ${gameId}::uuid and r.revision_id = ${revisionId}::uuid
+      `);
+    if (!branches.length) return [];
+    const limit = Math.min(Math.max(request.limit ?? 320, 1), 500);
     const result = await this.db.execute(sql`
       with search_terms as (
         select
@@ -44,141 +144,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
           websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
       ), candidates as (
-        select
-          'character'::text as kind,
-          r.stable_id,
-          r.name,
-          coalesce(array_remove(array[r.title], null), array[]::text[]) as aliases,
-          coalesce(r.description, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_characters r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'weapon'::text as kind,
-          r.stable_id,
-          r.name,
-          coalesce(array_remove(array[r.passive_name], null), array[]::text[]) as aliases,
-          coalesce(r.description, '') || ' ' || coalesce(r.passive_description, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_weapons r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'artifact_set'::text as kind,
-          r.stable_id,
-          r.name,
-          array[]::text[] as aliases,
-          coalesce(r.two_piece_bonus, '') || ' ' || coalesce(r.four_piece_bonus, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_artifact_sets r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'artifact'::text as kind,
-          r.stable_id,
-          r.name,
-          array[]::text[] as aliases,
-          coalesce(r.description, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_artifacts r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'material'::text as kind,
-          r.stable_id,
-          r.name,
-          array[]::text[] as aliases,
-          coalesce(r.description, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_materials r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'achievement'::text as kind,
-          r.stable_id,
-          r.name,
-          array[]::text[] as aliases,
-          coalesce(r.requirement, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_achievements r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'enemy'::text as kind,
-          r.stable_id,
-          r.name,
-          coalesce(array_remove(array[r.family], null), array[]::text[]) as aliases,
-          coalesce(r.description, '') as body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_enemies r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
-        union all
-        select
-          'voice'::text as kind,
-          r.stable_id,
-          r.name,
-          array[]::text[] as aliases,
-          r.body,
-          r.normalized_name,
-          r.search_vector,
-          t.normalized_query,
-          t.prefix,
-          t.plain_query,
-          t.web_query
-        from knowledge.genshin_voice_lines r
-        cross join search_terms t
-        where r.game_id = ${gameId}::uuid
-          and r.revision_id = ${revisionId}::uuid
+        ${sql.join(branches, sql` union all `)}
       ), ranked as (
         select
           c.*,
@@ -241,7 +207,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         rank desc,
         name asc,
         stable_id asc
-      limit 320
+        limit ${limit}
     `);
     return rowsFromExecuteResult(result).map((row) => ({
       kind: readString(row, "kind") as StructuredSearchKind,
@@ -402,14 +368,26 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         from knowledge.quest_dialogue_nodes q
         inner join knowledge.documents d on d.id = q.document_id
         cross join search_terms t
-        where q.revision_id = ${revisionId}::uuid
-          and d.revision_id = ${revisionId}::uuid
-          and d.game_id = ${gameId}::uuid
-          and d.deleted = false
-          ${speakerFilter}
-          ${questFilter}
-          ${nodeTypeFilter}
-          ${localeFilter}
+          where q.revision_id = ${revisionId}::uuid
+            and d.revision_id = ${revisionId}::uuid
+            and d.game_id = ${gameId}::uuid
+            and d.deleted = false
+            ${speakerFilter}
+            ${questFilter}
+            ${nodeTypeFilter}
+            ${localeFilter}
+            and (
+              lower(coalesce(q.speaker_name, '')) = t.normalized_query
+              or lower(d.title) = t.normalized_query
+              or lower(coalesce(q.speaker_name, '')) like t.prefix escape '\\'
+              or d.normalized_title like t.prefix escape '\\'
+              or q.search_vector @@ t.plain_query
+              or q.search_vector @@ t.web_query
+              or d.search_vector @@ t.plain_query
+              or d.search_vector @@ t.web_query
+              or q.body % t.normalized_query
+              or d.normalized_title % t.normalized_query
+            )
       ), ranked as (
         select
           c.*,
@@ -417,8 +395,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             when lower(c.body) = c.normalized_query
               or lower(coalesce(c.speaker, '')) = c.normalized_query
               or lower(c.document_title) = c.normalized_query then 1.0
-            when lower(c.body) like c.prefix escape '\\'
-              or lower(coalesce(c.speaker, '')) like c.prefix escape '\\'
+            when lower(coalesce(c.speaker, '')) like c.prefix escape '\\'
               or lower(c.document_title) like c.prefix escape '\\' then 0.8
             when c.dialogue_search_vector @@ c.plain_query
               or c.document_search_vector @@ c.plain_query
@@ -430,7 +407,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 ts_rank(c.document_search_vector, c.web_query)
               )
             else greatest(
-              similarity(lower(c.body), c.normalized_query),
+              similarity(c.body, c.normalized_query),
               similarity(lower(coalesce(c.speaker, '')), c.normalized_query),
               similarity(lower(c.document_title), c.normalized_query)
             )
@@ -439,8 +416,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             when lower(c.body) = c.normalized_query
               or lower(coalesce(c.speaker, '')) = c.normalized_query
               or lower(c.document_title) = c.normalized_query then 'exact'
-            when lower(c.body) like c.prefix escape '\\'
-              or lower(coalesce(c.speaker, '')) like c.prefix escape '\\'
+            when lower(coalesce(c.speaker, '')) like c.prefix escape '\\'
               or lower(c.document_title) like c.prefix escape '\\' then 'prefix'
             when c.dialogue_search_vector @@ c.plain_query
               or c.document_search_vector @@ c.plain_query
@@ -500,85 +476,198 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
     }));
   }
 
-  async listDocumentHits(gameId: string, revisionId: string, query: string) {
+  async listDocumentHits(
+    requestOrGameId: DocumentSearchRequest | string,
+    maybeRevisionId?: string,
+    maybeQuery?: string,
+  ) {
+    const request =
+      typeof requestOrGameId === "string"
+        ? {
+            gameId: requestOrGameId,
+            revisionId: maybeRevisionId ?? "",
+            query: maybeQuery ?? "",
+          }
+        : requestOrGameId;
+    const { gameId, revisionId, query } = request;
     const normalizedQuery = normalize(query);
     if (!normalizedQuery) return [];
     const prefix = `${escapeLike(normalizedQuery)}%`;
-    const [documentResult, segmentResult] = await Promise.all([
-      this.db.execute(sql`
+    const includeDocuments = request.includeDocuments !== false;
+    const includeSegments = request.includeSegments !== false;
+    const candidateLimit = Math.min(Math.max(request.candidateLimit ?? 120, 1), 500);
+    const resultLimit = Math.min(Math.max(request.resultLimit ?? 120, 1), 500);
+    const documentTypeFilter = request.documentTypes?.length
+      ? sql`and d.type in (${sql.join(
+          request.documentTypes.map((value) => sql`${value}`),
+          sql`, `,
+        )})`
+      : sql``;
+    const localeFilter = request.locales?.length
+      ? sql`and d.locale in (${sql.join(
+          request.locales.map((value) => sql`${value}`),
+          sql`, `,
+        )})`
+      : sql``;
+    if (includeDocuments && !includeSegments && request.documentTypes?.length) {
+      const titleResult = await this.db.execute(sql`
         with search_terms as (
           select
             ${normalizedQuery}::text as normalized_query,
-            ${prefix}::text as prefix,
-            plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
-            websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
-        ), ranked as (
-          select
-            d.id,
-            d.source_key,
-            d.title,
-            d.type,
-            d.locale,
-            d.body,
-            case
-              when d.normalized_title = t.normalized_query then 1.0
-              when d.normalized_title like t.prefix escape '\\' then 0.8
-              when d.search_vector @@ t.plain_query
-                or d.search_vector @@ t.web_query then greatest(
-                  ts_rank(d.search_vector, t.plain_query),
-                  ts_rank(d.search_vector, t.web_query)
-                )
-              else greatest(
-                similarity(d.normalized_title, t.normalized_query),
-                similarity(lower(d.body), t.normalized_query)
-              )
-            end::double precision as rank,
-            case
-              when d.normalized_title = t.normalized_query then 'exact'
-              when d.normalized_title like t.prefix escape '\\' then 'prefix'
-              when d.search_vector @@ t.plain_query
-                or d.search_vector @@ t.web_query then 'fts'
-              else 'trgm'
-            end as match_type
+            ${prefix}::text as prefix
+        ), candidates as (
+          select d.id, d.source_key, d.title, d.type, d.locale,
+                 case
+                   when d.normalized_title = t.normalized_query then 1.0
+                   when d.normalized_title like t.prefix escape '\\' then 0.9
+                   when position(t.normalized_query in d.normalized_title) > 0 then 0.85
+                   else 0.75
+                 end::double precision as rank,
+                 case
+                   when d.normalized_title = t.normalized_query then 'exact'
+                   when d.normalized_title like t.prefix escape '\\' then 'prefix'
+                   when position(t.normalized_query in d.normalized_title) > 0
+                     or d.source_key ilike ${`%${query.trim()}%`} then 'prefix'
+                   else 'prefix'
+                 end as match_type
           from knowledge.documents d
           cross join search_terms t
           where d.game_id = ${gameId}::uuid
             and d.revision_id = ${revisionId}::uuid
             and d.deleted = false
+            ${documentTypeFilter}
+            ${localeFilter}
+            and (
+              d.normalized_title = t.normalized_query
+              or d.normalized_title like t.prefix escape '\\'
+              or position(t.normalized_query in d.normalized_title) > 0
+              or d.source_key ilike ${`%${query.trim()}%`}
+            )
+          order by
+            case
+              when d.normalized_title = t.normalized_query then 0
+              when d.normalized_title like t.prefix escape '\\' then 1
+              when position(t.normalized_query in d.normalized_title) > 0
+                or d.source_key ilike ${`%${query.trim()}%`} then 2
+              else 2
+            end,
+            rank desc,
+            d.title asc,
+            d.id asc
+          limit ${resultLimit}
         )
-        select id, source_key, title, type, locale, body, rank, match_type as "matchType"
-        from ranked
-        where match_type in ('exact', 'prefix', 'fts')
-           or rank >= 0.15
+        select
+          c.id, c.source_key, c.title, c.type, c.locale,
+          c.title as body,
+          c.rank,
+          c.match_type as "matchType"
+        from candidates c
         order by
-          case match_type
+          case c.match_type
             when 'exact' then 0
             when 'prefix' then 1
-            when 'fts' then 2
-            else 3
+            else 2
           end,
-          rank desc,
-          title asc,
-          id asc
-        limit 120
-      `),
-      this.db.execute(sql`
+          c.rank desc,
+          c.title asc,
+          c.id asc
+      `);
+      const titleRows = rowsFromExecuteResult(titleResult).map(toDocumentDbHit);
+      if (titleRows.length)
+        return titleRows.map((row) => ({
+          key: row.id,
+          document: documentSummary(row),
+          body: row.body.slice(0, 1200),
+          title: row.title,
+          segmentId: null,
+          rank: row.rank,
+          matchType: row.matchType,
+        }));
+    }
+    const documentQuery = includeDocuments
+      ? this.db.execute(sql`
         with search_terms as (
           select
             ${normalizedQuery}::text as normalized_query,
             ${prefix}::text as prefix,
             plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
             websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
-        ), ranked as (
+        ), candidates as (
+          select d.id, d.source_key, d.title, d.type, d.locale,
+                 case when d.normalized_title = t.normalized_query then 1.0
+                      when d.normalized_title like t.prefix escape '\\' then 0.8
+                      when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query
+                        then greatest(ts_rank(d.search_vector, t.plain_query), ts_rank(d.search_vector, t.web_query))
+                      else similarity(d.normalized_title, t.normalized_query)
+                 end::double precision as rank,
+                 case when d.normalized_title = t.normalized_query then 'exact'
+                      when d.normalized_title like t.prefix escape '\\' then 'prefix'
+                      when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query then 'fts'
+                      else 'trgm'
+                 end as match_type
+          from knowledge.documents d
+          cross join search_terms t
+          where d.game_id = ${gameId}::uuid
+            and d.revision_id = ${revisionId}::uuid
+            and d.deleted = false
+            ${documentTypeFilter}
+            ${localeFilter}
+            and (
+              d.normalized_title = t.normalized_query
+              or d.normalized_title like t.prefix escape '\\'
+              or d.search_vector @@ t.plain_query
+              or d.search_vector @@ t.web_query
+              or d.normalized_title % t.normalized_query
+            )
+          order by
+            case
+              when d.normalized_title = t.normalized_query then 0
+              when d.normalized_title like t.prefix escape '\\' then 1
+              when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query then 2
+              else 3
+            end,
+            rank desc,
+            d.title asc,
+            d.id asc
+          limit ${candidateLimit}
+        )
+          select
+            c.id, c.source_key, c.title, c.type, c.locale,
+            left(d.body, 1200) as body,
+            c.rank,
+            c.match_type as "matchType"
+        from candidates c
+        inner join knowledge.documents d on d.id = c.id
+        order by
+          case c.match_type
+            when 'exact' then 0
+            when 'prefix' then 1
+            when 'fts' then 2
+            else 3
+          end,
+          c.rank desc,
+          c.title asc,
+          c.id asc
+        limit ${resultLimit}
+      `)
+      : Promise.resolve([]);
+    const segmentQuery = includeSegments
+      ? this.db.execute(sql`
+        with search_terms as (
+          select
+            ${normalizedQuery}::text as normalized_query,
+            ${prefix}::text as prefix,
+            plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
+            websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
+        ), candidates as (
           select
             ds.document_id,
-            ds.body as segment_body,
             d.id,
             d.source_key,
             d.title,
             d.type,
             d.locale,
-            d.body as document_body,
+            ds.id as segment_id,
             case
               when lower(ds.body) = t.normalized_query
                 or d.normalized_title = t.normalized_query then 1.0
@@ -588,9 +677,9 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 or ds.search_vector @@ t.web_query then greatest(
                   ts_rank(ds.search_vector, t.plain_query),
                   ts_rank(ds.search_vector, t.web_query)
-                )
+              )
               else greatest(
-                similarity(lower(ds.body), t.normalized_query),
+                similarity(ds.search_text, t.normalized_query),
                 similarity(d.normalized_title, t.normalized_query)
               )
             end::double precision as rank,
@@ -610,33 +699,57 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             and d.revision_id = ${revisionId}::uuid
             and d.game_id = ${gameId}::uuid
             and d.deleted = false
+            ${documentTypeFilter}
+            ${localeFilter}
+            and (
+              lower(ds.body) = t.normalized_query
+              or d.normalized_title = t.normalized_query
+              or lower(ds.body) like t.prefix escape '\\'
+              or d.normalized_title like t.prefix escape '\\'
+              or ds.search_vector @@ t.plain_query
+              or ds.search_vector @@ t.web_query
+              or ds.search_text % t.normalized_query
+              or d.normalized_title % t.normalized_query
+            )
+          order by
+            case
+              when lower(ds.body) = t.normalized_query or d.normalized_title = t.normalized_query then 0
+              when lower(ds.body) like t.prefix escape '\\' or d.normalized_title like t.prefix escape '\\' then 1
+              when ds.search_vector @@ t.plain_query or ds.search_vector @@ t.web_query then 2
+              else 3
+            end,
+            rank desc,
+            ds.document_id asc,
+            ds.id asc
+          limit ${candidateLimit}
         )
         select
-          document_id,
-          segment_body,
-          id,
-          source_key,
-          title,
-          type,
-          locale,
-          document_body,
-          rank,
-          match_type as "matchType"
-        from ranked
-        where match_type in ('exact', 'prefix', 'fts')
-           or rank >= 0.15
+          c.document_id,
+          c.segment_id,
+          left(ds.body, 1200) as segment_body,
+          c.id,
+          c.source_key,
+          c.title,
+          c.type,
+          c.locale,
+          ''::text as document_body,
+          c.rank,
+          c.match_type as "matchType"
+        from candidates c
+        inner join knowledge.document_segments ds on ds.id = c.segment_id
         order by
-          case match_type
+          case c.match_type
             when 'exact' then 0
             when 'prefix' then 1
             when 'fts' then 2
             else 3
           end,
-          rank desc,
-          document_id asc
-        limit 120
-      `),
-    ]);
+          c.rank desc,
+          c.document_id asc
+        limit ${resultLimit}
+      `)
+      : Promise.resolve([]);
+    const [documentResult, segmentResult] = await Promise.all([documentQuery, segmentQuery]);
 
     const documentRows = rowsFromExecuteResult(documentResult).map(toDocumentDbHit);
     const segmentRows = rowsFromExecuteResult(segmentResult).map(toSegmentDbHit);
@@ -656,6 +769,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         document: documentSummary(row),
         body: segment?.segmentBody ?? row.body.slice(0, 1200),
         title: row.title,
+        segmentId: segment && isBetterRankedHit(segment, row) ? segment.segmentId : null,
         rank: best.rank,
         matchType: best.matchType,
       };
@@ -667,6 +781,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         document: documentSummary(row),
         body: row.segmentBody,
         title: row.title,
+        segmentId: row.segmentId,
         rank: row.rank,
         matchType: row.matchType,
       }));
@@ -743,6 +858,7 @@ function toSegmentDbHit(row: DbRow): SegmentDbHit {
   return {
     ...toDocumentDbHit(row),
     documentId: readString(row, "document_id", "documentId"),
+    segmentId: readString(row, "segment_id", "segmentId"),
     segmentBody: readString(row, "segment_body", "segmentBody"),
   };
 }

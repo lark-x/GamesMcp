@@ -109,6 +109,40 @@ function questRecord(locale: "zh-CN" | "en"): NormalizedRecord {
       metadata: { fixture: true },
     },
     parserVersion: "candidate-flow-test",
+    entities: [
+      {
+        sourceKey: "npc/1001",
+        name: locale === "zh-CN" ? "派蒙" : "Paimon",
+        type: "npc" as const,
+        summary: locale === "zh-CN" ? "任务说话人" : "Quest speaker",
+        properties: { fixture: true },
+      },
+    ],
+  };
+  return {
+    ...value,
+    contentHash: createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+  };
+}
+
+function documentRecordWithEntity(
+  sourceKey: string,
+  documentType: "character_story" | "item_description",
+  title: string,
+  body: string,
+  entity: NormalizedRecord["entities"][number],
+): NormalizedRecord {
+  const value: Omit<NormalizedRecord, "contentHash"> = {
+    sourceKey,
+    recordType: "document",
+    title,
+    body,
+    documentType,
+    gameVersion: "test-1",
+    locale: "zh-CN",
+    metadata: { version: "test-1", locale: "zh-CN" },
+    parserVersion: "candidate-flow-test",
+    entities: [entity],
   };
   return {
     ...value,
@@ -367,6 +401,32 @@ async function main() {
     assert.equal(structuredCharacter?.name, "结构化测试角色");
 
     const lisa = entityRecord("characters/lisa", "丽莎");
+    const lisaStory = documentRecordWithEntity(
+      "character/1002/story/1",
+      "character_story",
+      "丽莎 · 故事一",
+      "丽莎是西风骑士团图书管理员。",
+      {
+        sourceKey: "characters/lisa",
+        name: "丽莎",
+        type: "character",
+        summary: "西风骑士团图书管理员",
+        properties: { fixture: true },
+      },
+    );
+    const itemText = documentRecordWithEntity(
+      "item-codex/2001",
+      "item_description",
+      "霓裳花",
+      "霓裳花是璃月特产。",
+      {
+        sourceKey: "item/nichang",
+        name: "霓裳花",
+        type: "item",
+        summary: "璃月特产",
+        properties: { fixture: true },
+      },
+    );
     const snapshot2 = await repository.createSnapshot({
       sourceId: source.id,
       contentHash: createHash("sha256").update("snapshot-2").digest("hex"),
@@ -375,7 +435,7 @@ async function main() {
     });
     const questZh = questRecord("zh-CN");
     const questEn = questRecord("en");
-    const batch2Records = [lisa, questZh, questEn];
+    const batch2Records = [lisa, lisaStory, itemText, questZh, questEn];
     const batch2 = await repository.createImport({
       gameId,
       sourceId: source.id,
@@ -410,11 +470,23 @@ async function main() {
         `select
           (select count(*)::int from knowledge.quest_subquests where revision_id = $1) as subquests,
           (select count(*)::int from knowledge.quest_dialogue_nodes where revision_id = $1) as nodes,
-          (select count(*)::int from knowledge.quest_dialogue_edges where revision_id = $1) as edges`,
+          (select count(*)::int from knowledge.quest_dialogue_edges where revision_id = $1) as edges,
+          (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'speaker') as "speakerBindings",
+          (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'mention') as "mentionBindings",
+          (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'character_story') as "characterStoryBindings",
+          (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'item_description') as "itemDescriptionBindings"`,
         [revision2.id],
       )
     ).rows;
-    assert.deepEqual(questMaterialized, { subquests: 2, nodes: 2, edges: 2 });
+    assert.deepEqual(questMaterialized, {
+      subquests: 2,
+      nodes: 2,
+      edges: 2,
+      speakerBindings: 2,
+      mentionBindings: 4,
+      characterStoryBindings: 1,
+      itemDescriptionBindings: 1,
+    });
 
     // Sprint 15 Phase 15.3: a failed materialization must leave the previous
     // current revision unchanged and the new revision in a non-published state.

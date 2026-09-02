@@ -6,6 +6,10 @@ describe("AnimeGameData import failure mapping", () => {
     expect(failureSourceKey("book", "7999")).toBe("book/7999");
     expect(failureSourceKey("character_story", "10001:103")).toBe("character/10001/story/103");
     expect(failureSourceKey("item_description", "30002")).toBe("item-codex/30002");
+    expect(failureSourceKey("mechanism", "Tutorial/1001")).toBe("mechanism/Tutorial/1001");
+    expect(failureSourceKey("mechanism", "mechanism/Tutorial/1001")).toBe(
+      "mechanism/Tutorial/1001",
+    );
     expect(failureSourceKey("quest", "1001")).toBe("quest/1001");
     expect(failureSourceKey("quest", "quest/1001")).toBe("quest/1001");
     expect(failureSourceKey("character_story", "10001")).toBeUndefined();

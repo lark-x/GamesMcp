@@ -24,6 +24,7 @@ const categoryFiles = {
   books: "books.json",
   characterStories: "character-stories.json",
   items: "items.json",
+  mechanisms: "mechanisms.json",
 } as const;
 
 function sha256(value: Uint8Array): string {
@@ -190,7 +191,9 @@ async function main(): Promise<void> {
           ? "books"
           : category === "characterStories"
             ? "characterStories"
-            : "items"
+            : category === "mechanisms"
+              ? "mechanisms"
+              : "items"
       ];
     if (stableJson(stored) !== stableJson(generated))
       throw new Error(`Records differ from a fresh conversion: ${filename}`);

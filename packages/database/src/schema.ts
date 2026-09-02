@@ -624,6 +624,10 @@ export const entityAliases = knowledge.table(
   (table) => [
     index("entity_aliases_trgm_index").using("gin", table.normalizedValue.op("gin_trgm_ops")),
     index("entity_aliases_revision_normalized_index").on(table.revisionId, table.normalizedValue),
+    index("entity_aliases_revision_normalized_pattern_index").on(
+      table.revisionId,
+      table.normalizedValue,
+    ),
     index("entity_aliases_entity_revision_index").on(table.entityId, table.revisionId),
   ],
 );
@@ -663,6 +667,13 @@ export const documents = knowledge.table(
     ),
     index("documents_game_title_index").on(table.gameId, table.normalizedTitle),
     index("documents_revision_type_locale_index").on(table.revisionId, table.type, table.locale),
+    index("documents_revision_type_locale_title_index").on(
+      table.revisionId,
+      table.type,
+      table.locale,
+      table.normalizedTitle,
+    ),
+    index("documents_revision_source_index").on(table.revisionId, table.sourceKey),
     index("documents_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
     index("documents_public_catalog_index").on(
       table.revisionId,
@@ -686,6 +697,7 @@ export const documentSegments = knowledge.table(
     segmentKey: text("segment_key"),
     ordinal: integer("ordinal").notNull(),
     headingPath: jsonb("heading_path").$type<string[]>().notNull().default([]),
+    headingKey: text("heading_key"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     body: text("body").notNull(),
     startOffset: integer("start_offset").notNull(),
@@ -702,6 +714,11 @@ export const documentSegments = knowledge.table(
     uniqueIndex("document_segments_document_key_unique")
       .on(table.documentId, table.segmentKey)
       .where(sql`${table.segmentKey} IS NOT NULL`),
+    index("document_segments_revision_document_heading_index").on(
+      table.revisionId,
+      table.documentId,
+      table.headingKey,
+    ),
     index("document_segments_search_index").on(table.searchText),
     index("document_segments_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
   ],
@@ -731,6 +748,11 @@ export const textBindings = knowledge.table(
   },
   (table) => [
     index("text_bindings_revision_stable_index").on(table.revisionId, table.entityStableId),
+    index("text_bindings_revision_stable_type_index").on(
+      table.revisionId,
+      table.entityStableId,
+      table.bindingType,
+    ),
     index("text_bindings_revision_document_index").on(table.revisionId, table.documentId),
     check(
       "text_bindings_binding_type_valid",
@@ -777,6 +799,11 @@ export const questSubquests = knowledge.table(
       table.subquestKey,
     ),
     index("quest_subquests_document_index").on(table.documentId, table.ordinal),
+    index("quest_subquests_revision_quest_ordinal_index").on(
+      table.revisionId,
+      table.questKey,
+      table.ordinal,
+    ),
   ],
 );
 
@@ -810,6 +837,21 @@ export const questDialogueNodes = knowledge.table(
       table.nodeKey,
     ),
     index("quest_dialogue_nodes_document_index").on(table.documentId, table.ordinal),
+    index("quest_dialogue_nodes_revision_document_ordinal_index").on(
+      table.revisionId,
+      table.documentId,
+      table.ordinal,
+    ),
+    index("quest_dialogue_nodes_revision_quest_ordinal_index").on(
+      table.revisionId,
+      table.questKey,
+      table.ordinal,
+    ),
+    index("quest_dialogue_nodes_revision_quest_node_index").on(
+      table.revisionId,
+      table.questKey,
+      table.nodeKey,
+    ),
     index("quest_dialogue_nodes_speaker_index").on(table.revisionId, table.speakerKey),
     index("quest_dialogue_nodes_document_subquest_ordinal_index").on(
       table.documentId,
@@ -847,6 +889,16 @@ export const questDialogueEdges = knowledge.table(
       table.optionText,
     ),
     index("quest_dialogue_edges_document_index").on(table.documentId),
+    index("quest_dialogue_edges_revision_document_from_index").on(
+      table.revisionId,
+      table.documentId,
+      table.fromNodeKey,
+    ),
+    index("quest_dialogue_edges_revision_quest_from_index").on(
+      table.revisionId,
+      table.questKey,
+      table.fromNodeKey,
+    ),
   ],
 );
 

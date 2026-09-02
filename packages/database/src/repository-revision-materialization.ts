@@ -29,6 +29,7 @@ import {
   relationships,
   releaseCandidates,
   sourceSnapshots,
+  textBindings,
 } from "./schema.js";
 import {
   asRecord,
@@ -39,6 +40,19 @@ import {
   stableUuid,
 } from "./repository-utils.js";
 import { materializeStructuredRecords } from "./repository-import-publication.js";
+
+type TextBindingInsert = typeof textBindings.$inferInsert;
+
+function directBindingTypeForDocument(
+  documentType: string | undefined,
+): TextBindingInsert["bindingType"] | undefined {
+  if (documentType === "character_story") return "character_story";
+  if (documentType === "item_description") return "item_description";
+  if (documentType === "book") return "book_reference";
+  if (documentType === "mechanism") return "mechanism_reference";
+  if (documentType === "tutorial") return "tutorial_reference";
+  return undefined;
+}
 
 /**
  * Build the revision-scoped read model from the immutable Candidate Build.
@@ -133,6 +147,7 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
     // this preparing revision. Claim deletion cascades to claim_entities and
     // evidence; document deletion cascades to segments and mentions.
     await tx.delete(embeddings).where(eq(embeddings.revisionId, revisionId));
+    await tx.delete(textBindings).where(eq(textBindings.revisionId, revisionId));
     await tx
       .delete(entityRevisionMaterializations)
       .where(eq(entityRevisionMaterializations.revisionId, revisionId));
@@ -228,6 +243,25 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       string,
       { id: string; segments: Array<{ id: string; body: string }> }
     >();
+    const textBindingRows: TextBindingInsert[] = [];
+    const addTextBinding = (input: Omit<TextBindingInsert, "id" | "gameId" | "revisionId">) => {
+      textBindingRows.push({
+        id: stableUuid(
+          [
+            revision.gameId,
+            revisionId,
+            input.entityStableId,
+            input.documentId,
+            input.segmentId ?? "",
+            input.bindingType,
+            input.bindingSource,
+          ].join(":"),
+        ),
+        gameId: revision.gameId,
+        revisionId,
+        ...input,
+      });
+    };
     for (const record of records) {
       if (record.recordType === "entity" || record.entityType) continue;
       if (!record.title && !record.body) continue;
@@ -258,6 +292,21 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
         revisionId,
         deleted: false,
       });
+      const directBindingType = directBindingTypeForDocument(record.documentType);
+      if (directBindingType) {
+        for (const candidateValue of recordMentionCandidates) {
+          addTextBinding({
+            entityType: candidateValue.type,
+            entityStableId: candidateValue.sourceKey,
+            documentId,
+            segmentId: null,
+            bindingType: directBindingType,
+            bindingSource: "direct_upstream",
+            confidence: 1,
+            metadata: { sourceKey: record.sourceKey, documentType: record.documentType },
+          });
+        }
+      }
       const segmentRefs: Array<{ id: string; body: string }> = [];
       const segmentIdByKey = new Map<string, string>();
       for (const [ordinal, segment] of recordSegments(record, body).entries()) {
@@ -270,6 +319,7 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
           segmentKey: segment.segmentKey,
           ordinal,
           headingPath: segment.headingPath,
+          headingKey: headingKey(segment.headingPath),
           metadata: segment.metadata,
           body: segment.body,
           startOffset: segment.start,
@@ -296,6 +346,21 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
             endOffset: matched.offset + matched.name.length,
             matchMethod: matched.name === candidateValue.name ? "canonical_name" : "alias",
             confidence: 1,
+          });
+          addTextBinding({
+            entityType: candidateValue.type,
+            entityStableId: candidateValue.sourceKey,
+            documentId,
+            segmentId,
+            bindingType: "mention",
+            bindingSource: matched.name === candidateValue.name ? "canonical_exact" : "alias_exact",
+            confidence: matched.name === candidateValue.name ? 1 : 0.9,
+            metadata: {
+              rawText: matched.name,
+              startOffset: matched.offset,
+              endOffset: matched.offset + matched.name.length,
+              sourceKey: record.sourceKey,
+            },
           });
         }
       }
@@ -334,6 +399,24 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
               metadata: node.metadata ?? {},
             })),
           );
+        for (const node of record.quest.dialogueNodes) {
+          if (!node.speakerKey || !entityIdBySourceKey.has(node.speakerKey)) continue;
+          addTextBinding({
+            entityType: "npc",
+            entityStableId: node.speakerKey,
+            documentId,
+            segmentId: node.segmentKey ? (segmentIdByKey.get(node.segmentKey) ?? null) : null,
+            bindingType: "speaker",
+            bindingSource: "speaker_resolution",
+            confidence: node.speakerName ? 1 : 0.5,
+            metadata: {
+              questKey: record.quest.questKey,
+              dialogueNodeKey: node.nodeKey,
+              speakerName: node.speakerName,
+              speakerNameResolution: node.metadata?.speakerNameResolution,
+            },
+          });
+        }
         if (record.quest.dialogueEdges.length)
           await tx.insert(questDialogueEdges).values(
             [
@@ -449,6 +532,11 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       }
     }
 
+    const uniqueTextBindingRows = [
+      ...new Map(textBindingRows.map((row) => [row.id ?? "", row])).values(),
+    ];
+    if (uniqueTextBindingRows.length) await tx.insert(textBindings).values(uniqueTextBindingRows);
+
     const expectedDocuments = records.filter(
       (record) =>
         record.recordType !== "entity" &&
@@ -463,11 +551,13 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       (total, record) => total + (record.claims?.length ?? 0),
       0,
     );
+    const expectedTextBindings = uniqueTextBindingRows.length;
     const [counts] = await tx
       .select({
         documents: sql<number>`(select count(*)::int from knowledge.documents where revision_id = ${revisionId}::uuid)`,
         relationships: sql<number>`(select count(*)::int from knowledge.relationships where revision_id = ${revisionId}::uuid)`,
         claims: sql<number>`(select count(*)::int from knowledge.claims where revision_id = ${revisionId}::uuid)`,
+        textBindings: sql<number>`(select count(*)::int from knowledge.text_bindings where revision_id = ${revisionId}::uuid)`,
       })
       .from(datasetRevisions)
       .where(eq(datasetRevisions.id, revisionId));
@@ -475,7 +565,8 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       !counts ||
       counts.documents !== expectedDocuments ||
       counts.relationships !== expectedRelationships ||
-      counts.claims !== expectedClaims
+      counts.claims !== expectedClaims ||
+      counts.textBindings !== expectedTextBindings
     )
       throw new DomainError(
         "revision_materialization_incomplete",
@@ -485,6 +576,7 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
             documents: expectedDocuments,
             relationships: expectedRelationships,
             claims: expectedClaims,
+            textBindings: expectedTextBindings,
           },
           actual: counts,
         },
@@ -496,4 +588,33 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       revision.structuredRecords ?? undefined,
     );
   });
+  await analyzeRevisionReadModelTables(db);
+}
+
+function headingKey(headingPath: string[] = []): string | null {
+  const normalized = normalize(headingPath.join(" / "));
+  return normalized || null;
+}
+
+async function analyzeRevisionReadModelTables(db: Database): Promise<void> {
+  for (const tableName of [
+    "knowledge.documents",
+    "knowledge.document_segments",
+    "knowledge.quest_dialogue_nodes",
+    "knowledge.quest_dialogue_edges",
+    "knowledge.quest_subquests",
+    "knowledge.entity_revision_materializations",
+    "knowledge.entity_aliases",
+    "knowledge.text_bindings",
+    "knowledge.genshin_characters",
+    "knowledge.genshin_weapons",
+    "knowledge.genshin_artifact_sets",
+    "knowledge.genshin_artifacts",
+    "knowledge.genshin_materials",
+    "knowledge.genshin_achievements",
+    "knowledge.genshin_enemies",
+    "knowledge.genshin_voice_lines",
+  ]) {
+    await db.execute(sql.raw(`analyze ${tableName}`));
+  }
 }

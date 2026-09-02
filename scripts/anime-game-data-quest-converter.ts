@@ -85,6 +85,12 @@ export type QuestConversionManifest = {
     codexQuestMatchedMainQuests: number;
     talkFallbackMainQuests: number;
   };
+  quality: {
+    metadataOnlyDocuments: Record<Locale, number>;
+    titleUnresolvedDocuments: number;
+    speakerUnresolvedNodes: Record<Locale, number>;
+    speakerNpcFallbackNodes: Record<Locale, number>;
+  };
   excluded: Array<{ sourceKey: string; reason: string }>;
   failures: Array<{ sourceKey: string; reason: string }>;
   warnings: Array<{ sourceKey: string; warning: string }>;
@@ -518,6 +524,32 @@ function talkRoleNpcId(row: Json): string | undefined {
   return type === "TALK_ROLE_NPC" && id ? id : undefined;
 }
 
+function npcDisplayName(
+  inputs: Inputs,
+  npcId: string | undefined,
+  textMap: Record<string, unknown>,
+): string | undefined {
+  const npc = npcId ? inputs.npcById.get(npcId) : undefined;
+  if (!npc) return undefined;
+  const nameHash = npc.nameTextMapHash ?? npc.nameHash;
+  return (
+    (nameHash === undefined ? undefined : tryResolveText(textMap, nameHash)) ??
+    text(npc.name) ??
+    text(npc.jsonName)
+  );
+}
+
+function resolveDialogSpeakerName(
+  inputs: Inputs,
+  dialogRow: Json,
+  textMap: Record<string, unknown>,
+): { value?: string; method: "dialog_textmap" | "npc_fallback" | "unresolved" } {
+  const direct = tryResolveText(textMap, dialogRow.talkRoleNameTextMapHash);
+  if (direct) return { value: direct, method: "dialog_textmap" };
+  const fallback = npcDisplayName(inputs, talkRoleNpcId(dialogRow), textMap);
+  return fallback ? { value: fallback, method: "npc_fallback" } : { method: "unresolved" };
+}
+
 function buildDialogueGraph(
   inputs: Inputs,
   mainId: string,
@@ -626,15 +658,16 @@ function buildDialogueGraph(
             (dialogRow ? tryResolveText(textMap, dialogRow.talkContentTextMapHash) : undefined);
           if (!body) return;
           const npcId = dialogRow ? talkRoleNpcId(dialogRow) : undefined;
+          const dialogSpeaker = dialogRow
+            ? resolveDialogSpeakerName(inputs, dialogRow, textMap)
+            : { method: "unresolved" as const };
           if (npcId) participantIds.add(npcId);
           appendNode({
             nodeId: dialogId ?? `codex-${groupIndex}-${lineIndex}-dialog-${refIndex}`,
             type: lineKind === "MultiDialog" ? "player_choice" : "dialogue",
             subquestKey,
             speakerKey: npcId ? `npc/${npcId}` : undefined,
-            speakerName:
-              speakerName ??
-              (dialogRow ? tryResolveText(textMap, dialogRow.talkRoleNameTextMapHash) : undefined),
+            speakerName: speakerName ?? dialogSpeaker.value,
             body,
             lineKey,
             sourceFile: codexFile.relativePath,
@@ -642,6 +675,7 @@ function buildDialogueGraph(
               textMapHash: hashValue(ref.JGPDCLOJKLC ?? dialogRow?.talkContentTextMapHash),
               dialogId,
               codexLineKind: lineKind,
+              speakerNameResolution: speakerName ? "codex_line_textmap" : dialogSpeaker.method,
             },
           });
         });
@@ -688,17 +722,22 @@ function buildDialogueGraph(
         const body = tryResolveText(textMap, dialogRow.talkContentTextMapHash);
         if (!body) continue;
         const npcId = talkRoleNpcId(dialogRow);
+        const speaker = resolveDialogSpeakerName(inputs, dialogRow, textMap);
         if (npcId) participantIds.add(npcId);
         appendNode({
           nodeId: current,
           type: "dialogue",
           subquestKey: `quest/${mainId}/subquest/${talkId}`,
           speakerKey: npcId ? `npc/${npcId}` : undefined,
-          speakerName: tryResolveText(textMap, dialogRow.talkRoleNameTextMapHash),
+          speakerName: speaker.value,
           body,
           lineKey: `talk:${talkId}:${current}`,
           sourceFile: inputPaths.dialog,
-          metadata: { textMapHash: hashValue(dialogRow.talkContentTextMapHash), talkId },
+          metadata: {
+            textMapHash: hashValue(dialogRow.talkContentTextMapHash),
+            talkId,
+            speakerNameResolution: speaker.method,
+          },
         });
         for (const next of Array.isArray(dialogRow.nextDialogs) ? dialogRow.nextDialogs : []) {
           const nextId = idText(next);
@@ -1230,6 +1269,36 @@ export async function convertQuestSnapshot(
       },
     ]),
   ) as Record<Locale, Record<"complete" | "partial" | "metadata_only", number>>;
+  const speakerUnresolvedNodes = Object.fromEntries(
+    locales.map((locale) => [
+      locale,
+      builtRecords.reduce(
+        (sum, record) =>
+          sum +
+          (record.locale === locale
+            ? (record.quest?.dialogueNodes ?? []).filter(
+                (node) => node.speakerKey && !node.speakerName,
+              ).length
+            : 0),
+        0,
+      ),
+    ]),
+  ) as Record<Locale, number>;
+  const speakerNpcFallbackNodes = Object.fromEntries(
+    locales.map((locale) => [
+      locale,
+      builtRecords.reduce(
+        (sum, record) =>
+          sum +
+          (record.locale === locale
+            ? (record.quest?.dialogueNodes ?? []).filter(
+                (node) => node.metadata?.speakerNameResolution === "npc_fallback",
+              ).length
+            : 0),
+        0,
+      ),
+    ]),
+  ) as Record<Locale, number>;
   const discoveredDocuments = mainQuestRows.length * locales.length;
   const convertedDocuments = records.length;
   const excludedDocuments = excludedDocumentCount;
@@ -1296,6 +1365,16 @@ export async function convertQuestSnapshot(
             (node) => node.metadata?.talkId,
           ),
         ).length,
+      },
+      quality: {
+        metadataOnlyDocuments: Object.fromEntries(
+          locales.map((locale) => [locale, completeness[locale].metadata_only]),
+        ) as Record<Locale, number>,
+        titleUnresolvedDocuments: builtRecords.filter(
+          (record) => record.metadata.titleResolutionMethod === "unresolved",
+        ).length,
+        speakerUnresolvedNodes,
+        speakerNpcFallbackNodes,
       },
       excluded,
       failures,

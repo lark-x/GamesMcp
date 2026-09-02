@@ -236,17 +236,20 @@ describe("Game Codex response mappers", () => {
     });
   });
 
-  it("preserves explicit empty-corpus statuses for voices and mechanics", () => {
+  it("preserves explicit empty-corpus statuses for voices and maps mechanics hits", () => {
     expect(
       mapVoiceListResponse({ corpusStatus: "voice_source_missing", count: 0, voices: [] }),
     ).toMatchObject({ corpusStatus: "voice_source_missing", count: 0, voices: [] });
     expect(
       mapMechanicsResponse({
         query: "超载",
-        corpusStatus: "mechanism_source_missing",
-        hits: [],
+        corpusStatus: "available",
+        hits: [{ sourceKey: "mechanism/Tutorial/1001", title: "超载" }],
       }),
-    ).toMatchObject({ corpusStatus: "mechanism_source_missing", hits: [] });
+    ).toMatchObject({
+      corpusStatus: "available",
+      hits: [{ sourceKey: "mechanism/Tutorial/1001", title: "超载" }],
+    });
   });
 
   it("maps section citations for document and segment location", () => {

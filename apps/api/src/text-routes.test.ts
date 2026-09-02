@@ -13,6 +13,7 @@ const gameId = "00000000-0000-0000-0000-000000000001";
 const revisionId = "00000000-0000-0000-0000-0000000000aa";
 const documentId = "00000000-0000-0000-0000-0000000000bb";
 const segmentId = "00000000-0000-0000-0000-0000000000cc";
+const itemDocumentId = "00000000-0000-0000-0000-0000000000bc";
 
 const game: GameSummary = {
   id: gameId,
@@ -100,6 +101,29 @@ const bookDocument: DocumentDetail = {
   ],
 };
 
+const itemSummary: DocumentSummary = {
+  id: itemDocumentId,
+  sourceKey: "item-codex/30001",
+  title: "霓裳花",
+  type: "item_description",
+  gameVersion: "7.0.0",
+  locale: "zh-CN",
+  revision: "r4",
+  snippet: "璃月的鲜花。",
+};
+
+const itemDocument: DocumentDetail = {
+  ...itemSummary,
+  body: "璃月的鲜花。\n\n常被用于角色培养。",
+  sourceName: "AnimeGameData",
+  sourceId: "00000000-0000-0000-0000-0000000000d1",
+  provenance: {
+    canonicalKey: "item-codex/30001",
+    upstreamIds: { materialId: "nichang" },
+  },
+  segments: [],
+};
+
 const storySummaries: DocumentSummary[] = [
   {
     id: "00000000-0000-0000-0000-0000000000c1",
@@ -128,10 +152,31 @@ function makeRepository(overrides: Record<string, unknown> = {}) {
     ],
     listRevisions: async () => [revision],
     getEntityTextBindings: async () => [binding],
+    listDocuments: async (_gameId: string, options: { type?: string }) =>
+      options.type === "item_description" ? [itemSummary] : [],
+    getDocument: async (_gameId: string, id: string) =>
+      id === itemDocumentId ? itemDocument : null,
+    search: async (_gameId: string, request: { documentTypes?: string[] }) =>
+      request.documentTypes?.includes("item_description")
+        ? {
+            entities: [],
+            documents: [itemSummary],
+            segments: [],
+            revision: "r4",
+            revisionId,
+            indexStatus: "ready",
+          }
+        : {
+            entities: [],
+            documents: [],
+            segments: [],
+            revision: "",
+            indexStatus: "not_ready",
+          },
     genshin: {
       listMaterials: async () => [material],
       getMaterial: async (_revision: string, stableId: string) =>
-        stableId === material.stableId ? material : null,
+        stableId === material.stableId || stableId === "material/nichang" ? material : null,
     },
     ...overrides,
   } as unknown as KnowledgeRepository;
@@ -197,7 +242,9 @@ describe("Text API contracts", () => {
       query: "霓裳",
       items: [
         {
-          id: "material/nichang",
+          id: itemDocumentId,
+          stableId: itemDocumentId,
+          materialStableId: "material/nichang",
           name: "霓裳花",
           category: "local_specialty",
           excerpt: "璃月的鲜花。",
@@ -218,7 +265,7 @@ describe("Text API contracts", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       query: null,
-      items: [{ id: material.stableId, name: material.name }],
+      items: [{ id: itemDocumentId, name: material.name }],
     });
     await app.close();
   });
@@ -261,6 +308,25 @@ describe("Text API contracts", () => {
     await app.close();
   });
 
+  it("returns full item text by document id before falling back to material records", async () => {
+    const app = appWith();
+    const found = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/text/items/${itemDocumentId}`,
+    });
+    expect(found.statusCode).toBe(200);
+    expect(found.json()).toMatchObject({
+      gameId,
+      revisionId,
+      item: {
+        stableId: itemDocumentId,
+        materialStableId: material.stableId,
+        description: "璃月的鲜花。\n\n常被用于角色培养。",
+      },
+    });
+    await app.close();
+  });
+
   it("validates item detail path parameters", async () => {
     const app = appWith();
     const invalid = await app.inject({
@@ -272,8 +338,25 @@ describe("Text API contracts", () => {
     await app.close();
   });
 
-  it("returns the explicit empty mechanics contract", async () => {
-    const app = appWith();
+  it("searches mechanism documents through the published text index", async () => {
+    const app = appWith({
+      search: async () => ({
+        entities: [],
+        documents: [
+          {
+            id: "00000000-0000-0000-0000-0000000000d1",
+            sourceKey: "mechanism/Tutorial/1001",
+            title: "超载",
+            type: "mechanism",
+            snippet: "超载反应会造成火元素范围伤害。",
+            revision: "r4",
+          },
+        ],
+        segments: [],
+        revision: "r4",
+        indexStatus: "ready",
+      }),
+    });
     const response = await app.inject({
       method: "GET",
       url: `/api/games/${gameId}/text/mechanics?query=超载&category=elemental&limit=3`,
@@ -285,9 +368,9 @@ describe("Text API contracts", () => {
       query: "超载",
       category: "elemental",
       limit: 3,
-      hits: [],
+      hits: [{ sourceKey: "mechanism/Tutorial/1001", title: "超载" }],
       truncated: false,
-      corpusStatus: "mechanism_source_missing",
+      corpusStatus: "available",
     });
     await app.close();
   });

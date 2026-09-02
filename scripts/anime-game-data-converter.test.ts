@@ -31,6 +31,7 @@ describe("AnimeGameData converter", () => {
       books: 1,
       characterStories: 1,
       itemDescriptions: 1,
+      mechanisms: 1,
     });
     expect(result.records.books[0]).toMatchObject({
       sourceKey: "book/7001",
@@ -87,6 +88,7 @@ describe("AnimeGameData converter", () => {
       ...result.records.books,
       ...result.records.characterStories,
       ...result.records.items,
+      ...result.records.mechanisms,
     ]) {
       expect(record.metadata.lineage.title).toMatchObject({
         relativeFile: "TextMap/TextMap_MediumCHS.json",
@@ -182,6 +184,7 @@ describe("AnimeGameData converter", () => {
       ...result.records.books,
       ...result.records.characterStories,
       ...result.records.items,
+      ...result.records.mechanisms,
     ] as unknown as NormalizedRecord[];
     expect(
       records.flatMap((record) => record.entities ?? []).every((entity) => "type" in entity),

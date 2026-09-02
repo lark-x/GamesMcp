@@ -56,6 +56,7 @@ import {
   decodeQuestCursor,
   defaultLimit,
   encodeQuestCursor,
+  escapeLike,
   lexicalScore,
   mainQuestIdFromKey,
   normalize,
@@ -725,25 +726,36 @@ export class RepositoryReadModels {
     entityStableId: string,
     bindingType?: TextBindingType,
   ): Promise<TextBinding[]> {
-    const bindingTypeCondition = bindingType ? sql`and binding_type = ${bindingType}` : sql``;
+    const bindingTypeCondition = bindingType ? sql`and tb.binding_type = ${bindingType}` : sql``;
     const result = await this.db.execute(sql`
-      select id,
-             game_id,
-             revision_id,
-             entity_type,
-             entity_stable_id,
-             document_id,
-             segment_id,
-             binding_type,
-             confidence,
-             binding_source,
-             metadata,
-             created_at
-      from knowledge.text_bindings
-      where revision_id = ${revisionId}::uuid
-        and entity_stable_id = ${entityStableId}
+      select tb.id,
+             tb.game_id,
+             tb.revision_id,
+             tb.entity_type,
+             tb.entity_stable_id,
+             tb.document_id,
+             tb.segment_id,
+             tb.binding_type,
+             tb.confidence,
+             tb.binding_source,
+             tb.metadata,
+             tb.created_at,
+             d.title as document_title,
+             d.type as document_type,
+             d.locale as document_locale,
+             left(coalesce(ds.body, d.body), 600) as excerpt
+      from knowledge.text_bindings tb
+      inner join knowledge.documents d
+        on d.id = tb.document_id
+       and d.revision_id = tb.revision_id
+       and d.deleted = false
+      left join knowledge.document_segments ds
+        on ds.id = tb.segment_id
+       and ds.revision_id = tb.revision_id
+      where tb.revision_id = ${revisionId}::uuid
+        and tb.entity_stable_id = ${entityStableId}
         ${bindingTypeCondition}
-      order by created_at asc, id asc
+      order by tb.created_at asc, tb.id asc
     `);
     return textBindingRows(result).map(mapTextBinding);
   }
@@ -968,6 +980,99 @@ export class RepositoryReadModels {
     };
   }
 
+  async readDocumentSection(request: {
+    gameId: string;
+    revisionId: string;
+    documentId: string;
+    segmentId?: string;
+    section?: string;
+    maxChars: number;
+  }): Promise<import("@gip/domain").SectionReadResult | null> {
+    const revision = await this.getRevisionMeta(request.revisionId, request.gameId);
+    if (!revision) return null;
+    const maxChars = Math.min(Math.max(request.maxChars, 100), 8000);
+    const heading = request.section ? normalize(request.section) : "";
+    const segmentFilter = request.segmentId
+      ? sql`and ds.id = ${request.segmentId}::uuid`
+      : heading
+        ? sql`and (
+            ds.heading_key = ${heading}
+            or ds.heading_key like ${`${escapeLike(heading)}%`} escape '\\'
+            or lower(ds.heading_path::text) like ${`%${escapeLike(heading)}%`} escape '\\'
+          )`
+        : sql``;
+    if (request.segmentId || heading) {
+      const rows = await this.db.execute(sql`
+        select d.id as document_id,
+               d.title,
+               d.locale,
+               ds.id as segment_id,
+               ds.heading_path,
+               left(ds.body, ${maxChars + 1}) as body
+        from knowledge.document_segments ds
+        inner join knowledge.documents d on d.id = ds.document_id
+        where d.game_id = ${request.gameId}::uuid
+          and d.revision_id = ${revision.id}::uuid
+          and d.id = ${request.documentId}::uuid
+          and d.deleted = false
+          ${segmentFilter}
+        order by ds.ordinal asc
+        limit 1
+      `);
+      const row = textReadRows(rows)[0];
+      if (!row) return null;
+      const body = row.body.length > maxChars ? row.body.slice(0, maxChars) : row.body;
+      return {
+        documentId: row.document_id,
+        title: row.title,
+        locale: row.locale ?? "",
+        revision: revisionLabel(revision.revisionNumber),
+        headingPath: row.heading_path,
+        body,
+        truncated: row.body.length > maxChars,
+        citations: [
+          {
+            documentId: row.document_id,
+            locale: row.locale ?? "",
+            segmentId: row.segment_id ?? undefined,
+            revision: revisionLabel(revision.revisionNumber),
+          },
+        ],
+      };
+    }
+    const rows = await this.db.execute(sql`
+      select d.id as document_id,
+             d.title,
+             d.locale,
+             left(d.body, ${maxChars + 1}) as body
+      from knowledge.documents d
+      where d.game_id = ${request.gameId}::uuid
+        and d.revision_id = ${revision.id}::uuid
+        and d.id = ${request.documentId}::uuid
+        and d.deleted = false
+      limit 1
+    `);
+    const row = textReadRows(rows)[0];
+    if (!row) return null;
+    const body = row.body.length > maxChars ? row.body.slice(0, maxChars) : row.body;
+    return {
+      documentId: row.document_id,
+      title: row.title,
+      locale: row.locale ?? "",
+      revision: revisionLabel(revision.revisionNumber),
+      headingPath: [],
+      body,
+      truncated: row.body.length > maxChars,
+      citations: [
+        {
+          documentId: row.document_id,
+          locale: row.locale ?? "",
+          revision: revisionLabel(revision.revisionNumber),
+        },
+      ],
+    };
+  }
+
   async search(gameId: string, request: SearchRequest): Promise<SearchResult> {
     const current = await this.getCurrentRevision(gameId);
     if (!current)
@@ -1103,13 +1208,16 @@ export class RepositoryReadModels {
   }
 
   async searchQuests(gameId: string, request: QuestSearchRequest): Promise<QuestSearchHit[]> {
-    const current = await this.getCurrentRevision(gameId);
-    if (!current) return [];
     const revision = request.revisionId
       ? await this.getRevisionMeta(request.revisionId, gameId)
-      : await this.getSearchableRevision(gameId, current);
+      : await (async () => {
+          const current = await this.getCurrentRevision(gameId);
+          return current ? this.getSearchableRevision(gameId, current) : null;
+        })();
     if (!revision) return [];
     const normalizedQuery = normalize(request.query);
+    const prefix = `${escapeLike(normalizedQuery)}%`;
+    const contains = `%${escapeLike(normalizedQuery)}%`;
     const questTypes = request.questTypes?.length
       ? request.questTypes
       : ([
@@ -1121,25 +1229,49 @@ export class RepositoryReadModels {
           "hangout",
           "other",
         ] as const);
-    const conditions = [
+    const baseConditions = [
       eq(documents.gameId, gameId),
       eq(documents.revisionId, revision.id),
       eq(documents.deleted, false),
       inArray(documents.type, [...questTypes]),
-      or(
-        sql`${documents.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
-        sql`${documents.normalizedTitle} % ${normalizedQuery}`,
-      ),
     ];
-    if (request.publicOnly !== false) conditions.push(publicQuestCondition());
-    if (request.locale) conditions.push(eq(documents.locale, request.locale));
-    if (request.gameVersion) conditions.push(eq(documents.gameVersion, request.gameVersion));
-    const rows = await this.db
+    if (request.publicOnly !== false) baseConditions.push(publicQuestCondition());
+    if (request.locale) baseConditions.push(eq(documents.locale, request.locale));
+    if (request.gameVersion) baseConditions.push(eq(documents.gameVersion, request.gameVersion));
+    const titleRows = await this.db
       .select()
       .from(documents)
-      .where(and(...conditions))
+      .where(
+        and(
+          ...baseConditions,
+          or(
+            eq(documents.normalizedTitle, normalizedQuery),
+            sql`${documents.normalizedTitle} like ${prefix} escape '\\'`,
+            sql`${documents.normalizedTitle} like ${contains} escape '\\'`,
+            sql`${documents.normalizedTitle} % ${normalizedQuery}`,
+            ilike(documents.sourceKey, `%${request.query}%`),
+          ),
+        ),
+      )
       .orderBy(asc(documents.title))
       .limit(request.limit);
+    const rows =
+      titleRows.length > 0
+        ? titleRows
+        : await this.db
+            .select()
+            .from(documents)
+            .where(
+              and(
+                ...baseConditions,
+                or(
+                  sql`${documents.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
+                  sql`${documents.normalizedTitle} % ${normalizedQuery}`,
+                ),
+              ),
+            )
+            .orderBy(asc(documents.title))
+            .limit(request.limit);
     return rows.map((row) => {
       const metadata = questMetadata(row);
       const questKey = metadata.questKey ?? questKeyFromInput(row.sourceKey);
@@ -1160,11 +1292,12 @@ export class RepositoryReadModels {
   }
 
   async getQuest(gameId: string, request: GetQuestRequest): Promise<QuestDialoguePage | null> {
-    const current = await this.getCurrentRevision(gameId);
-    if (!current) return null;
     const revision = request.revisionId
       ? await this.getRevisionMeta(request.revisionId, gameId)
-      : await this.getSearchableRevision(gameId, current);
+      : await (async () => {
+          const current = await this.getCurrentRevision(gameId);
+          return current ? this.getSearchableRevision(gameId, current) : null;
+        })();
     if (!revision) return null;
     const cursor = decodeQuestCursor(request.cursor);
     const questKey = questKeyFromInput(cursor?.questKey ?? request.questKey);
@@ -1190,8 +1323,10 @@ export class RepositoryReadModels {
     const findDocument = async (locale: string) =>
       (
         await this.db
-          .select()
+          .select({ document: documents, source: sources, snapshot: sourceSnapshots })
           .from(documents)
+          .innerJoin(sourceSnapshots, eq(sourceSnapshots.id, documents.sourceSnapshotId))
+          .innerJoin(sources, eq(sources.id, sourceSnapshots.sourceId))
           .where(
             and(
               eq(documents.gameId, gameId),
@@ -1202,17 +1337,20 @@ export class RepositoryReadModels {
           )
           .limit(1)
       )[0];
-    let document = await findDocument(requestedLocale);
+    let documentRow = await findDocument(requestedLocale);
     const warnings: string[] = [];
     let locale = requestedLocale;
-    if (!document) {
+    if (!documentRow) {
       const fallback = requestedLocale === "zh-CN" ? "en" : "zh-CN";
-      document = await findDocument(fallback);
-      if (document) {
+      documentRow = await findDocument(fallback);
+      if (documentRow) {
         locale = fallback;
         warnings.push(`locale_fallback:${requestedLocale}->${fallback}`);
       }
     }
+    const document = documentRow?.document;
+    const source = documentRow?.source;
+    const sourceSnapshot = documentRow?.snapshot;
     if (!document) return null;
     if (request.publicOnly !== false) {
       const visibility = questMetadata(document).visibility;
@@ -1276,14 +1414,6 @@ export class RepositoryReadModels {
           .from(entities)
           .where(and(eq(entities.gameId, gameId), inArray(entities.sourceKey, speakerKeys)))
       : [];
-    const sourceRows = await this.db
-      .select({ source: sources, snapshot: sourceSnapshots })
-      .from(sources)
-      .innerJoin(sourceSnapshots, eq(sourceSnapshots.sourceId, sources.id))
-      .where(eq(sourceSnapshots.id, document.sourceSnapshotId))
-      .limit(1);
-    const source = sourceRows[0]?.source;
-    const sourceSnapshot = sourceRows[0]?.snapshot;
     return {
       questKey,
       title: document.title,
@@ -1760,6 +1890,10 @@ type TextBindingRow = {
   confidence: number | string | null;
   binding_source: TextBinding["bindingSource"];
   metadata: Record<string, unknown> | null;
+  document_title?: string | null;
+  document_type?: string | null;
+  document_locale?: string | null;
+  excerpt?: string | null;
   created_at: Date | string;
 };
 
@@ -1788,6 +1922,41 @@ function mapTextBinding(row: TextBindingRow): TextBinding {
     confidence: row.confidence === null ? null : Number(row.confidence),
     bindingSource: row.binding_source,
     metadata: row.metadata ?? {},
+    documentTitle: row.document_title ?? undefined,
+    documentType: row.document_type ?? undefined,
+    documentLocale: row.document_locale ?? undefined,
+    excerpt: row.excerpt ?? undefined,
     createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
   };
+}
+
+type TextReadRow = {
+  document_id: string;
+  title: string;
+  locale: string | null;
+  segment_id?: string | null;
+  heading_path?: unknown;
+  body: string;
+};
+
+function textReadRows(
+  result: unknown,
+): Array<Omit<TextReadRow, "heading_path"> & { heading_path: string[] }> {
+  const rows = Array.isArray(result)
+    ? result
+    : result && typeof result === "object" && "rows" in result
+      ? (result as { rows?: unknown }).rows
+      : [];
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row): row is TextReadRow => Boolean(row && typeof row === "object"))
+    .map((row) => ({
+      document_id: String(row.document_id ?? ""),
+      title: String(row.title ?? ""),
+      locale: row.locale == null ? null : String(row.locale),
+      segment_id: row.segment_id == null ? null : String(row.segment_id),
+      heading_path: Array.isArray(row.heading_path)
+        ? row.heading_path.filter((value): value is string => typeof value === "string")
+        : [],
+      body: String(row.body ?? ""),
+    }));
 }

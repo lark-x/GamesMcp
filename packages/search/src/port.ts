@@ -4,6 +4,8 @@ import type { ResolverCandidate } from "./entity-resolver.js";
 
 export type SearchMatchType = "fts" | "trgm" | "prefix" | "exact";
 
+export type SearchSurface = "structured" | "document" | "segment" | "dialogue";
+
 export type DialogueSearchFilters = {
   /** Canonical speaker key or display name. */
   speaker?: string;
@@ -23,6 +25,14 @@ export type EntityCandidateSearchRequest = {
   limit?: number;
 };
 
+export type StructuredSearchRequest = {
+  gameId: string;
+  revisionId: string;
+  query: string;
+  kinds?: StructuredSearchKind[];
+  limit?: number;
+};
+
 export type StructuredSearchKind =
   | "character"
   | "weapon"
@@ -33,24 +43,49 @@ export type StructuredSearchKind =
   | "enemy"
   | "voice";
 
-export type SearchRepositoryPort = {
+export type DocumentSearchRequest = {
+  gameId: string;
+  revisionId: string;
+  query: string;
+  documentTypes?: DocumentType[];
+  locales?: string[];
+  includeDocuments?: boolean;
+  includeSegments?: boolean;
+  candidateLimit?: number;
+  resultLimit?: number;
+};
+
+export type StructuredSearchRow = {
+  kind: StructuredSearchKind;
+  stableId: string;
+  name: string;
+  aliases: string[];
+  body: string;
+  /** PostgreSQL rank before the shared-core tier mapping. */
+  rank?: number;
+  /** PostgreSQL match class; absent only for legacy in-memory fakes. */
+  matchType?: SearchMatchType;
+};
+
+export type DocumentSearchRow = {
+  key: string;
+  document: Pick<DocumentSummary, "id" | "sourceKey" | "title" | "type" | "locale"> & {
+    type: DocumentType;
+  };
+  body: string;
+  title: string;
+  segmentId?: string | null;
+  rank?: number;
+  matchType?: SearchMatchType;
+};
+
+export interface SearchRepositoryPort {
+  listStructuredAtRevision(request: StructuredSearchRequest): Promise<StructuredSearchRow[]>;
   listStructuredAtRevision(
     gameId: string,
     revisionId: string,
     query: string,
-  ): Promise<
-    Array<{
-      kind: StructuredSearchKind;
-      stableId: string;
-      name: string;
-      aliases: string[];
-      body: string;
-      /** PostgreSQL rank before the shared-core tier mapping. */
-      rank?: number;
-      /** PostgreSQL match class; absent only for legacy in-memory fakes. */
-      matchType?: SearchMatchType;
-    }>
-  >;
+  ): Promise<StructuredSearchRow[]>;
   resolveEntityCandidates(request: EntityCandidateSearchRequest): Promise<ResolverCandidate[]>;
   listDialogueHits(
     gameId: string,
@@ -80,20 +115,6 @@ export type SearchRepositoryPort = {
       matchType?: SearchMatchType;
     }>
   >;
-  listDocumentHits(
-    gameId: string,
-    revisionId: string,
-    query: string,
-  ): Promise<
-    Array<{
-      key: string;
-      document: Pick<DocumentSummary, "id" | "sourceKey" | "title" | "type" | "locale"> & {
-        type: DocumentType;
-      };
-      body: string;
-      title: string;
-      rank?: number;
-      matchType?: SearchMatchType;
-    }>
-  >;
-};
+  listDocumentHits(request: DocumentSearchRequest): Promise<DocumentSearchRow[]>;
+  listDocumentHits(gameId: string, revisionId: string, query: string): Promise<DocumentSearchRow[]>;
+}

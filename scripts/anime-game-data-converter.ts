@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, relative, resolve } from "node:path";
+import {
+  MECHANISM_INPUTS,
+  TextResolver,
+  extractMechanisms,
+} from "../packages/ingestion/src/anime-game-data/index.ts";
+import type { MechanismRecord } from "../packages/ingestion/src/anime-game-data/index.ts";
 
 /**
  * The converter deliberately lives in a side-effect-free module.  The CLI in
@@ -28,8 +34,10 @@ export const INPUT_PATHS = {
   materialCodex: "ExcelBinOutput/MaterialCodexExcelConfigData.json",
 } as const;
 
-export type Category = "book" | "character_story" | "item_description";
-export type CategoryPlural = "books" | "characterStories" | "itemDescriptions";
+const FULL_TEXT_MAP_PATH = "TextMap/TextMapCHS.json" as const;
+
+export type Category = "book" | "character_story" | "item_description" | "mechanism";
+export type CategoryPlural = "books" | "characterStories" | "itemDescriptions" | "mechanisms";
 
 type JsonObject = Record<string, unknown>;
 type TextMap = Record<string, unknown>;
@@ -65,7 +73,7 @@ export type AnimeGameRecord = {
   sourceKey: string;
   recordType: "document";
   title: string;
-  documentType: "book" | "character_story" | "item_description";
+  documentType: "book" | "character_story" | "item_description" | "mechanism" | "tutorial";
   gameVersion: string;
   body: string;
   segments?: AnimeGameSegment[];
@@ -99,9 +107,10 @@ export type AnimeGameSegment = {
   endOffset: number;
   metadata: {
     segmentStableId: string;
-    bookStableId: string;
-    volumeStableId: string;
-    documentStableId: string;
+    bookStableId?: string;
+    volumeStableId?: string;
+    documentStableId?: string;
+    mechanismStableId?: string;
   };
 };
 
@@ -161,6 +170,7 @@ export type ConversionResult = {
     books: AnimeGameRecord[];
     characterStories: AnimeGameRecord[];
     items: AnimeGameRecord[];
+    mechanisms: AnimeGameRecord[];
   };
   manifest: Omit<ConversionManifest, "generatedAt" | "outputRecordsPath">;
 };
@@ -181,6 +191,7 @@ type SourceFile<T> = {
 
 type LoadedInputs = {
   textMap: SourceFile<TextMap>;
+  textMapFull?: SourceFile<TextMap>;
   avatar: SourceFile<unknown>;
   fetterInfo: SourceFile<unknown>;
   fetterStory: SourceFile<unknown>;
@@ -203,9 +214,10 @@ const CATEGORY_BY_PLURAL: Record<CategoryPlural, Category> = {
   books: "book",
   characterStories: "character_story",
   itemDescriptions: "item_description",
+  mechanisms: "mechanism",
 };
 
-const PLURALS: CategoryPlural[] = ["books", "characterStories", "itemDescriptions"];
+const PLURALS: CategoryPlural[] = ["books", "characterStories", "itemDescriptions", "mechanisms"];
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -688,6 +700,25 @@ async function readJsonSource<T>(
   };
 }
 
+async function readOptionalJsonSource<T>(
+  upstreamDir: string,
+  relativePath: string,
+): Promise<SourceFile<T> | undefined> {
+  try {
+    return await readJsonSource<T>(upstreamDir, relativePath);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      ((error as { code?: unknown }).code === "ENOENT" ||
+        (error as { code?: unknown }).code === "ENOTDIR")
+    )
+      return undefined;
+    throw error;
+  }
+}
+
 async function loadInputs(upstreamDir: string): Promise<LoadedInputs> {
   const entries = await Promise.all(
     Object.entries(INPUT_PATHS).map(
@@ -700,6 +731,7 @@ async function loadInputs(upstreamDir: string): Promise<LoadedInputs> {
   >;
   return {
     textMap: byName.textMap as SourceFile<TextMap>,
+    textMapFull: await readOptionalJsonSource<TextMap>(upstreamDir, FULL_TEXT_MAP_PATH),
     avatar: byName.avatar,
     fetterInfo: byName.fetterInfo,
     fetterStory: byName.fetterStory,
@@ -717,7 +749,9 @@ function inputHashes(
   readableHashes: Map<string, string>,
 ): Record<string, string> {
   const hashes = new Map<string, string>(
-    Object.values(inputs).map((source) => [source.relativePath, source.fileHash]),
+    Object.values(inputs)
+      .filter((source): source is SourceFile<unknown> => Boolean(source))
+      .map((source) => [source.relativePath, source.fileHash]),
   );
   for (const [path, hash] of readableHashes) hashes.set(path, hash);
   return Object.fromEntries(
@@ -823,6 +857,71 @@ function recordEntitySourceKey(record: AnimeGameRecord): string[] {
   return (record.entities ?? []).map((entity) => entity.sourceKey);
 }
 
+const MECHANISM_SOURCE_BY_STABLE_PREFIX = Object.fromEntries(
+  Object.values(MECHANISM_INPUTS).map((path) => {
+    const basename = path.split("/").at(-1) ?? path;
+    const sourcePrefix = basename.replace(/ExcelConfigData\.json$/, "").replace(/Excel$/, "");
+    return [sourcePrefix, path];
+  }),
+) as Record<string, string>;
+
+function mechanismSourcePath(record: MechanismRecord, inputHashes: Record<string, string>): string {
+  const sourcePrefix = /^mechanism\/([^/]+)\//.exec(record.mechanismStableId)?.[1];
+  const mapped = sourcePrefix ? MECHANISM_SOURCE_BY_STABLE_PREFIX[sourcePrefix] : undefined;
+  if (mapped) return mapped;
+  return Object.keys(inputHashes).sort()[0] ?? "ExcelBinOutput/MechanismUnknownSource.json";
+}
+
+function mechanismDocumentFromRecord(
+  context: ConverterContext,
+  record: MechanismRecord,
+  inputHashes: Record<string, string>,
+): AnimeGameRecord {
+  const sourceFile = mechanismSourcePath(record, inputHashes);
+  const sourceFileHash = inputHashes[sourceFile] ?? rawHashFor(record);
+  const rawContentHash = rawHashFor(record);
+  return makeRecord(
+    context,
+    {
+      sourceKey: record.mechanismStableId,
+      recordType: "document",
+      title: record.title,
+      documentType: record.documentType,
+      gameVersion: context.gameVersion,
+      body: record.body,
+      segments: [
+        {
+          segmentKey: `${record.mechanismStableId}/segment/1`,
+          ordinal: 0,
+          headingPath: [record.title],
+          body: record.body,
+          startOffset: 0,
+          endOffset: record.body.length,
+          metadata: {
+            segmentStableId: `${record.mechanismStableId}/segment/1`,
+            documentStableId: record.mechanismStableId,
+            mechanismStableId: record.mechanismStableId,
+          },
+        },
+      ],
+    },
+    {
+      title: sourceLineage(sourceFile, record.mechanismStableId, sourceFileHash, record.title),
+      body: sourceLineage(sourceFile, record.mechanismStableId, sourceFileHash, record.body),
+    },
+    rawContentHash,
+    ["MechanismExtractor field whitelist", "TextMap fallback resolution"],
+    {
+      canonicalKey: record.mechanismStableId,
+      mechanismStableId: record.mechanismStableId,
+      mechanismCategory: record.category,
+      textResolution: record.textResolution,
+      relatedEntities: record.relatedEntities ?? [],
+      sourceFiles: Object.keys(inputHashes).sort(),
+    },
+  );
+}
+
 export async function convertAnimeGameData(options: ConvertOptions): Promise<ConversionResult> {
   const language = options.language ?? SUPPORTED_LANGUAGE;
   if (language !== SUPPORTED_LANGUAGE) {
@@ -840,6 +939,33 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
   const items: AnimeGameRecord[] = [];
 
   const textMap = inputs.textMap;
+  const mechanismInputHashes: Record<string, string> = {};
+  const mechanismResult = await extractMechanisms({
+    upstreamDir,
+    upstreamCommit: context.upstreamCommit,
+    upstreamVersion: context.upstreamVersion,
+    gameVersion: context.gameVersion,
+    locale: context.locale,
+    textResolver: new TextResolver({
+      maps: [
+        { locale: context.locale, values: textMap.value },
+        ...(inputs.textMapFull
+          ? [{ locale: context.locale, values: inputs.textMapFull.value }]
+          : []),
+      ],
+    }),
+    inputHashes: mechanismInputHashes,
+  });
+  excludedEntries.push(
+    ...mechanismResult.failures.map((failure) => ({
+      category: "mechanism" as const,
+      upstreamId: failure.upstreamId ?? "unknown",
+      reason: failure.code,
+    })),
+  );
+  const mechanisms = mechanismResult.records.map((record) =>
+    mechanismDocumentFromRecord(context, record, mechanismResult.inputHashes),
+  );
   const documents = mapRowsById(asArray(inputs.document.value), "id");
   const localizations = mapRowsById(asArray(inputs.localization.value), "id");
   const bookSuits = mapRowsById(asArray(inputs.bookSuit.value), "id");
@@ -1352,11 +1478,12 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
   books.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
   characterStories.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
   items.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+  mechanisms.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
 
-  const records = { books, characterStories, items };
+  const records = { books, characterStories, items, mechanisms };
   const seenRecordKeys = new Set<string>();
   const seenEntityKeys = new Set<string>();
-  for (const record of [...books, ...characterStories, ...items]) {
+  for (const record of [...books, ...characterStories, ...items, ...mechanisms]) {
     if (seenRecordKeys.has(record.sourceKey)) {
       throw new Error(`Duplicate sourceKey after conversion: ${record.sourceKey}`);
     }
@@ -1374,16 +1501,19 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
     books: asArray(inputs.booksCodex.value).length,
     characterStories: asArray(inputs.fetterStory.value).length,
     itemDescriptions: asArray(inputs.materialCodex.value).length,
+    mechanisms: mechanismResult.coverage.discovered,
   };
   const converted: Record<CategoryPlural, number> = {
     books: books.length,
     characterStories: characterStories.length,
     itemDescriptions: items.length,
+    mechanisms: mechanisms.length,
   };
   const excluded: Record<CategoryPlural, number> = {
     books: countExcluded(excludedEntries, "book"),
     characterStories: countExcluded(excludedEntries, "character_story"),
     itemDescriptions: countExcluded(excludedEntries, "item_description"),
+    mechanisms: countExcluded(excludedEntries, "mechanism"),
   };
   const accounting = Object.fromEntries(
     PLURALS.map((plural) => {
@@ -1442,7 +1572,10 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
     accounting,
     coverage,
     unexplainedMissing,
-    inputHashes: inputHashes(inputs, readableHashes),
+    inputHashes: {
+      ...inputHashes(inputs, readableHashes),
+      ...mechanismResult.inputHashes,
+    },
   };
   return { records, manifest };
 }
@@ -1466,6 +1599,7 @@ export async function writeConversionResult(
     writeJson(resolve(recordsDir, "books.json"), result.records.books),
     writeJson(resolve(recordsDir, "character-stories.json"), result.records.characterStories),
     writeJson(resolve(recordsDir, "items.json"), result.records.items),
+    writeJson(resolve(recordsDir, "mechanisms.json"), result.records.mechanisms),
   ]);
   const manifest: ConversionManifest = {
     ...result.manifest,

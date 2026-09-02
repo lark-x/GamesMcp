@@ -19,12 +19,14 @@ export const animeCategoryFiles = {
   book: "books.json",
   character_story: "character-stories.json",
   item_description: "items.json",
+  mechanism: "mechanisms.json",
 } as const;
 
 export const animeCategoryPlural = {
   book: "books",
   character_story: "characterStories",
   item_description: "itemDescriptions",
+  mechanism: "mechanisms",
 } as const;
 
 export type AnimeCategory = keyof typeof animeCategoryFiles;

@@ -41,6 +41,20 @@ function makeRepository(overrides: Partial<KnowledgeRepository> = {}): Knowledge
       revision: "r4",
       indexStatus: "ready" as const,
     }),
+    resolveEntityCandidates: async ({ query }: { query: string }) =>
+      query === "堂主"
+        ? [
+            {
+              id: "entity-1",
+              entityType: "character",
+              canonicalName: "胡桃",
+              aliases: ["堂主"],
+              matchTier: "alias",
+              matchedText: "堂主",
+              matchConfidence: 0.95,
+            },
+          ]
+        : [],
     getDocument: async () => ({
       id: "doc-1",
       sourceKey: "lore/story",
@@ -143,7 +157,13 @@ describe("GameDomainService", () => {
   });
 
   it("resolves aliases to entity summaries", async () => {
-    const service = new GameDomainService(makeRepository());
+    const service = new GameDomainService(
+      makeRepository({
+        search: async () => {
+          throw new Error("resolveAlias must not use generic search");
+        },
+      }),
+    );
     const entity = await service.resolveAlias(gameId, "堂主");
     expect(entity?.name).toBe("胡桃");
   });

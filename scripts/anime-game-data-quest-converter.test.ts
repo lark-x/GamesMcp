@@ -124,6 +124,32 @@ describe("AnimeGameData quest converter", () => {
     expect(chapterDerived.records[0]?.title).toBe("序章");
   });
 
+  it("falls back to NPC names when dialogue speaker hashes are unresolved", async () => {
+    const result = await withFixtureVariant(async (root) => {
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/DialogExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, talkRoleNameTextMapHash: 99999 })),
+      );
+      await updateJson<JsonRow>(root, "BinOutput/CodexQuest/1001.json", (row) => ({
+        ...row,
+        EBNBLBEIFFJ: ((row.EBNBLBEIFFJ as JsonRow[]) ?? []).map((group) => ({
+          ...group,
+          PEAKPGNONFA: ((group.PEAKPGNONFA as JsonRow[]) ?? []).map((line) => ({
+            ...line,
+            IILBCFJNPGA: { BNJEGIAOKGM: 99999, JOBGILDNLEL: "SpeakerMissing" },
+          })),
+        })),
+      }));
+    });
+
+    expect(
+      result.records.flatMap((record) =>
+        (record.quest?.dialogueNodes ?? []).map((node) => node.speakerName),
+      ),
+    ).toEqual(["派蒙", "派蒙", "Paimon", "Paimon"]);
+    expect(result.manifest.quality.speakerNpcFallbackNodes).toEqual({ "zh-CN": 2, en: 2 });
+    expect(result.manifest.quality.speakerUnresolvedNodes).toEqual({ "zh-CN": 0, en: 0 });
+  });
+
   it("maps unknown quest types to other and records a warning", async () => {
     const result = await withFixtureVariant(async (root) => {
       await updateJson<JsonRow[]>(root, "ExcelBinOutput/MainQuestExcelConfigData.json", (rows) =>

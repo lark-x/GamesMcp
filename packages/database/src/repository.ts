@@ -81,7 +81,12 @@ import * as verificationScreenshotOperations from "./repository-verification-scr
 import { SqlGenshinStructuredRepository } from "./repository-genshin-core.js";
 import { RepositoryReadModels } from "./repository-read-models.js";
 import { SqlSearchRepositoryPort } from "./search-port.js";
-import type { DialogueSearchFilters, SearchCoreStructuredHit } from "@gip/search";
+import { SearchService } from "@gip/search";
+import type {
+  DialogueSearchFilters,
+  SearchCoreStructuredHit,
+  StructuredSearchKind,
+} from "@gip/search";
 import * as revisionOperations from "./repository-revisions.js";
 
 import {
@@ -100,6 +105,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
 
   private readonly readModels: RepositoryReadModels;
   private readonly searchPort: SqlSearchRepositoryPort;
+  private readonly searchCore: SearchService;
 
   constructor(
     private readonly db: Database,
@@ -108,6 +114,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     this.genshin = new SqlGenshinStructuredRepository(db);
     this.readModels = new RepositoryReadModels(db);
     this.searchPort = new SqlSearchRepositoryPort(db);
+    this.searchCore = new SearchService(this.searchPort);
   }
 
   async health() {
@@ -237,19 +244,77 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return this.readModels.getDocument(gameId, documentId, revisionId);
   }
 
+  async readDocumentSection(request: {
+    gameId: string;
+    revisionId: string;
+    documentId: string;
+    segmentId?: string;
+    section?: string;
+    maxChars: number;
+  }): Promise<import("@gip/domain").SectionReadResult | null> {
+    return this.readModels.readDocumentSection(request);
+  }
+
   async search(gameId: string, request: SearchRequest): Promise<SearchResult> {
-    const result = await this.readModels.search(gameId, request);
+    const requestedTypes = request.types ?? ["entity", "document", "segment"];
+    const result = await this.readModels.search(gameId, {
+      ...request,
+      types: requestedTypes.filter((type) => type === "entity"),
+    });
     if (result.revisionId) {
-      const core = new (await import("@gip/search")).SearchService(this.searchPort);
-      const structured = await core.searchText(gameId, result.revisionId, request.query);
-      const lore = await core.searchLore(gameId, result.revisionId, request.query);
+      const includeScopedSegments =
+        requestedTypes.includes("segment") &&
+        (!request.documentTypes?.length || !requestedTypes.includes("document"));
+      const surfaces = [
+        requestedTypes.includes("document") ? ("document" as const) : undefined,
+        includeScopedSegments ? ("segment" as const) : undefined,
+        !request.documentTypes?.length && requestedTypes.includes("entity")
+          ? ("structured" as const)
+          : undefined,
+      ].filter((surface): surface is "document" | "segment" | "structured" => Boolean(surface));
+      const structuredKinds = structuredKindsForSearchRequest(request);
+      const coreHits = surfaces.length
+        ? await this.searchCore.searchCore({
+            gameId,
+            revisionId: result.revisionId,
+            query: request.query,
+            surfaces,
+            documentTypes: request.documentTypes,
+            structuredKinds,
+            locales: request.locales,
+            limit: request.limit,
+          })
+        : { structured: [], documents: [], dialogue: [] };
+      if (requestedTypes.includes("document"))
+        result.documents = coreHits.documents
+          .filter((hit) => !hit.segmentId)
+          .map((hit) => ({
+            ...hit.document,
+            type: hit.document.type as DocumentType,
+            snippet: hit.body,
+            score: hit.score,
+            match: `document_${hit.matchedBy}`,
+            revision: result.revision,
+          }));
+      if (requestedTypes.includes("segment"))
+        result.segments = coreHits.documents
+          .filter((hit) => hit.segmentId)
+          .map((hit) => ({
+            ...hit.document,
+            type: hit.document.type as DocumentType,
+            segmentId: hit.segmentId!,
+            snippet: hit.body.slice(0, 300),
+            score: hit.score,
+            match: `segment_${hit.matchedBy}`,
+            revision: result.revision,
+          }));
       (
         result as SearchResult & {
           coreHits?: { structured: SearchCoreStructuredHit[]; lore: unknown };
         }
       ).coreHits = {
-        structured: structured.structured,
-        lore,
+        structured: coreHits.structured,
+        lore: coreHits.documents,
       };
     }
     return result;
@@ -263,14 +328,23 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     gameId: string,
     request: DialogueSearchRequest & DialogueSearchFilters,
   ): Promise<DialogueSearchHit[]> {
-    const core = new (await import("@gip/search")).SearchService(this.searchPort);
-    return core.searchDialogue(gameId, request.revisionId, request.query, {
+    return this.searchCore.searchDialogue(gameId, request.revisionId, request.query, {
       speaker: request.speaker,
       quest: request.quest,
       questKey: request.questKey,
       nodeType: request.nodeType,
       locale: request.locale,
     });
+  }
+
+  async resolveEntityCandidates(request: {
+    gameId: string;
+    revisionId: string;
+    query: string;
+    entityTypes?: string[];
+    limit?: number;
+  }) {
+    return this.searchCore.resolveEntityCandidates(request);
   }
 
   async getQuest(gameId: string, request: GetQuestRequest): Promise<QuestDialoguePage | null> {
@@ -933,4 +1007,23 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       .limit(1);
     return rows[0]?.stagedRecords ?? [];
   }
+}
+
+function structuredKindsForSearchRequest(
+  request: SearchRequest,
+): StructuredSearchKind[] | undefined {
+  if (!request.entityTypes?.length) return undefined;
+  const mapped = request.entityTypes.flatMap((entityType): StructuredSearchKind[] => {
+    switch (entityType) {
+      case "character":
+        return ["character"];
+      case "item":
+        return ["weapon", "artifact", "artifact_set", "material"];
+      case "npc":
+        return ["enemy"];
+      default:
+        return [];
+    }
+  });
+  return mapped.length ? [...new Set(mapped)] : undefined;
 }

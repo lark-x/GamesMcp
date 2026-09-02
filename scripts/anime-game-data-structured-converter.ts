@@ -91,7 +91,21 @@ export type StructuredAnimeGameDataResult = {
     locale: string;
     discovered: Record<StructuredKind, number>;
     converted: Record<StructuredKind, number>;
+    excluded: Array<{ kind: StructuredKind; upstreamId: string; reason: string }>;
     failures: Array<{ kind: StructuredKind; upstreamId: string; reason: string }>;
+    warnings: Array<{ kind: StructuredKind; upstreamId: string; reason: string }>;
+    accountedCoverage: Record<StructuredKind, number>;
+    accounting: Record<
+      StructuredKind,
+      {
+        discovered: number;
+        converted: number;
+        excluded: number;
+        failures: number;
+        accounted: number;
+        coverage: number;
+      }
+    >;
     coverage: Record<StructuredKind, number>;
     fieldCoverage: Record<StructuredKind, Record<string, number>>;
     stableIdCoverage: Record<StructuredKind, number>;
@@ -374,12 +388,14 @@ export async function convertStructuredAnimeGameData(
   const textMap = inputs.textMap.value;
   const textMapFull = inputs.textMapFull?.value;
   const failures: StructuredAnimeGameDataResult["manifest"]["failures"] = [];
+  const excluded: StructuredAnimeGameDataResult["manifest"]["excluded"] = [];
+  const warnings: StructuredAnimeGameDataResult["manifest"]["warnings"] = [];
 
   const characters = asArray(inputs.avatar.value).flatMap((row): GenshinCharacter[] => {
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.nameTextMapHash);
     if (!upstreamId || !name) {
-      failures.push({
+      excluded.push({
         kind: "characters",
         upstreamId: upstreamId ?? "unknown",
         reason: "name_missing",
@@ -409,7 +425,7 @@ export async function convertStructuredAnimeGameData(
     const type = weaponType(row.weaponType);
     const rank = rarity(row.rankLevel);
     if (!upstreamId || !name || !type || !rank) {
-      failures.push({
+      excluded.push({
         kind: "weapons",
         upstreamId: upstreamId ?? "unknown",
         reason: "required_field_missing",
@@ -442,7 +458,7 @@ export async function convertStructuredAnimeGameData(
     const upstreamId = idText(row.setId);
     const name = textMapValue(textMap, row.setNameTextMapHash);
     if (!upstreamId || !name) {
-      failures.push({
+      excluded.push({
         kind: "artifactSets",
         upstreamId: upstreamId ?? "unknown",
         reason: "name_missing",
@@ -482,7 +498,7 @@ export async function convertStructuredAnimeGameData(
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.nameTextMapHash);
     if (!upstreamId || !name) {
-      failures.push({
+      excluded.push({
         kind: "artifacts",
         upstreamId: upstreamId ?? "unknown",
         reason: "name_missing",
@@ -504,7 +520,7 @@ export async function convertStructuredAnimeGameData(
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.nameTextMapHash);
     if (!upstreamId || !name) {
-      failures.push({
+      excluded.push({
         kind: "materials",
         upstreamId: upstreamId ?? "unknown",
         reason: "name_missing",
@@ -548,7 +564,7 @@ export async function convertStructuredAnimeGameData(
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.titleTextMapHash);
     if (!upstreamId || !name) {
-      failures.push({
+      excluded.push({
         kind: "achievements",
         upstreamId: upstreamId ?? "unknown",
         reason: "name_missing",
@@ -559,7 +575,7 @@ export async function convertStructuredAnimeGameData(
     const goal = achievementGoals.get(goalId ?? "");
     const goalName = goal?.goalName;
     if (!goal?.mappingKnown) {
-      failures.push({
+      warnings.push({
         kind: "achievements",
         upstreamId,
         reason: "goal_mapping_missing",
@@ -597,7 +613,7 @@ export async function convertStructuredAnimeGameData(
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.nameTextMapHash);
     if (!upstreamId || !name) {
-      failures.push({
+      excluded.push({
         kind: "enemies",
         upstreamId: upstreamId ?? "unknown",
         reason: "name_missing",
@@ -639,7 +655,7 @@ export async function convertStructuredAnimeGameData(
       row.voiceFileTextTextMapHash ?? row.textTextMapHash,
     );
     if (!avatarId || !title || !body) {
-      failures.push({
+      excluded.push({
         kind: "voices",
         upstreamId: idText(row.id) ?? idText(row.fetterId) ?? "unknown",
         reason: "required_field_missing",
@@ -683,6 +699,38 @@ export async function convertStructuredAnimeGameData(
   const converted = Object.fromEntries(
     Object.entries(records).map(([kind, values]) => [kind, values.length]),
   ) as Record<StructuredKind, number>;
+  const excludedCounts = Object.fromEntries(
+    Object.keys(records).map((kind) => [
+      kind,
+      excluded.filter((item) => item.kind === kind).length,
+    ]),
+  ) as Record<StructuredKind, number>;
+  const failureCounts = Object.fromEntries(
+    Object.keys(records).map((kind) => [
+      kind,
+      failures.filter((item) => item.kind === kind).length,
+    ]),
+  ) as Record<StructuredKind, number>;
+  const accounting = Object.fromEntries(
+    Object.entries(discovered).map(([kind, count]) => {
+      const typedKind = kind as StructuredKind;
+      const accounted = converted[typedKind] + excludedCounts[typedKind] + failureCounts[typedKind];
+      return [
+        typedKind,
+        {
+          discovered: count,
+          converted: converted[typedKind],
+          excluded: excludedCounts[typedKind],
+          failures: failureCounts[typedKind],
+          accounted,
+          coverage: count ? accounted / count : 1,
+        },
+      ];
+    }),
+  ) as StructuredAnimeGameDataResult["manifest"]["accounting"];
+  const accountedCoverage = Object.fromEntries(
+    Object.entries(accounting).map(([kind, entry]) => [kind, entry.coverage]),
+  ) as Record<StructuredKind, number>;
   const coverage = Object.fromEntries(
     Object.entries(discovered).map(([kind, count]) => [
       kind,
@@ -716,10 +764,20 @@ export async function convertStructuredAnimeGameData(
     locale: STRUCTURED_LOCALE,
     discovered,
     converted,
+    excluded: excluded.sort(
+      (left, right) =>
+        left.kind.localeCompare(right.kind) || left.upstreamId.localeCompare(right.upstreamId),
+    ),
     failures: failures.sort(
       (left, right) =>
         left.kind.localeCompare(right.kind) || left.upstreamId.localeCompare(right.upstreamId),
     ),
+    warnings: warnings.sort(
+      (left, right) =>
+        left.kind.localeCompare(right.kind) || left.upstreamId.localeCompare(right.upstreamId),
+    ),
+    accountedCoverage,
+    accounting,
     coverage,
     fieldCoverage,
     stableIdCoverage,

@@ -1,7 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { format as formatJson } from "prettier";
@@ -55,21 +54,6 @@ const PINNED_UPSTREAM_COMMIT = "26df1dfbdf05a82bbb1d97506859f3e1c40718d8";
 const GAME_SLUG = process.env.GAME_SLUG ?? "genshin-impact";
 const MEMORY_GAME_ID = "00000000-0000-0000-0000-000000000017";
 const MEMORY_REVISION_ID = `published-memory:${PINNED_UPSTREAM_COMMIT}`;
-const STRUCTURED_OVERLAY_FILES = [
-  "TextMap/TextMap_MediumCHS.json",
-  "TextMap/TextMapCHS.json",
-  "ExcelBinOutput/AvatarExcelConfigData.json",
-  "ExcelBinOutput/WeaponExcelConfigData.json",
-  "ExcelBinOutput/ReliquarySetExcelConfigData.json",
-  "ExcelBinOutput/ReliquaryAffixExcelConfigData.json",
-  "ExcelBinOutput/ReliquaryExcelConfigData.json",
-  "ExcelBinOutput/MaterialExcelConfigData.json",
-  "ExcelBinOutput/AchievementGoalExcelConfigData.json",
-  "ExcelBinOutput/AchievementExcelConfigData.json",
-  "ExcelBinOutput/MonsterExcelConfigData.json",
-  "ExcelBinOutput/FettersExcelConfigData.json",
-] as const;
-
 const EVALUATED_CATEGORIES = [
   "dialogue",
   "quest",
@@ -78,9 +62,10 @@ const EVALUATED_CATEGORIES = [
   "item",
   "achievement",
   "voice",
+  "mechanism",
 ] as const;
 type EvaluatedCategory = (typeof EVALUATED_CATEGORIES)[number];
-type ExcludedCategory = "tutorial" | "mechanism";
+type ExcludedCategory = "tutorial";
 type Category = EvaluatedCategory | ExcludedCategory;
 
 const QUEST_TYPES = new Set<DocumentType>([
@@ -107,7 +92,7 @@ export function deterministicUuid(key: string): string {
 
 export type CorpusDocument = {
   key: string;
-  category: Exclude<EvaluatedCategory, "dialogue" | "achievement">;
+  category: Exclude<EvaluatedCategory, "dialogue" | "achievement" | "voice">;
   id: string;
   sourceKey: string;
   title: string;
@@ -215,15 +200,22 @@ class MemorySearchRepository implements SearchRepositoryPort {
     private readonly structured: CorpusStructured[],
   ) {}
 
-  async listStructuredAtRevision(gameId: string, revisionId: string, query: string) {
-    void gameId;
-    void revisionId;
+  async listStructuredAtRevision(
+    requestOrGameId: Parameters<SearchRepositoryPort["listStructuredAtRevision"]>[0],
+    maybeRevisionId?: string,
+    maybeQuery?: string,
+  ) {
+    void maybeRevisionId;
+    const query = typeof requestOrGameId === "string" ? (maybeQuery ?? "") : requestOrGameId.query;
+    const kinds =
+      typeof requestOrGameId === "string" ? undefined : new Set(requestOrGameId.kinds ?? []);
     const normalizedQuery = normalizeText(query);
     return this.structured
       .filter(
         (item) =>
-          normalizeText(item.name).includes(normalizedQuery) ||
-          normalizeText(item.body).includes(normalizedQuery),
+          (!kinds?.size || kinds.has(item.kind)) &&
+          (normalizeText(item.name).includes(normalizedQuery) ||
+            normalizeText(item.body).includes(normalizedQuery)),
       )
       .map((item) => ({
         kind: item.kind,
@@ -270,22 +262,30 @@ class MemorySearchRepository implements SearchRepositoryPort {
     }));
   }
 
-  async listDocumentHits(gameId: string, revisionId: string, query: string) {
-    void gameId;
-    void revisionId;
-    void query;
-    return this.documents.map((item) => ({
-      key: item.key,
-      document: {
-        id: item.id,
-        sourceKey: item.sourceKey,
+  async listDocumentHits(
+    requestOrGameId: Parameters<SearchRepositoryPort["listDocumentHits"]>[0],
+    maybeRevisionId?: string,
+    maybeQuery?: string,
+  ) {
+    void maybeRevisionId;
+    void maybeQuery;
+    const request = typeof requestOrGameId === "string" ? undefined : requestOrGameId;
+    const types = request?.documentTypes?.length ? new Set(request.documentTypes) : undefined;
+    const locales = request?.locales?.length ? new Set(request.locales) : undefined;
+    return this.documents
+      .filter((item) => (!types || types.has(item.type)) && (!locales || locales.has(item.locale)))
+      .map((item) => ({
+        key: item.key,
+        document: {
+          id: item.id,
+          sourceKey: item.sourceKey,
+          title: item.title,
+          type: item.type,
+          locale: item.locale,
+        },
+        body: item.body,
         title: item.title,
-        type: item.type,
-        locale: item.locale,
-      },
-      body: item.body,
-      title: item.title,
-    }));
+      }));
   }
 }
 
@@ -402,46 +402,6 @@ async function gitOutput(upstreamDir: string, args: string[]): Promise<string> {
   return String(result.stdout).trim();
 }
 
-async function readGitBlob(upstreamDir: string, relativePath: string): Promise<string> {
-  const result = await execFile("git", ["-C", upstreamDir, "show", `HEAD:${relativePath}`], {
-    encoding: "utf8",
-    env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return String(result.stdout);
-}
-
-async function createStructuredOverlay(upstreamDir: string): Promise<string> {
-  const overlay = await mkdtemp(join(tmpdir(), "gip-search-regression-"));
-  try {
-    for (const relativePath of STRUCTURED_OVERLAY_FILES) {
-      const destination = join(overlay, relativePath);
-      await mkdir(dirname(destination), { recursive: true });
-      const source = resolve(upstreamDir, relativePath);
-      try {
-        await access(source);
-        await symlink(source, destination);
-      } catch {
-        try {
-          await writeFile(destination, await readGitBlob(upstreamDir, relativePath), "utf8");
-        } catch (error) {
-          // The structured converter loads its complete input contract even
-          // when this regression only consumes achievements. A sparse
-          // checkout may omit unrelated tables and their Git blobs; treating
-          // those unused tables as empty keeps the achievement conversion
-          // honest while the category is explicitly excluded below.
-          void error;
-          await writeFile(destination, "[]\n", "utf8");
-        }
-      }
-    }
-    return overlay;
-  } catch (error) {
-    await rm(overlay, { recursive: true, force: true });
-    throw error;
-  }
-}
-
 function inferGameVersion(subject: string): string {
   return /(?:CNRELWin|OSRELWin)(\d+\.\d+\.\d+)/u.exec(subject)?.[1] ?? "unknown";
 }
@@ -468,23 +428,16 @@ export async function loadRealCorpus(upstreamDir: string): Promise<Corpus> {
   };
 
   const [structuredConversion, textConversion, questConversion] = await Promise.all([
-    (async () => {
-      const overlay = await createStructuredOverlay(upstreamDir);
-      try {
-        return await convertStructuredAnimeGameData({
-          upstreamDir: overlay,
-          context: {
-            gameId: MEMORY_GAME_ID,
-            revisionId: "00000000-0000-0000-0000-000000000017",
-            upstreamCommit,
-            upstreamVersion,
-            gameVersion,
-          },
-        });
-      } finally {
-        await rm(overlay, { recursive: true, force: true });
-      }
-    })(),
+    convertStructuredAnimeGameData({
+      upstreamDir,
+      context: {
+        gameId: MEMORY_GAME_ID,
+        revisionId: "00000000-0000-0000-0000-000000000017",
+        upstreamCommit,
+        upstreamVersion,
+        gameVersion,
+      },
+    }),
     convertAnimeGameData({
       upstreamDir,
       language: "CHS",
@@ -514,19 +467,27 @@ export async function loadRealCorpus(upstreamDir: string): Promise<Corpus> {
     ...textConversion.records.items.flatMap((record, index) =>
       documentFromRecord("item", record, index) ? [documentFromRecord("item", record, index)!] : [],
     ),
+    ...textConversion.records.mechanisms.flatMap((record, index) =>
+      documentFromRecord("mechanism", record, index)
+        ? [documentFromRecord("mechanism", record, index)!]
+        : [],
+    ),
   ].sort((left, right) => left.key.localeCompare(right.key));
   const dialogue = quests.dialogue.sort((left, right) => left.key.localeCompare(right.key));
-  const structured = [
-    ...structuredAchievementRecords(structuredConversion.records.achievements),
-    ...structuredVoiceRecords(structuredConversion.records.voices),
-  ].sort((left, right) => left.stableId.localeCompare(right.stableId));
+  const achievements = structuredAchievementRecords(structuredConversion.records.achievements);
+  const voices = structuredVoiceRecords(structuredConversion.records.voices);
+  const structured = [...achievements, ...voices].sort((left, right) =>
+    left.stableId.localeCompare(right.stableId),
+  );
   const counts: Record<EvaluatedCategory, number> = {
     dialogue: dialogue.length,
     quest: documents.filter((record) => record.category === "quest").length,
     book: documents.filter((record) => record.category === "book").length,
     character_story: documents.filter((record) => record.category === "character_story").length,
     item: documents.filter((record) => record.category === "item").length,
-    achievement: structured.length,
+    achievement: achievements.length,
+    voice: voices.length,
+    mechanism: documents.filter((record) => record.category === "mechanism").length,
   };
   for (const category of EVALUATED_CATEGORIES) {
     if (counts[category] < 5)
@@ -553,10 +514,12 @@ export async function loadRealCorpus(upstreamDir: string): Promise<Corpus> {
       convertedBookRecords: textConversion.records.books.length,
       convertedCharacterStoryRecords: textConversion.records.characterStories.length,
       convertedItemRecords: textConversion.records.items.length,
+      convertedMechanismRecords: textConversion.records.mechanisms.length,
       convertedAchievementRecords: structuredConversion.records.achievements.length,
+      convertedVoiceRecords: structuredConversion.records.voices.length,
     },
     sourceDescription:
-      "Published-shaped zh-CN records converted offline from the pinned AnimeGameData checkout; sparse achievement files are read from the pinned Git blob without network fetch.",
+      "Published-shaped zh-CN records converted offline from the full pinned AnimeGameData checkout.",
   };
 }
 
@@ -602,6 +565,19 @@ async function loadFixtureCorpus(): Promise<Corpus> {
       locale: "zh-CN",
     });
   }
+  for (const [index, query] of uniqueQueries.slice(0, 5).entries()) {
+    const key = `fixture/mechanism/${index + 1}`;
+    documents.push({
+      key,
+      category: "mechanism",
+      id: `fixture-document:mechanism-${index + 1}`,
+      sourceKey: key,
+      title: `机制${index + 1}`,
+      body: query,
+      type: "mechanism",
+      locale: "zh-CN",
+    });
+  }
   const dialogue: CorpusDialogue[] = uniqueQueries.slice(0, 20).map((query, index) => ({
     key: `fixture/quest/${index + 1}/fixture/dialogue/${index + 1}`,
     documentId: `fixture-document:dialogue-${index + 1}`,
@@ -614,20 +590,30 @@ async function loadFixtureCorpus(): Promise<Corpus> {
     questType: "world_quest",
     locale: "zh-CN",
   }));
-  const structured: CorpusStructured[] = uniqueQueries.slice(0, 20).map((query, index) => ({
+  const achievements: CorpusStructured[] = uniqueQueries.slice(0, 20).map((query, index) => ({
     key: `genshin:achievement:fixture-${index + 1}`,
     kind: "achievement",
     stableId: `genshin:achievement:fixture-${index + 1}`,
     name: query,
     body: query,
   }));
+  const voices: CorpusStructured[] = uniqueQueries.slice(0, 20).map((query, index) => ({
+    key: `genshin:voice:fixture-${index + 1}`,
+    kind: "voice",
+    stableId: `genshin:voice:fixture-${index + 1}`,
+    name: `角色${index + 1}`,
+    body: query,
+  }));
+  const structured = [...achievements, ...voices];
   const counts: Record<EvaluatedCategory, number> = {
     dialogue: dialogue.length,
     quest: documents.filter((record) => record.category === "quest").length,
     book: documents.filter((record) => record.category === "book").length,
     character_story: documents.filter((record) => record.category === "character_story").length,
     item: documents.filter((record) => record.category === "item").length,
-    achievement: structured.length,
+    achievement: achievements.length,
+    voice: voices.length,
+    mechanism: documents.filter((record) => record.category === "mechanism").length,
   };
   for (const category of EVALUATED_CATEGORIES) {
     if (counts[category] < 5)
@@ -725,6 +711,7 @@ function documentHitMatches(category: EvaluatedCategory, type: string, sourceKey
   if (category === "book") return type === "book";
   if (category === "character_story") return type === "character_story";
   if (category === "item") return type === "item_description";
+  if (category === "mechanism") return type === "mechanism";
   return false;
 }
 
@@ -904,9 +891,7 @@ async function evaluateCategory(
 
 function excludedCategoryResult(category: ExcludedCategory): ExcludedCategoryResult {
   const reasons: Record<ExcludedCategory, string> = {
-    voice: "excluded: pinned AnimeGameData has no AvatarVoiceExcelConfigData source file",
     tutorial: "excluded: pinned snapshot has no readable canonical tutorial/help source",
-    mechanism: "excluded: pinned snapshot has no readable canonical mechanism/help source",
   };
   return { status: "excluded", queryCount: 0, reason: reasons[category] };
 }
@@ -936,8 +921,7 @@ async function main(): Promise<void> {
       runner,
     );
   }
-  for (const category of ["tutorial", "mechanism"] as const)
-    categories[category] = excludedCategoryResult(category);
+  categories.tutorial = excludedCategoryResult("tutorial");
 
   await databaseAttempt.close();
   await mkdir(dirname(OUTPUT_PATH), { recursive: true });
@@ -961,9 +945,7 @@ async function main(): Promise<void> {
     },
     categories,
     excluded: {
-      voice: categories.voice,
       tutorial: categories.tutorial,
-      mechanism: categories.mechanism,
     },
     generatedAt: new Date().toISOString(),
     pinnedUpstreamCommit: PINNED_UPSTREAM_COMMIT,
@@ -990,10 +972,7 @@ async function main(): Promise<void> {
           EVALUATED_CATEGORIES.map((category) => [category, categories[category].metrics]),
         ),
         excluded: Object.fromEntries(
-          (["tutorial", "mechanism"] as const).map((category) => [
-            category,
-            categories[category].reason,
-          ]),
+          (["tutorial"] as const).map((category) => [category, categories[category].reason]),
         ),
       },
       null,

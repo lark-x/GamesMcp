@@ -789,11 +789,25 @@ export type TextBinding = {
   confidence: number | null;
   bindingSource: TextBindingSource;
   metadata: Record<string, unknown>;
+  documentTitle?: string;
+  documentType?: string;
+  documentLocale?: string | null;
+  excerpt?: string;
   createdAt: Date;
 };
 
 /** Alias used by consumers that describe the entity-facing direction explicitly. */
 export type EntityTextBinding = TextBinding;
+
+export type EntityResolutionCandidate = {
+  id: Id;
+  entityType: string;
+  canonicalName: string;
+  aliases?: string[];
+  matchTier?: string;
+  matchedText?: string;
+  matchConfidence?: number;
+};
 
 export type VectorSearchHit = {
   document: DocumentSummary;
@@ -930,7 +944,22 @@ export interface KnowledgeRepository {
     },
   ): Promise<DocumentSummary[]>;
   getDocument(gameId: Id, documentId: Id, revisionId?: Id): Promise<DocumentDetail | null>;
+  readDocumentSection?(request: {
+    gameId: Id;
+    revisionId: Id;
+    documentId: Id;
+    segmentId?: Id;
+    section?: string;
+    maxChars: number;
+  }): Promise<SectionReadResult | null>;
   search(gameId: Id, request: SearchRequest): Promise<SearchResult>;
+  resolveEntityCandidates?(request: {
+    gameId: Id;
+    revisionId: Id;
+    query: string;
+    entityTypes?: string[];
+    limit?: number;
+  }): Promise<EntityResolutionCandidate[]>;
   vectorSearch(
     gameId: Id,
     request: SearchRequest,
@@ -1175,6 +1204,8 @@ export function validateNormalizedRecords(
     "character_story",
     "item_description",
     "official_notice",
+    "mechanism",
+    "tutorial",
     "lore",
   ]);
   const predicates = new Set([
@@ -1587,6 +1618,7 @@ export type CitationView = {
 export type SectionReadRequest = {
   gameId: Id;
   documentId: Id;
+  segmentId?: Id;
   revisionId?: Id;
   section?: string;
   maxChars?: number;
@@ -1609,17 +1641,21 @@ export type SectionReadResult = {
  * repository internals directly.
  */
 export class GameDomainService {
+  private readonly metadataCache = new Map<string, { expiresAt: number; value: unknown }>();
+
   constructor(private readonly repository: KnowledgeRepository) {}
 
   async requireGame(gameId: Id): Promise<GameSummary> {
-    const game = await this.repository.getGame(gameId);
+    const game = await this.cached(`game:${gameId}`, () => this.repository.getGame(gameId));
     if (!game) throw new DomainError("game_not_found", "Game was not found", undefined, 404);
     return game;
   }
 
   async requireCapability(gameId: Id, capability: Capability): Promise<void> {
     await this.requireGame(gameId);
-    const capabilities = await this.repository.getCapabilities(gameId);
+    const capabilities = await this.cached(`capabilities:${gameId}`, () =>
+      this.repository.getCapabilities(gameId),
+    );
     if (!capabilities.some((item) => item.capability === capability && item.enabled)) {
       throw new DomainError(
         "capability_not_available",
@@ -1633,12 +1669,14 @@ export class GameDomainService {
   /** Resolve the current public, searchable, published revision. */
   async requirePublicRevision(gameId: Id): Promise<Id> {
     await this.requireGame(gameId);
-    const revision = (await this.repository.listRevisions(gameId)).find(
-      (item) =>
-        item.isCurrent &&
-        item.lifecycleStatus === "published" &&
-        item.indexStatus === "ready" &&
-        Boolean(item.manifestId),
+    const revision = await this.cached(`revision:${gameId}`, async () =>
+      (await this.repository.listRevisions(gameId)).find(
+        (item) =>
+          item.isCurrent &&
+          item.lifecycleStatus === "published" &&
+          item.indexStatus === "ready" &&
+          Boolean(item.manifestId),
+      ),
     );
     if (!revision)
       throw new DomainError(
@@ -1648,6 +1686,15 @@ export class GameDomainService {
         503,
       );
     return revision.id;
+  }
+
+  private async cached<T>(key: string, load: () => Promise<T>, ttlMs = 2_000): Promise<T> {
+    const now = Date.now();
+    const cached = this.metadataCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.value as T;
+    const value = await load();
+    this.metadataCache.set(key, { value, expiresAt: now + ttlMs });
+    return value;
   }
 
   /** List public documents for dedicated text readers. */
@@ -1680,14 +1727,30 @@ export class GameDomainService {
   async resolveAlias(gameId: Id, query: string, revisionId?: Id): Promise<EntitySummary | null> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const result = await this.repository.search(gameId, {
-      query,
-      types: ["entity"],
-      limit: 1,
+    if (!this.repository.resolveEntityCandidates)
+      throw new DomainError(
+        "entity_resolver_unavailable",
+        "Entity resolver candidate lookup is unavailable",
+        undefined,
+        501,
+      );
+    const candidates = await this.repository.resolveEntityCandidates({
+      gameId,
       revisionId: revision,
-      debug: false,
+      query,
+      limit: 1,
     });
-    return result.entities[0] ?? null;
+    const candidate = candidates[0];
+    if (!candidate) return null;
+    return {
+      id: candidate.id,
+      name: candidate.canonicalName,
+      type: candidate.entityType as EntitySummary["type"],
+      aliases: candidate.aliases ?? [],
+      score: candidate.matchConfidence,
+      match: candidate.matchTier,
+      revision,
+    };
   }
 
   async listCharacters(
@@ -1933,6 +1996,18 @@ export class GameDomainService {
   async readSection(request: SectionReadRequest): Promise<SectionReadResult> {
     await this.requireCapability(request.gameId, "lore_search");
     const revision = request.revisionId ?? (await this.requirePublicRevision(request.gameId));
+    const maxChars = Math.min(Math.max(request.maxChars ?? 800, 100), 8000);
+    if (this.repository.readDocumentSection) {
+      const section = await this.repository.readDocumentSection({
+        gameId: request.gameId,
+        revisionId: revision,
+        documentId: request.documentId,
+        segmentId: request.segmentId,
+        section: request.section,
+        maxChars,
+      });
+      if (section) return section;
+    }
     const document = await this.repository.getDocument(
       request.gameId,
       request.documentId,
@@ -1940,7 +2015,6 @@ export class GameDomainService {
     );
     if (!document)
       throw new DomainError("document_not_found", "Document was not found", undefined, 404);
-    const maxChars = Math.min(Math.max(request.maxChars ?? 800, 100), 8000);
     const wanted = request.section?.trim().toLocaleLowerCase("zh-CN");
     const matching = wanted
       ? document.segments.filter((segment) =>

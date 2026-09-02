@@ -22,6 +22,7 @@ const categoryFiles = {
   book: "books.json",
   character_story: "character-stories.json",
   item_description: "items.json",
+  mechanism: "mechanisms.json",
   quest: "quests.json",
   structured: "manifest.json",
 } as const;

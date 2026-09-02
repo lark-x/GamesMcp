@@ -32,6 +32,8 @@ export const documentTypeSchema = z.enum([
   "character_story",
   "item_description",
   "official_notice",
+  "mechanism",
+  "tutorial",
   "lore",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;

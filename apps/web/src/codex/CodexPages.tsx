@@ -1105,7 +1105,7 @@ export function CodexMechanicsPage({
         <div className="codex-loading">读取语料状态中…</div>
       ) : (
         <div className="codex-status-panel">
-          <strong>语料状态：{result?.corpusStatus ?? "mechanism_source_missing"}</strong>
+          <strong>语料状态：{result?.corpusStatus ?? "mechanism_source_empty"}</strong>
           {result?.note && <p>{result.note}</p>}
           {!result?.hits.length ? (
             <p>当前没有可展示的教程/机制正文，不生成或填充假数据。</p>

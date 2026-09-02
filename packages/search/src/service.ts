@@ -1,8 +1,11 @@
 import type {
+  DocumentSearchRequest,
   DialogueSearchFilters,
   EntityCandidateSearchRequest,
+  SearchSurface,
   SearchRepositoryPort,
   SearchMatchType,
+  StructuredSearchRequest,
   StructuredSearchKind,
 } from "./port.js";
 import { rankCandidate, scoreSearchMatch } from "./ranking.js";
@@ -43,6 +46,7 @@ export type SearchCoreDocumentHit = {
     locale?: string | null;
   };
   body: string;
+  segmentId?: string | null;
   score: number;
   matchedBy: string;
 };
@@ -53,6 +57,17 @@ export type SearchCoreResult = {
   documents: SearchCoreDocumentHit[];
 };
 
+export type SearchCoreRequest = {
+  gameId: string;
+  revisionId: string;
+  query: string;
+  surfaces?: SearchSurface[];
+  documentTypes?: DocumentSearchRequest["documentTypes"];
+  structuredKinds?: StructuredSearchRequest["kinds"];
+  locales?: string[];
+  limit?: number;
+};
+
 /**
  * Shared search core over the repository port. Ranking is tiered and
  * deterministic; results are shaped through the token budget for MCP reuse.
@@ -60,11 +75,36 @@ export type SearchCoreResult = {
 export class SearchService {
   constructor(private readonly repository: SearchRepositoryPort) {}
 
-  async searchText(gameId: string, revisionId: string, query: string): Promise<SearchCoreResult> {
+  async searchCore(request: SearchCoreRequest): Promise<SearchCoreResult> {
+    const surfaces = new Set(request.surfaces ?? ["structured", "document", "segment", "dialogue"]);
+    const limit = Math.min(Math.max(request.limit ?? 20, 1), 100);
     const [structured, documents, dialogue] = await Promise.all([
-      this.repository.listStructuredAtRevision(gameId, revisionId, query),
-      this.repository.listDocumentHits(gameId, revisionId, query),
-      this.repository.listDialogueHits(gameId, revisionId, query),
+      surfaces.has("structured")
+        ? this.repository.listStructuredAtRevision({
+            gameId: request.gameId,
+            revisionId: request.revisionId,
+            query: request.query,
+            kinds: request.structuredKinds,
+            limit: Math.max(limit * 4, 40),
+          })
+        : Promise.resolve([]),
+      surfaces.has("document") || surfaces.has("segment")
+        ? this.repository.listDocumentHits({
+            gameId: request.gameId,
+            revisionId: request.revisionId,
+            query: request.query,
+            documentTypes: request.documentTypes,
+            locales: request.locales,
+            includeDocuments: surfaces.has("document"),
+            includeSegments: surfaces.has("segment"),
+            resultLimit: Math.max(limit * 2, 20),
+          })
+        : Promise.resolve([]),
+      surfaces.has("dialogue")
+        ? this.repository.listDialogueHits(request.gameId, request.revisionId, request.query, {
+            locale: request.locales?.[0],
+          })
+        : Promise.resolve([]),
     ]);
     const structuredHits = structured
       .map((item) => {
@@ -73,7 +113,7 @@ export class SearchService {
               score: scoreSearchMatch(item.matchType, item.rank),
               matchedBy: item.matchType,
             }
-          : rankCandidate(query, {
+          : rankCandidate(request.query, {
               title: item.name,
               aliases: item.aliases,
               body: item.body,
@@ -88,7 +128,7 @@ export class SearchService {
       })
       .filter((hit) => hit.score > 0)
       .sort((left, right) => right.score - left.score)
-      .slice(0, 20);
+      .slice(0, limit);
     const documentHits = documents
       .map((item) => {
         const ranked = item.matchType
@@ -96,22 +136,27 @@ export class SearchService {
               score: scoreSearchMatch(item.matchType, item.rank),
               matchedBy: item.matchType,
             }
-          : rankCandidate(query, { title: item.document.title, body: item.body });
+          : rankCandidate(request.query, { title: item.document.title, body: item.body });
         return {
           document: item.document,
           body: item.body,
+          segmentId: item.segmentId,
           score: ranked.score,
           matchedBy: ranked.matchedBy,
         };
       })
       .filter((hit) => hit.score > 0)
       .sort((left, right) => right.score - left.score)
-      .slice(0, 20);
-    const dialogueHits = this.mapDialogueHits(query, dialogue)
+      .slice(0, limit);
+    const dialogueHits = this.mapDialogueHits(request.query, dialogue)
       .filter((hit) => hit.score > 0)
       .sort((left, right) => right.score - left.score)
-      .slice(0, 10);
+      .slice(0, Math.min(limit, 10));
     return { structured: structuredHits, dialogue: dialogueHits, documents: documentHits };
+  }
+
+  async searchText(gameId: string, revisionId: string, query: string): Promise<SearchCoreResult> {
+    return this.searchCore({ gameId, revisionId, query });
   }
 
   async searchDialogue(
@@ -132,7 +177,13 @@ export class SearchService {
     revisionId: string,
     query: string,
   ): Promise<SearchCoreDocumentHit[]> {
-    const documents = await this.repository.listDocumentHits(gameId, revisionId, query);
+    const documents = await this.repository.listDocumentHits({
+      gameId,
+      revisionId,
+      query,
+      includeDocuments: true,
+      includeSegments: true,
+    });
     return documents
       .map((item) => {
         const ranked = item.matchType
@@ -144,6 +195,7 @@ export class SearchService {
         return {
           document: item.document,
           body: item.body,
+          segmentId: item.segmentId,
           score: ranked.score,
           matchedBy: ranked.matchedBy,
         };

@@ -6,6 +6,23 @@ import type { KnowledgeRepository } from "@gip/domain";
 
 const gameId = "00000000-0000-0000-0000-000000000001";
 const entityId = "00000000-0000-0000-0000-000000000002";
+const itemDocumentId = "00000000-0000-0000-0000-000000000041";
+
+const itemTextDocument = {
+  id: itemDocumentId,
+  sourceKey: "item-codex/30001",
+  title: "霓裳花",
+  type: "item_description" as const,
+  snippet: "璃月的鲜花。",
+  body: "璃月的鲜花。\n\n常被用于角色培养。",
+  gameVersion: "7.0.0",
+  locale: "zh-CN",
+  revision: "r1",
+  sourceName: "AnimeGameData",
+  sourceId: "00000000-0000-0000-0000-000000000011",
+  provenance: { canonicalKey: "item-codex/30001", upstreamIds: { materialId: "nichang" } },
+  segments: [],
+};
 
 const repository = {
   listGames: async () => [
@@ -27,15 +44,43 @@ const repository = {
     { capability: "relationships" as const, enabled: true },
     { capability: "evidence_qa" as const, enabled: true },
   ],
-  search: async () => ({
-    entities: [],
-    documents: [],
-    segments: [],
-    revision: "",
-    indexStatus: "not_ready",
-  }),
+  search: async (_gameId: string, request?: { documentTypes?: string[] }) =>
+    request?.documentTypes?.includes("mechanism")
+      ? {
+          entities: [],
+          documents: [
+            {
+              id: "00000000-0000-0000-0000-000000000040",
+              sourceKey: "mechanism/Tutorial/1001",
+              title: "超载",
+              type: "mechanism" as const,
+              snippet: "超载反应会造成火元素范围伤害。",
+              revision: "r1",
+            },
+          ],
+          segments: [],
+          revision: "r1",
+          indexStatus: "ready",
+        }
+      : request?.documentTypes?.includes("item_description")
+        ? {
+            entities: [],
+            documents: [itemTextDocument],
+            segments: [],
+            revision: "r1",
+            revisionId: "00000000-0000-0000-0000-000000000010",
+            indexStatus: "ready",
+          }
+        : {
+            entities: [],
+            documents: [],
+            segments: [],
+            revision: "",
+            indexStatus: "not_ready",
+          },
   getEntity: async () => null,
-  getDocument: async () => null,
+  getDocument: async (_gameId: string, documentId: string) =>
+    documentId === itemDocumentId ? itemTextDocument : null,
   getRelationships: async () => [],
   searchQuests: async () => [
     {
@@ -645,31 +690,41 @@ describe("MCP server", () => {
       arguments: { query: "霓裳" },
     });
     const itemsBody = resultJson(searchItems) as {
-      items?: Array<{ name?: string }>;
+      items?: Array<{ stableId?: string; materialStableId?: string; name?: string }>;
       truncated?: boolean;
     };
     expect(searchItems.isError).toBeFalsy();
     expect(itemsBody.items?.[0]?.name).toBe("霓裳花");
+    expect(itemsBody.items?.[0]?.stableId).toBe(itemDocumentId);
+    expect(itemsBody.items?.[0]?.materialStableId).toBe("material/nichang");
     expect(itemsBody.truncated).toBe(false);
 
     const itemText = await client.callTool({
       name: "get_item_text",
+      arguments: { item_id: itemDocumentId },
+    });
+    const itemBody = resultJson(itemText) as { item?: { stableId?: string; description?: string } };
+    expect(itemBody.item?.stableId).toBe(itemDocumentId);
+    expect(itemBody.item?.description).toContain("常被用于角色培养");
+
+    const legacyItemText = await client.callTool({
+      name: "get_item_text",
       arguments: { item_id: "material/nichang" },
     });
-    const itemBody = resultJson(itemText) as { item?: { stableId?: string } };
-    expect(itemBody.item?.stableId).toBe("material/nichang");
+    const legacyItemBody = resultJson(legacyItemText) as { item?: { stableId?: string } };
+    expect(legacyItemBody.item?.stableId).toBe("material/nichang");
 
     const mechanics = await client.callTool({
       name: "search_mechanics",
       arguments: { query: "超载" },
     });
     const mechanicsBody = resultJson(mechanics) as {
-      hits?: unknown[];
+      hits?: Array<{ sourceKey?: string }>;
       corpusStatus?: string;
     };
     expect(mechanics.isError).toBeFalsy();
-    expect(mechanicsBody.corpusStatus).toBe("mechanism_source_missing");
-    expect(mechanicsBody.hits).toEqual([]);
+    expect(mechanicsBody.corpusStatus).toBe("available");
+    expect(mechanicsBody.hits?.[0]?.sourceKey).toBe("mechanism/Tutorial/1001");
 
     await client.close();
     await server.close();
