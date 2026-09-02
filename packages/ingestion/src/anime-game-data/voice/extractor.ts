@@ -15,9 +15,10 @@ export const VOICE_EXTRACTOR_VERSION = "1.0.0";
 export const VOICE_INPUTS = {
   textMap: "TextMap/TextMap_MediumCHS.json",
   avatarVoice: "ExcelBinOutput/AvatarVoiceExcelConfigData.json",
+  fetters: "ExcelBinOutput/FettersExcelConfigData.json",
 } as const;
 
-export const VOICE_REQUIRED_INPUTS = [VOICE_INPUTS.avatarVoice] as const;
+export const VOICE_REQUIRED_INPUTS = [VOICE_INPUTS.fetters] as const;
 
 type JsonObject = Record<string, unknown>;
 
@@ -193,18 +194,28 @@ export class VoiceExtractor implements AnimeTextExtractor<VoiceRecord> {
   readonly requiredInputs = [...VOICE_REQUIRED_INPUTS];
 
   async extract(ctx: AnimeContext): Promise<VoiceExtractionResult> {
-    let voiceSource: SourceFile<unknown>;
+    // Preferred source: AvatarVoiceExcelConfigData (dedicated voice rows).
+    // Fallback source: FettersExcelConfigData (character voice-over
+    // transcription). The pinned snapshot publishes Fetters but not
+    // AvatarVoice.
+    let voiceSource: SourceFile<unknown> | undefined;
     try {
       voiceSource = await loadSourceJson<unknown>(ctx, VOICE_INPUTS.avatarVoice);
     } catch (error) {
       if (!isMissingFile(error)) throw error;
-      const inputHashes = sortedInputHashes({});
-      return emptyVoiceResult(ctx, inputHashes, [
-        {
-          code: "voice_source_missing",
-          message: `${VOICE_INPUTS.avatarVoice} is absent; discovered=0 counts source rows only, and no voice records were fabricated`,
-        },
-      ]);
+      try {
+        voiceSource = await loadSourceJson<unknown>(ctx, VOICE_INPUTS.fetters);
+      } catch (fettersError) {
+        if (!isMissingFile(fettersError)) throw fettersError;
+        const inputHashes = sortedInputHashes({});
+        return emptyVoiceResult(ctx, inputHashes, [
+          {
+            code: "voice_source_missing",
+            message:
+              "No AvatarVoice or Fetters source is readable; discovered=0 counts source rows only, and no voice records were fabricated",
+          },
+        ]);
+      }
     }
 
     const voiceRows = rows(voiceSource.value).sort(compareRows);
@@ -245,9 +256,13 @@ export class VoiceExtractor implements AnimeTextExtractor<VoiceRecord> {
     let unlockConditionResolved = 0;
 
     for (const voice of voiceRows) {
-      const voiceId = idValue(voice.id ?? voice.voiceId);
       const avatarId = idValue(voice.avatarId);
-      const upstreamId = idText(voice.id ?? voice.voiceId) ?? "unknown";
+      const fetterId = idValue(voice.fetterId);
+      const voiceId = idValue(voice.id ?? voice.voiceId) ?? fetterId;
+      const upstreamId =
+        avatarId !== undefined && fetterId !== undefined
+          ? `${avatarId}/${fetterId}`
+          : (idText(voice.id ?? voice.voiceId) ?? "unknown");
       if (
         voiceId === undefined ||
         avatarId === undefined ||
@@ -291,6 +306,7 @@ export class VoiceExtractor implements AnimeTextExtractor<VoiceRecord> {
         continue;
       }
       const body = resolveText(ctx, voice, [
+        "voiceFileTextTextMapHash",
         "voiceTextTextMapHash",
         "voiceTextMapHash",
         "textTextMapHash",

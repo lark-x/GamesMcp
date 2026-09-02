@@ -129,8 +129,8 @@ describe("AnimeGameData structured converter", () => {
       },
     });
     expect(result.records.voices[0]).toMatchObject({
-      stableId: "genshin:voice:15001",
-      sourceKey: "anime-game-data/voice/15001",
+      stableId: "genshin:voice:10001/1501",
+      sourceKey: "anime-game-data/voice/10001/1501",
       characterStableId: "genshin:character:10001",
       title: "初次见面…",
       body: "你好，我是星海旅人。",
@@ -295,7 +295,7 @@ describe("AnimeGameData structured converter", () => {
       "genshin:enemy:14001",
     );
     await expect(readFile(join(outputRoot, "records", "voices.json"), "utf8")).resolves.toContain(
-      "genshin:voice:15001",
+      "genshin:voice:10001/1501",
     );
   });
 });

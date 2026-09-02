@@ -503,6 +503,7 @@ async function readGitBlob(upstreamDir: string, relativePath: string): Promise<s
 
 const STRUCTURED_OVERLAY_FILES = [
   "TextMap/TextMap_MediumCHS.json",
+  "TextMap/TextMapCHS.json",
   "ExcelBinOutput/AvatarExcelConfigData.json",
   "ExcelBinOutput/WeaponExcelConfigData.json",
   "ExcelBinOutput/ReliquarySetExcelConfigData.json",
@@ -512,7 +513,7 @@ const STRUCTURED_OVERLAY_FILES = [
   "ExcelBinOutput/AchievementGoalExcelConfigData.json",
   "ExcelBinOutput/AchievementExcelConfigData.json",
   "ExcelBinOutput/MonsterExcelConfigData.json",
-  "ExcelBinOutput/AvatarVoiceExcelConfigData.json",
+  "ExcelBinOutput/FettersExcelConfigData.json",
 ] as const;
 
 async function createStructuredOverlay(upstreamDir: string): Promise<string> {

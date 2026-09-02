@@ -19,6 +19,7 @@ export const STRUCTURED_LOCALE = "zh-CN";
 
 const inputPaths = {
   textMap: "TextMap/TextMap_MediumCHS.json",
+  textMapFull: "TextMap/TextMapCHS.json",
   avatar: "ExcelBinOutput/AvatarExcelConfigData.json",
   weapon: "ExcelBinOutput/WeaponExcelConfigData.json",
   reliquarySet: "ExcelBinOutput/ReliquarySetExcelConfigData.json",
@@ -28,7 +29,7 @@ const inputPaths = {
   achievementGoal: "ExcelBinOutput/AchievementGoalExcelConfigData.json",
   achievement: "ExcelBinOutput/AchievementExcelConfigData.json",
   monster: "ExcelBinOutput/MonsterExcelConfigData.json",
-  avatarVoice: "ExcelBinOutput/AvatarVoiceExcelConfigData.json",
+  fetters: "ExcelBinOutput/FettersExcelConfigData.json",
 } as const;
 
 type JsonObject = Record<string, unknown>;
@@ -123,7 +124,9 @@ type SourceFile<T> = {
 };
 
 type LoadedInputs = {
-  [Key in keyof typeof inputPaths]: SourceFile<Key extends "textMap" ? TextMap : unknown>;
+  [Key in keyof typeof inputPaths]: SourceFile<
+    Key extends "textMap" | "textMapFull" ? TextMap : unknown
+  >;
 };
 
 function sha256(value: string): string {
@@ -204,6 +207,19 @@ function textMapValue(textMap: TextMap, hash: unknown): string | undefined {
   const id = idText(hash);
   const value = id ? textMap[id] : undefined;
   return typeof value === "string" && cleanText(value) ? cleanText(value) : undefined;
+}
+
+/**
+ * Resolve a TextMap hash against the medium map first, then fall back to the
+ * complete TextMapCHS. The medium map resolves voice/fetter text but misses
+ * some catalog/handbook titles that only exist in the full dump.
+ */
+function textMapValueWithFallback(
+  primary: TextMap,
+  fallback: TextMap | undefined,
+  hash: unknown,
+): string | undefined {
+  return textMapValue(primary, hash) ?? (fallback ? textMapValue(fallback, hash) : undefined);
 }
 
 async function readJson<T>(upstreamDir: string, relativePath: string): Promise<SourceFile<T>> {
@@ -356,6 +372,7 @@ export async function convertStructuredAnimeGameData(
 ): Promise<StructuredAnimeGameDataResult> {
   const inputs = await loadInputs(options.upstreamDir);
   const textMap = inputs.textMap.value;
+  const textMapFull = inputs.textMapFull?.value;
   const failures: StructuredAnimeGameDataResult["manifest"]["failures"] = [];
 
   const characters = asArray(inputs.avatar.value).flatMap((row): GenshinCharacter[] => {
@@ -605,23 +622,35 @@ export async function convertStructuredAnimeGameData(
     ];
   });
 
-  const voices = asArray(inputs.avatarVoice.value).flatMap((row): AnimeGameDataVoiceLine[] => {
-    const upstreamId = idText(row.id);
+  // Character voice-over transcription lives in FettersExcelConfigData
+  // (voiceTitleTextMapHash + voiceFileTextTextMapHash per row). The pinned
+  // snapshot has no AvatarVoiceExcelConfigData file; Fetters rows resolve
+  // 100% against TextMap_MediumCHS.
+  const voices = asArray(inputs.fetters.value).flatMap((row): AnimeGameDataVoiceLine[] => {
     const avatarId = idText(row.avatarId);
-    const title = textMapValue(textMap, row.voiceTitleTextMapHash ?? row.titleTextMapHash);
-    const body = textMapValue(textMap, row.voiceTextTextMapHash ?? row.textTextMapHash);
-    if (!upstreamId || !avatarId || !title || !body) {
+    const title = textMapValueWithFallback(
+      textMap,
+      textMapFull,
+      row.voiceTitleTextMapHash ?? row.titleTextMapHash,
+    );
+    const body = textMapValueWithFallback(
+      textMap,
+      textMapFull,
+      row.voiceFileTextTextMapHash ?? row.textTextMapHash,
+    );
+    if (!avatarId || !title || !body) {
       failures.push({
         kind: "voices",
-        upstreamId: upstreamId ?? "unknown",
+        upstreamId: idText(row.id) ?? idText(row.fetterId) ?? "unknown",
         reason: "required_field_missing",
       });
       return [];
     }
+    const upstreamId = `${avatarId}/${idText(row.fetterId) ?? idText(row.id) ?? "unknown"}`;
     return [
       voiceLineRecord(
         options,
-        inputs.avatarVoice,
+        inputs.fetters,
         row,
         upstreamId,
         `genshin:character:${avatarId}`,
@@ -649,7 +678,7 @@ export async function convertStructuredAnimeGameData(
     materials: asArray(inputs.material.value).length,
     achievements: asArray(inputs.achievement.value).length,
     enemies: asArray(inputs.monster.value).length,
-    voices: asArray(inputs.avatarVoice.value).length,
+    voices: asArray(inputs.fetters.value).length,
   };
   const converted = Object.fromEntries(
     Object.entries(records).map(([kind, values]) => [kind, values.length]),

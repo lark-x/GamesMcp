@@ -29,7 +29,11 @@ import {
   type AnimeGameRecord,
 } from "./anime-game-data-converter.ts";
 import { convertQuestSnapshot } from "./anime-game-data-quest-converter.ts";
-import { convertStructuredAnimeGameData } from "./anime-game-data-structured-converter.ts";
+import { normalizeText } from "../packages/search/src/ranking.ts";
+import {
+  convertStructuredAnimeGameData,
+  type AnimeGameDataVoiceLine,
+} from "./anime-game-data-structured-converter.ts";
 
 const execFile = promisify(execFileCallback);
 
@@ -53,6 +57,7 @@ const MEMORY_GAME_ID = "00000000-0000-0000-0000-000000000017";
 const MEMORY_REVISION_ID = `published-memory:${PINNED_UPSTREAM_COMMIT}`;
 const STRUCTURED_OVERLAY_FILES = [
   "TextMap/TextMap_MediumCHS.json",
+  "TextMap/TextMapCHS.json",
   "ExcelBinOutput/AvatarExcelConfigData.json",
   "ExcelBinOutput/WeaponExcelConfigData.json",
   "ExcelBinOutput/ReliquarySetExcelConfigData.json",
@@ -62,7 +67,7 @@ const STRUCTURED_OVERLAY_FILES = [
   "ExcelBinOutput/AchievementGoalExcelConfigData.json",
   "ExcelBinOutput/AchievementExcelConfigData.json",
   "ExcelBinOutput/MonsterExcelConfigData.json",
-  "ExcelBinOutput/AvatarVoiceExcelConfigData.json",
+  "ExcelBinOutput/FettersExcelConfigData.json",
 ] as const;
 
 const EVALUATED_CATEGORIES = [
@@ -72,9 +77,10 @@ const EVALUATED_CATEGORIES = [
   "character_story",
   "item",
   "achievement",
+  "voice",
 ] as const;
 type EvaluatedCategory = (typeof EVALUATED_CATEGORIES)[number];
-type ExcludedCategory = "voice" | "tutorial" | "mechanism";
+type ExcludedCategory = "tutorial" | "mechanism";
 type Category = EvaluatedCategory | ExcludedCategory;
 
 const QUEST_TYPES = new Set<DocumentType>([
@@ -212,14 +218,20 @@ class MemorySearchRepository implements SearchRepositoryPort {
   async listStructuredAtRevision(gameId: string, revisionId: string, query: string) {
     void gameId;
     void revisionId;
-    void query;
-    return this.structured.map((item) => ({
-      kind: item.kind,
-      stableId: item.stableId,
-      name: item.name,
-      aliases: [],
-      body: item.body,
-    }));
+    const normalizedQuery = normalizeText(query);
+    return this.structured
+      .filter(
+        (item) =>
+          normalizeText(item.name).includes(normalizedQuery) ||
+          normalizeText(item.body).includes(normalizedQuery),
+      )
+      .map((item) => ({
+        kind: item.kind,
+        stableId: item.stableId,
+        name: item.name,
+        aliases: [],
+        body: item.body,
+      }));
   }
 
   async resolveEntityCandidates(
@@ -362,6 +374,26 @@ function structuredAchievementRecords(records: GenshinAchievement[]): CorpusStru
     .sort((left, right) => left.stableId.localeCompare(right.stableId));
 }
 
+/** Map converted voice lines into voice-kind structured corpus records. */
+function structuredVoiceRecords(records: AnimeGameDataVoiceLine[]): CorpusStructured[] {
+  return records
+    .map((record) => {
+      const name = nonEmpty(record.title);
+      if (!name) return [];
+      return [
+        {
+          key: record.stableId,
+          kind: "voice" as const,
+          stableId: record.stableId,
+          name,
+          body: record.body,
+        },
+      ];
+    })
+    .flat()
+    .sort((left, right) => left.stableId.localeCompare(right.stableId));
+}
+
 async function gitOutput(upstreamDir: string, args: string[]): Promise<string> {
   const result = await execFile("git", ["-C", upstreamDir, ...args], {
     encoding: "utf8",
@@ -484,7 +516,10 @@ export async function loadRealCorpus(upstreamDir: string): Promise<Corpus> {
     ),
   ].sort((left, right) => left.key.localeCompare(right.key));
   const dialogue = quests.dialogue.sort((left, right) => left.key.localeCompare(right.key));
-  const structured = structuredAchievementRecords(structuredConversion.records.achievements);
+  const structured = [
+    ...structuredAchievementRecords(structuredConversion.records.achievements),
+    ...structuredVoiceRecords(structuredConversion.records.voices),
+  ].sort((left, right) => left.stableId.localeCompare(right.stableId));
   const counts: Record<EvaluatedCategory, number> = {
     dialogue: dialogue.length,
     quest: documents.filter((record) => record.category === "quest").length,
@@ -628,21 +663,32 @@ function queryCasesFor(corpus: Corpus, category: EvaluatedCategory): QueryCase[]
           text: item.body,
           query: queryFromDialogue(item.body),
         }))
-      : category === "achievement"
-        ? corpus.structured.map((item) => ({
-            key: item.key,
-            title: item.name,
-            text: item.body || item.name,
-            query: item.name,
-          }))
-        : corpus.documents
-            .filter((item) => item.category === category)
+      : category === "voice"
+        ? corpus.structured
+            .filter((item) => item.kind === "voice")
             .map((item) => ({
               key: item.key,
-              title: item.title,
-              text: item.body,
-              query: item.title,
-            }));
+              title: item.name,
+              text: item.body || item.name,
+              query: item.name,
+            }))
+        : category === "achievement"
+          ? corpus.structured
+              .filter((item) => item.kind === "achievement")
+              .map((item) => ({
+                key: item.key,
+                title: item.name,
+                text: item.body || item.name,
+                query: item.name,
+              }))
+          : corpus.documents
+              .filter((item) => item.category === category)
+              .map((item) => ({
+                key: item.key,
+                title: item.title,
+                text: item.body,
+                query: item.title,
+              }));
   const selected: QueryCase[] = [];
   const seenQueries = new Set<string>();
   const orderedEntries = entries.sort((left, right) => left.key.localeCompare(right.key));
@@ -706,6 +752,10 @@ function memoryRunner(corpus: Corpus): SearchRunner {
           .filter((hit) => hit.kind === "achievement")
           .map((hit) => hit.stableId);
       }
+      if (category === "voice") {
+        const hits = await service.searchText(MEMORY_GAME_ID, MEMORY_REVISION_ID, query);
+        return hits.structured.filter((hit) => hit.kind === "voice").map((hit) => hit.stableId);
+      }
       const hits = await service.searchLore(MEMORY_GAME_ID, MEMORY_REVISION_ID, query);
       return hits
         .filter((hit) => documentHitMatches(category, hit.document.type, hit.document.sourceKey))
@@ -740,6 +790,10 @@ function databaseRunner(
         return hits.structured
           .filter((hit) => hit.kind === "achievement")
           .map((hit) => hit.stableId);
+      }
+      if (category === "voice") {
+        const hits = await service.searchText(gameId, revisionId, query);
+        return hits.structured.filter((hit) => hit.kind === "voice").map((hit) => hit.stableId);
       }
       const hits = await service.searchLore(gameId, revisionId, query);
       return hits
@@ -882,7 +936,7 @@ async function main(): Promise<void> {
       runner,
     );
   }
-  for (const category of ["voice", "tutorial", "mechanism"] as const)
+  for (const category of ["tutorial", "mechanism"] as const)
     categories[category] = excludedCategoryResult(category);
 
   await databaseAttempt.close();
@@ -936,7 +990,7 @@ async function main(): Promise<void> {
           EVALUATED_CATEGORIES.map((category) => [category, categories[category].metrics]),
         ),
         excluded: Object.fromEntries(
-          (["voice", "tutorial", "mechanism"] as const).map((category) => [
+          (["tutorial", "mechanism"] as const).map((category) => [
             category,
             categories[category].reason,
           ]),

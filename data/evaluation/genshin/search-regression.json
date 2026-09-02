@@ -7,22 +7,22 @@
     "upstreamVersion": "CNRELWin7.0.0_R47482070_S47579390_D47579390",
     "locale": "zh-CN",
     "records": {
-      "dialogue": 22296,
-      "quest": 1140,
+      "dialogue": 46795,
+      "quest": 1153,
       "book": 288,
       "character_story": 958,
       "item": 1166,
-      "achievement": 1845
+      "achievement": 10877
     },
-    "totalRecords": 27693,
+    "totalRecords": 61237,
     "conversion": {
-      "dialogueNodes": 22296,
-      "questDocuments": 1140,
+      "dialogueNodes": 46795,
+      "questDocuments": 1153,
       "bookDocuments": 288,
       "characterStoryDocuments": 958,
       "itemDocuments": 1166,
-      "achievementRecords": 1845,
-      "publicQuestRecords": 1140,
+      "achievementRecords": 10877,
+      "publicQuestRecords": 1153,
       "convertedBookRecords": 288,
       "convertedCharacterStoryRecords": 958,
       "convertedItemRecords": 1166,
@@ -45,12 +45,12 @@
       "status": "evaluated",
       "queryCount": 5,
       "metrics": {
-        "hit@5": 1,
-        "hit@10": 1,
-        "MRR@10": 0.9,
-        "hitAt5": 1,
-        "hitAt10": 1,
-        "mrrAt10": 0.9
+        "hit@5": 0.8,
+        "hit@10": 0.8,
+        "MRR@10": 0.8,
+        "hitAt5": 0.8,
+        "hitAt10": 0.8,
+        "mrrAt10": 0.8
       },
       "queries": [
         {
@@ -65,111 +65,111 @@
           "returned": [
             "quest/1000/quest/1000/dialog/10000101",
             "quest/1013/quest/1013/dialog/10130115",
+            "quest/12039/quest/12039/dialog/120391914",
+            "quest/3012/quest/3012/dialog/30120747",
+            "quest/8001/quest/8001/dialog/80010346",
             "quest/1000/quest/1000/dialog/10000405",
             "quest/1000/quest/1000/dialog/10001421",
             "quest/1010/quest/1010/dialog/10100302",
             "quest/1018/quest/1018/dialog/10031824",
-            "quest/1019/quest/1019/dialog/10190434",
-            "quest/10200/quest/10200/dialog/102001005",
-            "quest/1023/quest/1023/dialog/10230212",
-            "quest/1025/quest/1025/dialog/10251023"
+            "quest/1019/quest/1019/dialog/10190434"
           ]
         },
         {
           "id": "dialogue-002",
-          "query": "萍姥姥提过你",
-          "relevantKey": "quest/1030/quest/1030/dialog/10300131",
+          "query": "没有我在的话",
+          "relevantKey": "quest/11032/quest/11032/dialog/110320243",
           "evidence": {
-            "title": "穷途末路",
-            "text": "萍姥姥提过你一般都待在望舒客栈，是守着荻花洲要道吧。没想到还有人能劳动你亲自出来找…难道是仙人？"
+            "title": "跨越时间的托付",
+            "text": "没有我在的话，那些事务的处理恐怕正乱作一团吧。"
           },
           "rank": 1,
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
           "returned": [
-            "quest/1030/quest/1030/dialog/10300131",
-            "quest/1012/quest/1012/dialog/10120830",
-            "quest/1014/quest/1014/dialog/10140403",
-            "quest/1019/quest/1019/dialog/10190325",
-            "quest/71654/quest/71654/dialog/716540703",
-            "quest/71654/quest/71654/dialog/716540703-2",
-            "quest/71654/quest/71654/dialog/716540703-3",
-            "quest/71654/quest/71654/dialog/716540703-4",
-            "quest/1000/quest/1000/dialog/10000101",
-            "quest/1000/quest/1000/dialog/10000102"
+            "quest/11032/quest/11032/dialog/110320243",
+            "quest/1012/quest/1012/dialog/10120410",
+            "quest/10121/quest/10121/dialog/101210114",
+            "quest/10121/quest/10121/dialog/101210837",
+            "quest/1031/quest/1031/dialog/10310626",
+            "quest/11026/quest/11026/dialog/110260638",
+            "quest/11121/quest/11121/dialog/111210305",
+            "quest/12011/quest/12011/dialog/120110309",
+            "quest/12021/quest/12021/dialog/120211010",
+            "quest/13011/quest/13011/dialog/codex-12-45-narration-0"
           ]
         },
         {
           "id": "dialogue-003",
-          "query": "脱离尘世",
-          "relevantKey": "quest/11030/quest/11030/dialog/110300204",
-          "evidence": { "title": "云之海的仙兽", "text": "脱离尘世？" },
-          "rank": 2,
+          "query": "听起来好像很",
+          "relevantKey": "quest/13006/quest/13006/dialog/130060302",
+          "evidence": {
+            "title": "街头巷尾的温暖韵律",
+            "text": "听起来好像很不错的样子，要不然我们就去吧。"
+          },
+          "rank": 1,
           "hitAt5": true,
           "hitAt10": true,
-          "reciprocalRankAt10": 0.5,
+          "reciprocalRankAt10": 1,
           "returned": [
-            "quest/11030/quest/11030/dialog/110300203",
-            "quest/11030/quest/11030/dialog/110300204",
-            "quest/11013/quest/11013/dialog/110130707",
+            "quest/13006/quest/13006/dialog/130060302",
+            "quest/3004/quest/3004/dialog/30040111",
+            "quest/72114/quest/72114/dialog/721141101",
+            "quest/12009/quest/12009/dialog/120090108",
+            "quest/12009/quest/12009/dialog/120090418",
+            "quest/12028/quest/12028/dialog/120280804",
+            "quest/3029/quest/3029/dialog/30290613",
+            "quest/1025/quest/1025/dialog/10250263",
+            "quest/1025/quest/1025/dialog/10251033",
+            "quest/10500/quest/10500/dialog/105000133"
+          ]
+        },
+        {
+          "id": "dialogue-004",
+          "query": "做好了",
+          "relevantKey": "quest/22200/quest/22200/dialog/222000702",
+          "evidence": { "title": "无底之胃", "text": "做好了。" },
+          "rank": null,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "quest/1021/quest/1021/dialog/10211110",
+            "quest/1021/quest/1021/dialog/10211323",
+            "quest/12011/quest/12011/dialog/120110622",
+            "quest/12013/quest/12013/dialog/120130101",
+            "quest/12031/quest/12031/dialog/120310111",
+            "quest/12033/quest/12033/dialog/120331606",
+            "quest/12033/quest/12033/dialog/120331706",
+            "quest/12033/quest/12033/dialog/120331807",
+            "quest/12033/quest/12033/dialog/120331907",
+            "quest/13011/quest/13011/dialog/130111113"
+          ]
+        },
+        {
+          "id": "dialogue-005",
+          "query": "站在向阳处必",
+          "relevantKey": "quest/372/quest/372/dialog/3720504",
+          "evidence": {
+            "title": "那个绿色的家伙",
+            "text": "站在向阳处必能成就英雄，站在背阴处亦可引导灾祸…"
+          },
+          "rank": 1,
+          "hitAt5": true,
+          "hitAt10": true,
+          "reciprocalRankAt10": 1,
+          "returned": [
+            "quest/372/quest/372/dialog/3720504",
             "quest/1000/quest/1000/dialog/10000101",
             "quest/1000/quest/1000/dialog/10000102",
             "quest/1000/quest/1000/dialog/10000103",
             "quest/1000/quest/1000/dialog/10000104",
             "quest/1000/quest/1000/dialog/10000105",
             "quest/1000/quest/1000/dialog/10000106",
-            "quest/1000/quest/1000/dialog/10000107"
-          ]
-        },
-        {
-          "id": "dialogue-004",
-          "query": "因为其实没什",
-          "relevantKey": "quest/12013/quest/12013/dialog/120130827",
-          "evidence": {
-            "title": "同在烟花之下",
-            "text": "因为其实没什么人会问我这个，我也不觉得这是件很了不起的事。"
-          },
-          "rank": 1,
-          "hitAt5": true,
-          "hitAt10": true,
-          "reciprocalRankAt10": 1,
-          "returned": [
-            "quest/12013/quest/12013/dialog/120130827",
-            "quest/12003/quest/12003/dialog/120030841",
-            "quest/1000/quest/1000/dialog/10001325",
-            "quest/1019/quest/1019/dialog/10190338",
-            "quest/11112/quest/11112/dialog/111120118",
-            "quest/10121/quest/10121/dialog/101210810",
-            "quest/1031/quest/1031/dialog/10310249",
-            "quest/10501/quest/10501/dialog/105011212",
-            "quest/11014/quest/11014/dialog/110140509",
-            "quest/11019/quest/11019/dialog/110191609"
-          ]
-        },
-        {
-          "id": "dialogue-005",
-          "query": "早就听闻钟离",
-          "relevantKey": "quest/40096/quest/40096/dialog/400960102",
-          "evidence": {
-            "title": "人前人后",
-            "text": "早就听闻钟离先生博古通今，没想到还精通烹饪的妙法。"
-          },
-          "rank": 1,
-          "hitAt5": true,
-          "hitAt10": true,
-          "reciprocalRankAt10": 1,
-          "returned": [
-            "quest/40096/quest/40096/dialog/400960102",
-            "quest/1010/quest/1010/dialog/10100519",
-            "quest/11020/quest/11020/dialog/110200325",
-            "quest/11120/quest/11120/dialog/111200413",
-            "quest/1000/quest/1000/dialog/10000101",
-            "quest/1000/quest/1000/dialog/10000102",
-            "quest/1000/quest/1000/dialog/10000103",
-            "quest/1000/quest/1000/dialog/10000104",
-            "quest/1000/quest/1000/dialog/10000105",
-            "quest/1000/quest/1000/dialog/10000106"
+            "quest/1000/quest/1000/dialog/10000107",
+            "quest/1000/quest/1000/dialog/10000108",
+            "quest/1000/quest/1000/dialog/10000109"
           ]
         }
       ]
@@ -199,81 +199,89 @@
             "quest/1012/locale/zh-CN",
             "quest/1016/locale/zh-CN",
             "quest/11100/locale/zh-CN",
-            "quest/70822/locale/zh-CN"
+            "quest/396/locale/zh-CN",
+            "quest/70822/locale/zh-CN",
+            "quest/8002/locale/zh-CN"
           ]
         },
         {
           "id": "quest-002",
-          "query": "每天都是新的冒险",
-          "relevantKey": "quest/20031/locale/zh-CN",
+          "query": "冒险家，安娜！",
+          "relevantKey": "quest/20033/locale/zh-CN",
           "evidence": {
-            "title": "每天都是新的冒险",
-            "text": "## 与凯瑟琳对话 我们又见面了，冒险家新星。 怎么样，最近的冒险还顺利吗？ 有点吃力。 ## (test)与凯瑟琳对话$HIDDEN ## Subquest 2003103 ## (test)与凯瑟琳对话$HIDDEN #我听说了哦，{NICKNAME}。 你已经完成了冒险家协会承接的委托，委托人都让我向你道谢呢。 委托？没什么印象。 ## (test)与"
+            "title": "冒险家，安娜！",
+            "text": "## Subquest 2003301 ## 与安娜一同完成冒险家协会的委托 完成啦！谢谢你旅行者，这次的护送任务很顺利呢。 不过，冒险家平时去执行的委托，都是这种事情吗？ 你慢慢就会知道了… 喂，你的表情不要这么疲惫啊… ## Subquest 2003303 ## Subquest 2003304"
           },
           "rank": 1,
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
           "returned": [
-            "quest/20031/locale/zh-CN",
-            "quest/1011/locale/zh-CN",
-            "quest/1025/locale/zh-CN",
-            "quest/11014/locale/zh-CN",
-            "quest/11026/locale/zh-CN",
-            "quest/11110/locale/zh-CN"
+            "quest/20033/locale/zh-CN",
+            "quest/20034/locale/zh-CN",
+            "quest/20046/locale/zh-CN",
+            "quest/20052/locale/zh-CN",
+            "quest/12029/locale/zh-CN",
+            "quest/13014/locale/zh-CN",
+            "quest/13022/locale/zh-CN",
+            "quest/13026/locale/zh-CN",
+            "quest/3004/locale/zh-CN",
+            "quest/3016/locale/zh-CN"
           ]
         },
         {
           "id": "quest-003",
-          "query": "因果命运的花神诞祭",
-          "relevantKey": "quest/3011/locale/zh-CN",
+          "query": "如凯旋的英雄一般",
+          "relevantKey": "quest/3016/locale/zh-CN",
           "evidence": {
-            "title": "因果命运的花神诞祭",
-            "text": "千朵玫瑰带来的黎明 1302 ## 与纳西妲对话 我们已经没有无数个花神诞祭可以浪费了，抓紧寻找真相吧。 ## 与纳西妲对话 …结果还是这一天吗！ ## Subquest 301102 …你们原来在这里，可算找到你们了。 ## 前往查看迪希雅所说的「证据」 就是这个了。 ## Subquest 301104 ## (test)【隐藏】第4天隐藏控制出圈$HI"
+            "title": "如凯旋的英雄一般",
+            "text": "迷梦与空幻与欺骗 1303 ## 与须弥城的凯瑟琳对话 凯瑟琳: 向着星辰与深渊，又见面了二位。 派蒙: 凯瑟琳，今天有什么适合我们的委托吗？ 凯瑟琳: 委托啊…嗯…我想想… 凯瑟琳: 这样吧，请在今天下午教令院的学术报告分享会上上台朗诵一首情诗吧。 派蒙: 什、什么？ 凯瑟琳: 最好朗诵完再用留影机拍下观众们的反应哦。 派蒙: 怎么会有这样的委托啊？ 旅行"
           },
           "rank": 1,
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
-          "returned": ["quest/3011/locale/zh-CN", "quest/1011/locale/zh-CN"]
+          "returned": ["quest/3016/locale/zh-CN", "quest/398/locale/zh-CN"]
         },
         {
           "id": "quest-004",
-          "query": "曲生酌微梦",
-          "relevantKey": "quest/70502/locale/zh-CN",
+          "query": "机关烹饪之法·之三",
+          "relevantKey": "quest/70500/locale/zh-CN",
           "evidence": {
-            "title": "曲生酌微梦",
-            "text": "## 与卢卡对话 ## Subquest 7050202 没想到是老面孔，今天想喝点儿什么？ ## Subquest 7050203 你学得很快，味道也确实不错。 ## 学习并调制指定饮品 怎么样，你意下如何？ ## Subquest 7050205 好吧，那就试试。 ## (test)传送进入酒馆$HIDDEN 请稍等一下。 ## Subquest 705"
-          },
-          "rank": 1,
-          "hitAt5": true,
-          "hitAt10": true,
-          "reciprocalRankAt10": 1,
-          "returned": ["quest/70502/locale/zh-CN", "quest/70510/locale/zh-CN"]
-        },
-        {
-          "id": "quest-005",
-          "query": "寻宝的方法…之二？",
-          "relevantKey": "quest/72651/locale/zh-CN",
-          "evidence": {
-            "title": "寻宝的方法…之二？",
-            "text": "## Subquest 7265101 ## Subquest 7265102 唉，难道我真是什么「吸引仙灵体质」… 什么「吸引仙灵体质」？ 你是…旅行者？哎呀，你来得正好。"
+            "title": "机关烹饪之法·之三",
+            "text": "## Subquest 7050011 照看火候的事，就交给你负责了，旅行者。 ## Subquest 7050001 ## 跟随气息的踪迹，寻找食材 怎么样，你拿到本仙要的食材了吗？ ## Subquest 7050003 怎么样？「红烩兽肉」已经做好了吗？ ## Subquest 7050007 ## 向留云借风真君回报 准备好了 那我们就开始吧。 ##"
           },
           "rank": 1,
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
           "returned": [
-            "quest/72651/locale/zh-CN",
-            "quest/1003/locale/zh-CN",
-            "quest/1011/locale/zh-CN",
-            "quest/1015/locale/zh-CN",
-            "quest/1019/locale/zh-CN",
-            "quest/1021/locale/zh-CN",
-            "quest/1031/locale/zh-CN",
-            "quest/11011/locale/zh-CN",
-            "quest/11020/locale/zh-CN",
-            "quest/73074/locale/zh-CN"
+            "quest/70500/locale/zh-CN",
+            "quest/11005/locale/zh-CN",
+            "quest/12029/locale/zh-CN",
+            "quest/1029/locale/zh-CN",
+            "quest/10501/locale/zh-CN",
+            "quest/13011/locale/zh-CN",
+            "quest/3022/locale/zh-CN"
+          ]
+        },
+        {
+          "id": "quest-005",
+          "query": "《无生忍》",
+          "relevantKey": "quest/72287/locale/zh-CN",
+          "evidence": {
+            "title": "《无生忍》",
+            "text": "映影书写札记 ## Subquest 7228727 「要是能吃饱饭…嘿！跟着势至丸也行。」哈哈，我要演的这个角色还挺可爱的嘛。 ## 找两位演员谈谈 您是一起参与映影的那位、那位… #{NICKNAME}。 ## 找两位演员谈谈 ## Subquest 7228728 ## 等到傍晚（18:00-20:00） 完美，这就是我心目中的故事。 #{NICKNA"
+          },
+          "rank": 1,
+          "hitAt5": true,
+          "hitAt10": true,
+          "reciprocalRankAt10": 1,
+          "returned": [
+            "quest/72287/locale/zh-CN",
+            "quest/12028/locale/zh-CN",
+            "quest/12029/locale/zh-CN",
+            "quest/12031/locale/zh-CN"
           ]
         }
       ]
@@ -434,11 +442,7 @@
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
-          "returned": [
-            "character/10000036/story/22208",
-            "character/10000015/story/7208",
-            "character/10000026/story/16205"
-          ]
+          "returned": ["character/10000036/story/22208", "character/10000015/story/7208"]
         },
         {
           "id": "character_story-003",
@@ -480,8 +484,7 @@
             "character/10000086/story/86206",
             "character/10000089/story/89201",
             "character/10000089/story/89203",
-            "character/10000095/story/95200",
-            "character/10000120/story/120205"
+            "character/10000095/story/95200"
           ]
         },
         {
@@ -604,7 +607,7 @@
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
-          "returned": ["genshin:achievement:80001", "genshin:achievement:84001"]
+          "returned": ["genshin:achievement:80001"]
         },
         {
           "id": "achievement-002",
@@ -640,7 +643,7 @@
           "hitAt5": true,
           "hitAt10": true,
           "reciprocalRankAt10": 1,
-          "returned": ["genshin:achievement:81705", "genshin:achievement:81284"]
+          "returned": ["genshin:achievement:81705"]
         },
         {
           "id": "achievement-005",
@@ -656,9 +659,135 @@
       ]
     },
     "voice": {
-      "status": "excluded",
-      "queryCount": 0,
-      "reason": "excluded: pinned AnimeGameData has no AvatarVoiceExcelConfigData source file"
+      "status": "evaluated",
+      "queryCount": 5,
+      "metrics": {
+        "hit@5": 0.2,
+        "hit@10": 0.4,
+        "MRR@10": 0.2333,
+        "hitAt5": 0.2,
+        "hitAt10": 0.4,
+        "mrrAt10": 0.2333
+      },
+      "queries": [
+        {
+          "id": "voice-001",
+          "query": "初次见面…",
+          "relevantKey": "genshin:voice:10000002/3100",
+          "evidence": {
+            "title": "初次见面…",
+            "text": "稻妻神里流太刀术皆传——神里绫华，参上！ 请多指教哦。"
+          },
+          "rank": 1,
+          "hitAt5": true,
+          "hitAt10": true,
+          "reciprocalRankAt10": 1,
+          "returned": [
+            "genshin:voice:10000002/3100",
+            "genshin:voice:10000003/4100",
+            "genshin:voice:10000006/5100",
+            "genshin:voice:10000014/6100",
+            "genshin:voice:10000015/7100",
+            "genshin:voice:10000016/8100",
+            "genshin:voice:10000020/9100",
+            "genshin:voice:10000021/10100",
+            "genshin:voice:10000022/11100",
+            "genshin:voice:10000023/12100"
+          ]
+        },
+        {
+          "id": "voice-002",
+          "query": "元素爆发·其三",
+          "relevantKey": "genshin:voice:10000032/20059",
+          "evidence": { "title": "元素爆发·其三", "text": "有大家在身边，伤口就不会痛！" },
+          "rank": 20,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "genshin:voice:10000002/3151",
+            "genshin:voice:10000003/4152",
+            "genshin:voice:10000005/1073",
+            "genshin:voice:10000006/5151",
+            "genshin:voice:10000007/2072",
+            "genshin:voice:10000014/6147",
+            "genshin:voice:10000015/7149",
+            "genshin:voice:10000016/8145",
+            "genshin:voice:10000016/8169",
+            "genshin:voice:10000020/9146"
+          ]
+        },
+        {
+          "id": "voice-003",
+          "query": "关于珊瑚宫心海…",
+          "relevantKey": "genshin:voice:10000058/58024",
+          "evidence": {
+            "title": "关于珊瑚宫心海…",
+            "text": "现在的巫女，一个比一个可爱。不知道这孩子跳起太平神乐之舞会是什么样子，说不好群鱼也会跟着旋转吧。只要她肯叫我一声神子姐姐，呵呵…我倒有些心得愿意分享。"
+          },
+          "rank": 6,
+          "hitAt5": false,
+          "hitAt10": true,
+          "reciprocalRankAt10": 0.16666666666666666,
+          "returned": [
+            "genshin:voice:10000005/1119",
+            "genshin:voice:10000007/2118",
+            "genshin:voice:10000047/40077",
+            "genshin:voice:10000052/52035",
+            "genshin:voice:10000056/56029",
+            "genshin:voice:10000058/58024",
+            "genshin:voice:10000059/59027",
+            "genshin:voice:10000109/109023"
+          ]
+        },
+        {
+          "id": "voice-004",
+          "query": "同伴生命值低·其一",
+          "relevantKey": "genshin:voice:10000083/83061",
+          "evidence": { "title": "同伴生命值低·其一", "text": "快退后。" },
+          "rank": null,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "genshin:voice:10000002/3158",
+            "genshin:voice:10000003/4159",
+            "genshin:voice:10000005/1083",
+            "genshin:voice:10000006/5158",
+            "genshin:voice:10000007/2082",
+            "genshin:voice:10000014/6157",
+            "genshin:voice:10000015/7160",
+            "genshin:voice:10000016/8152",
+            "genshin:voice:10000020/9154",
+            "genshin:voice:10000021/10165"
+          ]
+        },
+        {
+          "id": "voice-005",
+          "query": "关于雷电将军…",
+          "relevantKey": "genshin:voice:10000109/109022",
+          "evidence": {
+            "title": "关于雷电将军…",
+            "text": "三川花祭后，我鼓起勇气邀请将军大人共浴。那时，她的一缕侧发飘进了温泉水里。我很想伸手帮她挽起来，却又担心这样的肢体接触会显得冒昧。一想到神子会面不改色地这么做，我就不由沮丧…我的修行，还需精进。"
+          },
+          "rank": 12,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "genshin:voice:10000047/40033",
+            "genshin:voice:10000049/49054",
+            "genshin:voice:10000053/53061",
+            "genshin:voice:10000054/54032",
+            "genshin:voice:10000055/55025",
+            "genshin:voice:10000057/57025",
+            "genshin:voice:10000058/58018",
+            "genshin:voice:10000061/61024",
+            "genshin:voice:10000065/65021",
+            "genshin:voice:10000066/66025"
+          ]
+        }
+      ]
     },
     "tutorial": {
       "status": "excluded",
@@ -673,9 +802,135 @@
   },
   "excluded": {
     "voice": {
-      "status": "excluded",
-      "queryCount": 0,
-      "reason": "excluded: pinned AnimeGameData has no AvatarVoiceExcelConfigData source file"
+      "status": "evaluated",
+      "queryCount": 5,
+      "metrics": {
+        "hit@5": 0.2,
+        "hit@10": 0.4,
+        "MRR@10": 0.2333,
+        "hitAt5": 0.2,
+        "hitAt10": 0.4,
+        "mrrAt10": 0.2333
+      },
+      "queries": [
+        {
+          "id": "voice-001",
+          "query": "初次见面…",
+          "relevantKey": "genshin:voice:10000002/3100",
+          "evidence": {
+            "title": "初次见面…",
+            "text": "稻妻神里流太刀术皆传——神里绫华，参上！ 请多指教哦。"
+          },
+          "rank": 1,
+          "hitAt5": true,
+          "hitAt10": true,
+          "reciprocalRankAt10": 1,
+          "returned": [
+            "genshin:voice:10000002/3100",
+            "genshin:voice:10000003/4100",
+            "genshin:voice:10000006/5100",
+            "genshin:voice:10000014/6100",
+            "genshin:voice:10000015/7100",
+            "genshin:voice:10000016/8100",
+            "genshin:voice:10000020/9100",
+            "genshin:voice:10000021/10100",
+            "genshin:voice:10000022/11100",
+            "genshin:voice:10000023/12100"
+          ]
+        },
+        {
+          "id": "voice-002",
+          "query": "元素爆发·其三",
+          "relevantKey": "genshin:voice:10000032/20059",
+          "evidence": { "title": "元素爆发·其三", "text": "有大家在身边，伤口就不会痛！" },
+          "rank": 20,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "genshin:voice:10000002/3151",
+            "genshin:voice:10000003/4152",
+            "genshin:voice:10000005/1073",
+            "genshin:voice:10000006/5151",
+            "genshin:voice:10000007/2072",
+            "genshin:voice:10000014/6147",
+            "genshin:voice:10000015/7149",
+            "genshin:voice:10000016/8145",
+            "genshin:voice:10000016/8169",
+            "genshin:voice:10000020/9146"
+          ]
+        },
+        {
+          "id": "voice-003",
+          "query": "关于珊瑚宫心海…",
+          "relevantKey": "genshin:voice:10000058/58024",
+          "evidence": {
+            "title": "关于珊瑚宫心海…",
+            "text": "现在的巫女，一个比一个可爱。不知道这孩子跳起太平神乐之舞会是什么样子，说不好群鱼也会跟着旋转吧。只要她肯叫我一声神子姐姐，呵呵…我倒有些心得愿意分享。"
+          },
+          "rank": 6,
+          "hitAt5": false,
+          "hitAt10": true,
+          "reciprocalRankAt10": 0.16666666666666666,
+          "returned": [
+            "genshin:voice:10000005/1119",
+            "genshin:voice:10000007/2118",
+            "genshin:voice:10000047/40077",
+            "genshin:voice:10000052/52035",
+            "genshin:voice:10000056/56029",
+            "genshin:voice:10000058/58024",
+            "genshin:voice:10000059/59027",
+            "genshin:voice:10000109/109023"
+          ]
+        },
+        {
+          "id": "voice-004",
+          "query": "同伴生命值低·其一",
+          "relevantKey": "genshin:voice:10000083/83061",
+          "evidence": { "title": "同伴生命值低·其一", "text": "快退后。" },
+          "rank": null,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "genshin:voice:10000002/3158",
+            "genshin:voice:10000003/4159",
+            "genshin:voice:10000005/1083",
+            "genshin:voice:10000006/5158",
+            "genshin:voice:10000007/2082",
+            "genshin:voice:10000014/6157",
+            "genshin:voice:10000015/7160",
+            "genshin:voice:10000016/8152",
+            "genshin:voice:10000020/9154",
+            "genshin:voice:10000021/10165"
+          ]
+        },
+        {
+          "id": "voice-005",
+          "query": "关于雷电将军…",
+          "relevantKey": "genshin:voice:10000109/109022",
+          "evidence": {
+            "title": "关于雷电将军…",
+            "text": "三川花祭后，我鼓起勇气邀请将军大人共浴。那时，她的一缕侧发飘进了温泉水里。我很想伸手帮她挽起来，却又担心这样的肢体接触会显得冒昧。一想到神子会面不改色地这么做，我就不由沮丧…我的修行，还需精进。"
+          },
+          "rank": 12,
+          "hitAt5": false,
+          "hitAt10": false,
+          "reciprocalRankAt10": 0,
+          "returned": [
+            "genshin:voice:10000047/40033",
+            "genshin:voice:10000049/49054",
+            "genshin:voice:10000053/53061",
+            "genshin:voice:10000054/54032",
+            "genshin:voice:10000055/55025",
+            "genshin:voice:10000057/57025",
+            "genshin:voice:10000058/58018",
+            "genshin:voice:10000061/61024",
+            "genshin:voice:10000065/65021",
+            "genshin:voice:10000066/66025"
+          ]
+        }
+      ]
     },
     "tutorial": {
       "status": "excluded",
@@ -688,6 +943,6 @@
       "reason": "excluded: pinned snapshot has no readable canonical mechanism/help source"
     }
   },
-  "generatedAt": "2026-09-01T21:22:43.755Z",
+  "generatedAt": "2026-09-02T08:12:02.737Z",
   "pinnedUpstreamCommit": "26df1dfbdf05a82bbb1d97506859f3e1c40718d8"
 }
