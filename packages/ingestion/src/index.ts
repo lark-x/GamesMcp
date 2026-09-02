@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, extname, relative, resolve, sep } from "node:path";
+import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import type {
   ClaimCandidate,
   EntityCandidate,
@@ -30,7 +30,13 @@ export function assertPathInsideImportRoot(path: string, dataDir: string): strin
   const importRoot = resolveImportRoot(dataDir);
   const absolutePath = resolve(path);
   const relativePath = relative(importRoot, absolutePath);
-  if (relativePath.startsWith("..") || resolve(importRoot, relativePath) !== absolutePath)
+  // path.relative() returns an absolute path when Windows drives differ, which
+  // would otherwise slip past the ".." prefix check and the resolve() round-trip.
+  if (
+    relativePath.startsWith("..") ||
+    isAbsolute(relativePath) ||
+    resolve(importRoot, relativePath) !== absolutePath
+  )
     throw new DomainError(
       "path_outside_import_root",
       `Import path must stay inside the import root (${importRoot})`,
