@@ -25,6 +25,9 @@ export const documentTypeSchema = z.enum([
   "story_quest",
   "world_quest",
   "event_quest",
+  "commission",
+  "hangout",
+  "other",
   "book",
   "character_story",
   "item_description",
@@ -248,6 +251,10 @@ export type ArchiveHomeEntry = {
   kind: "entity" | "document";
   type: string;
   locale?: string | null;
+  /** Parent document for entries that point at a text node, such as dialogue. */
+  documentId?: string;
+  /** Stable node/anchor key when the entry represents a child of a document. */
+  anchorId?: string;
 };
 
 export type ArchiveHomeCategory = {
@@ -263,6 +270,11 @@ export type ArchiveHomeResponse = {
   revision: string;
   locale: string;
   categories: ArchiveHomeCategory[];
+  /** Revision actually used for the category read model (selected or current). */
+  revisionId?: string;
+  /** Latest published revision, independent of an optional historical selection. */
+  latestRevision?: string;
+  latestRevisionId?: string;
 };
 
 export const genshinElementSchema = z.enum([

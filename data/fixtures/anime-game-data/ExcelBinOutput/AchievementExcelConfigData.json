@@ -1,10 +1,50 @@
 [
   {
     "id": 13011,
-    "goalId": 13001,
     "titleTextMapHash": 1302,
     "descTextMapHash": 1303,
     "finishRewardId": 5,
+    "isDisuse": false
+  },
+  {
+    "id": 13012,
+    "goalId": 17,
+    "titleTextMapHash": 1304,
+    "descTextMapHash": 1305,
+    "finishRewardId": 6,
+    "isShow": "SHOWTYPE_HIDE",
+    "isDisuse": false
+  },
+  {
+    "id": 13013,
+    "goalId": 8,
+    "titleTextMapHash": 1306,
+    "descTextMapHash": 1307,
+    "finishRewardId": 7,
+    "isDisuse": true
+  },
+  {
+    "id": 13014,
+    "goalId": 6,
+    "titleTextMapHash": 1308,
+    "descTextMapHash": 1309,
+    "finishRewardId": 8,
+    "isDisuse": false
+  },
+  {
+    "id": 13015,
+    "goalId": 25,
+    "titleTextMapHash": 1310,
+    "descTextMapHash": 1316,
+    "finishRewardId": 9,
+    "isDisuse": false
+  },
+  {
+    "id": 13016,
+    "goalId": 1,
+    "titleTextMapHash": 1317,
+    "descTextMapHash": 1318,
+    "finishRewardId": 10,
     "isDisuse": false
   }
 ]

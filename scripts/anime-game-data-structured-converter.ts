@@ -11,6 +11,7 @@ import type {
   GenshinMaterial,
   GenshinWeapon,
 } from "@gip/contracts";
+import { getAchievementGoalMapping } from "./mappings/achievement-goals.js";
 
 export const STRUCTURED_CONVERTER_VERSION = "anime-game-data-structured-v1";
 export const STRUCTURED_SOURCE = "DimbreathBot/AnimeGameData";
@@ -302,11 +303,6 @@ function materialCategory(value: unknown): GenshinMaterial["category"] {
   return "other";
 }
 
-function achievementCategory(goalName: string | undefined): GenshinAchievement["category"] {
-  if (goalName === "天地万象") return "wonders_of_the_world";
-  return "other";
-}
-
 function enemyCategory(value: unknown): GenshinEnemy["category"] {
   const normalized = textValue(value)?.toLowerCase() ?? "";
   if (normalized.includes("boss")) return "normal_boss";
@@ -516,9 +512,19 @@ export async function convertStructuredAnimeGameData(
   });
 
   const achievementGoals = new Map(
-    asArray(inputs.achievementGoal.value).flatMap((row) => {
-      const id = idText(row.id);
-      return id ? [[id, textMapValue(textMap, row.nameTextMapHash)] as const] : [];
+    asArray(inputs.achievementGoal.value).map((row) => {
+      const goalId = idText(row.id);
+      const goalName = textMapValue(textMap, row.nameTextMapHash);
+      const mapping = getAchievementGoalMapping(goalId);
+      return [
+        goalId ?? "",
+        {
+          goalName,
+          canonicalCategory:
+            mapping && mapping.goalName === goalName ? mapping.canonicalCategory : "other",
+          mappingKnown: Boolean(mapping && mapping.goalName === goalName),
+        },
+      ] as const;
     }),
   );
   const achievements = asArray(inputs.achievement.value).flatMap((row): GenshinAchievement[] => {
@@ -532,25 +538,39 @@ export async function convertStructuredAnimeGameData(
       });
       return [];
     }
-    const goalName = achievementGoals.get(idText(row.goalId) ?? "");
+    const goalId = idText(row.goalId);
+    const goal = achievementGoals.get(goalId ?? "");
+    const goalName = goal?.goalName;
+    if (!goal?.mappingKnown) {
+      failures.push({
+        kind: "achievements",
+        upstreamId,
+        reason: "goal_mapping_missing",
+      });
+    }
     const base = baseRecord(options, "achievement", upstreamId, inputs.achievement, row, name);
-    const isShown = booleanValue(row.isShow) ?? false;
+    const isHidden = textValue(row.isShow) === "SHOWTYPE_HIDE";
+    const isDisuse = booleanValue(row.isDisuse) ?? false;
     return [
       {
         ...base,
-        category: achievementCategory(goalName),
+        category: goal?.canonicalCategory ?? "other",
         requirement: textMapValue(textMap, row.descTextMapHash),
         rewardPrimogems: null,
-        hidden: !isShown,
-        displayState: isShown ? "displayed" : "hidden",
+        hidden: isHidden,
+        displayState: isHidden ? "hidden" : "displayed",
         provenance: {
           ...base.provenance,
-          goalId: idText(row.goalId) ?? null,
+          goalId: goalId ?? null,
           goalName: goalName ?? null,
+          goalCanonicalCategory: goal?.canonicalCategory ?? "other",
+          goalMappingKnown: goal?.mappingKnown ?? false,
           finishRewardId: idText(row.finishRewardId) ?? null,
           rewardPrimogemsResolved: false,
-          displayState: isShown ? "displayed" : "hidden",
+          displayState: isHidden ? "hidden" : "displayed",
           achievementHiddenSource: "isShow",
+          isShow: row.isShow ?? null,
+          isDisuse,
         },
       },
     ];

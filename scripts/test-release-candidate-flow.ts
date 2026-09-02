@@ -416,6 +416,39 @@ async function main() {
     ).rows;
     assert.deepEqual(questMaterialized, { subquests: 2, nodes: 2, edges: 2 });
 
+    // Sprint 15 Phase 15.3: a failed materialization must leave the previous
+    // current revision unchanged and the new revision in a non-published state.
+    {
+      const currentBeforeFailure = await repository.getCurrentRevision(gameId);
+      assert.equal(currentBeforeFailure?.id, revision2.id);
+      const candidateFail = await repository.createReleaseCandidate({
+        gameId,
+        name: "RC Fail Inject",
+        importBatchIds: [batch2.id],
+      });
+      const build4 = await repository.buildReleaseCandidate(candidateFail.id);
+      assert.ok(build4, "failure-injection build must exist");
+      const failingPreparation = await repository.promoteReleaseCandidate({
+        candidateId: candidateFail.id,
+        buildId: build4.id,
+        contentChecksum: build4.contentChecksum,
+        expectedCurrentRevisionId: revision2.id,
+        releaseNote: "候选流程测试失败注入",
+        idempotencyKey: `candidate-flow-fail-${build4.id}`,
+      });
+      const failingRevision = failingPreparation;
+      await pool.query(
+        "update knowledge.dataset_revisions set normalized_records = '{}'::jsonb where id = $1",
+        [failingRevision.id],
+      );
+      await assert.rejects(
+        () => repository.materializeRevision(failingRevision.id),
+        /records.flatMap|materialization|payload/i,
+      );
+      const currentAfterFailure = await repository.getCurrentRevision(gameId);
+      assert.equal(currentAfterFailure?.id, revision2.id);
+    }
+
     const rolledBack = await repository.rollbackRevision(revision1.id, "隔离测试回滚");
     assert.equal(rolledBack.id, revision1.id);
     assert.equal(rolledBack.isCurrent, true);

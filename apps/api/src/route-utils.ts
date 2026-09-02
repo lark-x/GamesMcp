@@ -7,6 +7,9 @@ export const questTypeSchema = z.enum([
   "story_quest",
   "world_quest",
   "event_quest",
+  "commission",
+  "hangout",
+  "other",
 ]);
 
 export function parseIdParams(request: FastifyRequest): {

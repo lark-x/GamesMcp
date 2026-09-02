@@ -58,6 +58,13 @@ const genshinRepository = {
   upsertEnemy: unusedGenshinWrite,
   getEnemy: async () => null,
   listEnemies: async () => [],
+  findCharacterByNormalizedName: async () => null,
+  findWeaponByNormalizedName: async () => null,
+  findArtifactByNormalizedName: async () => null,
+  findArtifactSetByNormalizedName: async () => null,
+  findMaterialByNormalizedName: async () => null,
+  findAchievementByNormalizedName: async () => null,
+  findEnemyByNormalizedName: async () => null,
 } satisfies GenshinStructuredRepository;
 
 const repository = {
@@ -98,6 +105,8 @@ const repository = {
   getEntity: async () => null,
   getRelationships: async () => [],
   getEntityDocuments: async () => [],
+  getEntityTextBindings: async () => [],
+  getBindingEntities: async () => [],
   listDocuments: async () => [],
   getDocument: async () => null,
   search: async () => searchResult,

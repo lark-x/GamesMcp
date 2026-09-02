@@ -165,6 +165,26 @@ export function safeProvenance(
     converterVersion:
       typeof source.converterVersion === "string" ? source.converterVersion : undefined,
     rightsStatus: typeof source.rightsStatus === "string" ? source.rightsStatus : undefined,
+    bookStableId: typeof source.bookStableId === "string" ? source.bookStableId : undefined,
+    volumeStableId: typeof source.volumeStableId === "string" ? source.volumeStableId : undefined,
+    documentStableId:
+      typeof source.documentStableId === "string" ? source.documentStableId : undefined,
+    bookSuitId:
+      typeof source.bookSuitId === "string" || typeof source.bookSuitId === "number"
+        ? source.bookSuitId
+        : undefined,
+    volumeId:
+      typeof source.volumeId === "string" || typeof source.volumeId === "number"
+        ? source.volumeId
+        : undefined,
+    sortOrder: typeof source.sortOrder === "number" ? source.sortOrder : undefined,
+    characterStableId:
+      typeof source.characterStableId === "string" ? source.characterStableId : undefined,
+    storyKey: typeof source.storyKey === "string" ? source.storyKey : undefined,
+    unlockMetadata:
+      source.unlockMetadata && typeof source.unlockMetadata === "object"
+        ? (source.unlockMetadata as Record<string, unknown>)
+        : undefined,
   };
 }
 
@@ -577,7 +597,7 @@ export function publicQuestCondition() {
 
 export function publicDocumentCondition() {
   return sql`(
-    ${documents.type} NOT IN ('archon_quest', 'story_quest', 'world_quest', 'event_quest')
+    ${documents.type} NOT IN ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'other')
     OR ${publicQuestCondition()}
   )`;
 }

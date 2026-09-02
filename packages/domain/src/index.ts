@@ -145,15 +145,28 @@ export type DialogueSearchRequest = {
 export type QuestRecordPayload = {
   questKey: string;
   mainQuestId: string | number;
-  questType: "archon_quest" | "story_quest" | "world_quest" | "event_quest";
+  questType:
+    | "archon_quest"
+    | "story_quest"
+    | "world_quest"
+    | "event_quest"
+    | "commission"
+    | "hangout"
+    | "other";
   locale: string;
+  chapterId?: string | number;
+  chapterTitle?: string;
+  seriesId?: string | number;
+  seriesTitle?: string;
   chapter?: string;
   series?: string;
   order?: number;
   completeness: QuestCompleteness;
+  completenessReasons?: string[];
   /** Records outside the public game-facing catalogue remain available to admin preview only. */
   visibility?: QuestVisibility;
   visibilityReason?: string;
+  warnings?: string[];
   prerequisites?: string[];
   subquests: QuestSubquestPayload[];
   dialogueNodes: QuestDialogueNodePayload[];
@@ -437,6 +450,16 @@ export type DocumentProvenance = {
   transforms?: string[];
   converterVersion?: string;
   rightsStatus?: string;
+  /** Stable text-domain identities retained for dedicated readers. */
+  bookStableId?: string;
+  volumeStableId?: string;
+  documentStableId?: string;
+  bookSuitId?: string | number;
+  volumeId?: string | number;
+  sortOrder?: number;
+  characterStableId?: string;
+  storyKey?: string;
+  unlockMetadata?: Record<string, unknown>;
 };
 
 export type ProvenanceLineage = {
@@ -674,6 +697,34 @@ export interface GenshinStructuredRepository {
   listEnemies(
     options: GenshinStructuredListOptions,
   ): Promise<import("@gip/contracts").GenshinEnemy[]>;
+  findCharacterByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinCharacter | null>;
+  findWeaponByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinWeapon | null>;
+  findArtifactByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinArtifact | null>;
+  findArtifactSetByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinArtifactSet | null>;
+  findMaterialByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinMaterial | null>;
+  findAchievementByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinAchievement | null>;
+  findEnemyByNormalizedName(
+    revisionId: Id,
+    normalizedName: string,
+  ): Promise<import("@gip/contracts").GenshinEnemy | null>;
 }
 
 export type RepositoryHealth = {
@@ -697,6 +748,52 @@ export type StoredEmbedding = EmbeddingInput & {
   dimension: number;
   vector: number[];
 };
+
+export type TextBindingType =
+  | "primary_description"
+  | "character_story"
+  | "voice"
+  | "speaker"
+  | "quest_participant"
+  | "item_description"
+  | "book_reference"
+  | "achievement_reference"
+  | "tutorial_reference"
+  | "mechanism_reference"
+  | "mention"
+  | "related_text";
+
+export type TextBindingSource =
+  | "direct_upstream"
+  | "speaker_resolution"
+  | "participant_resolution"
+  | "canonical_exact"
+  | "alias_exact"
+  | "manual_curated";
+
+/** First-pass mention matching is intentionally limited to exact canonical/alias matches. */
+export const mentionBindingConfidence = {
+  canonical_exact: 1,
+  alias_exact: 0.9,
+} as const;
+
+export type TextBinding = {
+  id: Id;
+  gameId: Id;
+  revisionId: Id;
+  entityType: string;
+  entityStableId: string;
+  documentId: Id;
+  segmentId: Id | null;
+  bindingType: TextBindingType;
+  confidence: number | null;
+  bindingSource: TextBindingSource;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+};
+
+/** Alias used by consumers that describe the entity-facing direction explicitly. */
+export type EntityTextBinding = TextBinding;
 
 export type VectorSearchHit = {
   document: DocumentSummary;
@@ -755,6 +852,10 @@ export type QuestDialoguePage = {
     questKey: string;
     subquestKey?: string;
     dialogueNodeKey?: string;
+    segmentId?: Id | null;
+    sourceKey?: string;
+    sourceName?: string;
+    sourceSnapshotId?: Id | null;
     revision: string;
   }>;
   warnings: string[];
@@ -811,6 +912,12 @@ export interface KnowledgeRepository {
     limit: number,
     revisionId?: Id,
   ): Promise<DocumentSummary[]>;
+  getEntityTextBindings(
+    revisionId: Id,
+    entityStableId: string,
+    bindingType?: TextBindingType,
+  ): Promise<TextBinding[]>;
+  getBindingEntities(revisionId: Id, documentId: Id, segmentId?: Id): Promise<TextBinding[]>;
   listDocuments(
     gameId: Id,
     options: {
@@ -1061,6 +1168,9 @@ export function validateNormalizedRecords(
     "story_quest",
     "world_quest",
     "event_quest",
+    "commission",
+    "hangout",
+    "other",
     "book",
     "character_story",
     "item_description",
@@ -1189,7 +1299,15 @@ export function validateNormalizedRecords(
       }
     }
     if (record.quest) {
-      const questTypes = new Set(["archon_quest", "story_quest", "world_quest", "event_quest"]);
+      const questTypes = new Set([
+        "archon_quest",
+        "story_quest",
+        "world_quest",
+        "event_quest",
+        "commission",
+        "hangout",
+        "other",
+      ]);
       const nodeTypes = new Set([
         "dialogue",
         "player_choice",
@@ -1532,6 +1650,32 @@ export class GameDomainService {
     return revision.id;
   }
 
+  /** List public documents for dedicated text readers. */
+  async listDocuments(
+    gameId: Id,
+    options: {
+      query?: string;
+      type?: DocumentType;
+      locale?: string;
+      limit: number;
+      offset: number;
+      revisionId?: Id;
+    },
+  ): Promise<DocumentSummary[]> {
+    await this.requireCapability(gameId, "lore_search");
+    const revision = options.revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.listDocuments(gameId, { ...options, revisionId: revision });
+  }
+
+  async getDocument(gameId: Id, documentId: Id, revisionId?: Id): Promise<DocumentDetail> {
+    await this.requireCapability(gameId, "lore_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    const document = await this.repository.getDocument(gameId, documentId, revision);
+    if (!document)
+      throw new DomainError("document_not_found", "Document was not found", undefined, 404);
+    return document;
+  }
+
   /** Alias resolution over structured entities plus legacy entity aliases. */
   async resolveAlias(gameId: Id, query: string, revisionId?: Id): Promise<EntitySummary | null> {
     await this.requireCapability(gameId, "entity_search");
@@ -1725,40 +1869,60 @@ export class GameDomainService {
   ): Promise<unknown | null> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const wanted = normalizeDisplayName(name);
-    const listOptions = { revisionId: revision, query: name, limit: 200 };
-    const candidates: Array<{ name: string; stableId: string }> =
-      kind === "character"
-        ? await this.repository.genshin.listCharacters(listOptions)
-        : kind === "weapon"
-          ? await this.repository.genshin.listWeapons(listOptions)
-          : kind === "artifact"
-            ? await this.repository.genshin.listArtifacts(listOptions)
-            : kind === "artifact_set"
-              ? await this.repository.genshin.listArtifactSets(listOptions)
-              : kind === "material"
-                ? await this.repository.genshin.listMaterials(listOptions)
-                : kind === "achievement"
-                  ? await this.repository.genshin.listAchievements(listOptions)
-                  : await this.repository.genshin.listEnemies(listOptions);
-    const match = candidates.find((item) => normalizeDisplayName(item.name) === wanted);
-    if (!match) return null;
+    const normalizedName = normalizeDisplayName(name);
+
+    // Use direct database lookup instead of fetching 200 records and filtering in memory
+    let record: unknown | null = null;
     switch (kind) {
       case "character":
-        return this.repository.genshin.getCharacter(revision, match.stableId);
+        record = await this.repository.genshin.findCharacterByNormalizedName(
+          revision,
+          normalizedName,
+        );
+        break;
       case "weapon":
-        return this.repository.genshin.getWeapon(revision, match.stableId);
+        record = await this.repository.genshin.findWeaponByNormalizedName(revision, normalizedName);
+        break;
       case "artifact":
-        return this.repository.genshin.getArtifact(revision, match.stableId);
+        record = await this.repository.genshin.findArtifactByNormalizedName(
+          revision,
+          normalizedName,
+        );
+        break;
       case "artifact_set":
-        return this.repository.genshin.getArtifactSet(revision, match.stableId);
+        record = await this.repository.genshin.findArtifactSetByNormalizedName(
+          revision,
+          normalizedName,
+        );
+        break;
       case "material":
-        return this.repository.genshin.getMaterial(revision, match.stableId);
+        record = await this.repository.genshin.findMaterialByNormalizedName(
+          revision,
+          normalizedName,
+        );
+        break;
       case "achievement":
-        return this.repository.genshin.getAchievement(revision, match.stableId);
+        record = await this.repository.genshin.findAchievementByNormalizedName(
+          revision,
+          normalizedName,
+        );
+        break;
       case "enemy":
-        return this.repository.genshin.getEnemy(revision, match.stableId);
+        record = await this.repository.genshin.findEnemyByNormalizedName(revision, normalizedName);
+        break;
     }
+    return record;
+  }
+
+  async getEntityTexts(
+    gameId: Id,
+    entityStableId: string,
+    bindingType?: TextBindingType,
+    revisionId?: Id,
+  ): Promise<TextBinding[]> {
+    await this.requireCapability(gameId, "lore_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.getEntityTextBindings(revision, entityStableId, bindingType);
   }
 
   /**

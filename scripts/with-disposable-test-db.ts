@@ -8,6 +8,7 @@ const allowedScripts = new Set([
   "scripts/test-database.ts",
   "scripts/test-search-core.ts",
   "scripts/test-performance.ts",
+  "scripts/test-performance-story.ts",
   "scripts/test-acquisition-review.ts",
   "scripts/test-backup-gate.ts",
   "scripts/test-release-candidate-flow.ts",

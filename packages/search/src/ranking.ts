@@ -1,3 +1,5 @@
+import type { SearchMatchType } from "./port.js";
+
 /**
  * Deterministic lexical ranking tiers for the shared search core.
  *
@@ -20,6 +22,23 @@ export const SEARCH_TIERS = {
   bodyTrigram: 2,
 } as const;
 
+/**
+ * Match classes emitted by the SQL search port. The tier gap is deliberately
+ * larger than the bounded database rank so exact and prefix hits stay ahead
+ * of FTS and trigram fallbacks.
+ */
+export const SEARCH_MATCH_TYPE_TIERS = {
+  exact: SEARCH_TIERS.exactTitle,
+  prefix: SEARCH_TIERS.titlePrefix,
+  fts: SEARCH_TIERS.ftsRank,
+  trgm: SEARCH_TIERS.bodyTrigram,
+} as const;
+
+export function scoreSearchMatch(matchType: SearchMatchType, rank = 0): number {
+  const boundedRank = Number.isFinite(rank) ? Math.min(Math.max(rank, 0), 1) : 0;
+  return SEARCH_MATCH_TYPE_TIERS[matchType] + boundedRank;
+}
+
 export type SearchTierName = keyof typeof SEARCH_TIERS;
 
 export const DIALOGUE_BOOSTS = {
@@ -38,7 +57,7 @@ export function characterOverlap(query: string, value: string): number {
   const v = normalizeText(value);
   if (!q) return 0;
   const chars = [...q];
-  const overlap = chars.filter((char) => v.includes(char)).length;
+  const overlap = chars.filter((char) => v.indexOf(char) >= 0).length;
   return overlap / chars.length;
 }
 
@@ -53,7 +72,7 @@ export function scoreTitleField(query: string, title: string): TieredScore {
   if (!q) return { score: 0, tier: "none" };
   if (t === q) return { score: SEARCH_TIERS.exactTitle, tier: "exactTitle" };
   if (t.startsWith(q)) return { score: SEARCH_TIERS.titlePrefix, tier: "titlePrefix" };
-  if (t.includes(q)) return { score: SEARCH_TIERS.ftsRank, tier: "ftsRank" };
+  if (t.indexOf(q) >= 0) return { score: SEARCH_TIERS.ftsRank, tier: "ftsRank" };
   return { score: 0, tier: "none" };
 }
 
@@ -63,7 +82,7 @@ export function scoreAliasField(query: string, alias: string): TieredScore {
   if (!q) return { score: 0, tier: "none" };
   if (a === q) return { score: SEARCH_TIERS.exactAlias, tier: "exactAlias" };
   if (a.startsWith(q)) return { score: SEARCH_TIERS.titlePrefix, tier: "titlePrefix" };
-  if (a.includes(q)) return { score: SEARCH_TIERS.ftsRank, tier: "ftsRank" };
+  if (a.indexOf(q) >= 0) return { score: SEARCH_TIERS.ftsRank, tier: "ftsRank" };
   return { score: 0, tier: "none" };
 }
 
@@ -71,7 +90,7 @@ export function scoreBodyField(query: string, body: string): TieredScore {
   const q = normalizeText(query);
   const b = normalizeText(body);
   if (!q) return { score: 0, tier: "none" };
-  if (b.includes(q)) return { score: SEARCH_TIERS.bodyFts, tier: "bodyFts" };
+  if (b.indexOf(q) >= 0) return { score: SEARCH_TIERS.bodyFts, tier: "bodyFts" };
   const overlap = characterOverlap(query, body);
   if (overlap >= 0.6)
     return { score: SEARCH_TIERS.bodyTrigram + overlap * 0.5, tier: "bodyTrigram" };
@@ -92,6 +111,11 @@ export type RankingResult = TieredScore & {
 };
 
 /** Rank a candidate with dialogue boosts applied on top of field tiers. */
+/**
+ * Compatibility ranking for legacy in-memory adapters and unit tests. The
+ * production SQL adapter supplies `SearchMatchType` and rank directly, so
+ * this local fallback is not used to decide PostgreSQL search matches.
+ */
 export function rankCandidate(query: string, input: RankingInput): RankingResult {
   let best = scoreTitleField(query, input.title);
   let matchedBy: SearchTierName | "bodyTrigram" | "none" = best.tier;
@@ -113,7 +137,7 @@ export function rankCandidate(query: string, input: RankingInput): RankingResult
     score += DIALOGUE_BOOSTS.speakerExact;
     matchedBy = matchedBy === "none" ? "ftsRank" : matchedBy;
   }
-  if (input.questTitle && normalizeText(input.questTitle).includes(normalizeText(query))) {
+  if (input.questTitle && normalizeText(input.questTitle).indexOf(normalizeText(query)) >= 0) {
     score += DIALOGUE_BOOSTS.questTitleMatch;
   }
   if (input.questType && IMPORTANT_QUEST_TYPES.has(input.questType)) {

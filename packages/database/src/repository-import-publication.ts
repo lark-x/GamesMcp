@@ -17,6 +17,7 @@ import {
   datasetRevisions,
   documentSegments,
   documents,
+  entityRevisionMaterializations,
   entities,
   entityAliases,
   entityMentions,
@@ -235,11 +236,26 @@ export async function publishImport(
             updatedAt: new Date(),
           },
         });
-      if (candidate.aliases?.length && sourceRow) {
-        await tx.delete(entityAliases).where(eq(entityAliases.entityId, id));
-        await tx.insert(entityAliases).values(
-          candidate.aliases.map((alias) => ({
-            entityId: id,
+    }
+    const uniqueCandidates = [
+      ...new Map(allCandidates.map((candidate) => [candidate.sourceKey, candidate])).values(),
+    ];
+    if (uniqueCandidates.length) {
+      await tx.insert(entityRevisionMaterializations).values(
+        uniqueCandidates.map((candidate) => ({
+          revisionId: revision.id,
+          entityId: entityIdBySourceKey.get(candidate.sourceKey)!,
+          entityType: candidate.type,
+          canonicalName: candidate.name,
+          normalizedName: normalize(candidate.name),
+          summary: candidate.summary,
+        })),
+      );
+      if (sourceRow) {
+        const aliasRows = uniqueCandidates.flatMap((candidate) =>
+          (candidate.aliases ?? []).map((alias) => ({
+            entityId: entityIdBySourceKey.get(candidate.sourceKey)!,
+            revisionId: revision.id,
             value: alias.value,
             normalizedValue: normalize(alias.value),
             language: alias.language ?? "und",
@@ -247,6 +263,7 @@ export async function publishImport(
             isPrimary: alias.primary ?? false,
           })),
         );
+        if (aliasRows.length) await tx.insert(entityAliases).values(aliasRows);
       }
     }
     const documentBySourceKey = new Map<
@@ -429,9 +446,9 @@ export async function publishImport(
           searchText: segment.body,
         });
         segmentRefs.push({ id: segmentId, body: segment.body });
-        for (const [sourceKey, entityId] of entityIdBySourceKey) {
-          const candidate = allCandidates.find((item) => item.sourceKey === sourceKey);
-          if (!candidate) continue;
+        for (const candidate of uniqueCandidates) {
+          const entityId = entityIdBySourceKey.get(candidate.sourceKey);
+          if (!entityId) continue;
           const names = [candidate.name, ...(candidate.aliases ?? []).map((item) => item.value)];
           for (const name of names) {
             const position = segment.body.indexOf(name);

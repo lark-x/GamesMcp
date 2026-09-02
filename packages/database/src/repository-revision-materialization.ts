@@ -8,6 +8,7 @@ import {
   datasetRevisions,
   documentSegments,
   documents,
+  entityRevisionMaterializations,
   embeddings,
   entities,
   entityAliases,
@@ -132,6 +133,10 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
     // this preparing revision. Claim deletion cascades to claim_entities and
     // evidence; document deletion cascades to segments and mentions.
     await tx.delete(embeddings).where(eq(embeddings.revisionId, revisionId));
+    await tx
+      .delete(entityRevisionMaterializations)
+      .where(eq(entityRevisionMaterializations.revisionId, revisionId));
+    await tx.delete(entityAliases).where(eq(entityAliases.revisionId, revisionId));
     await tx.delete(claims).where(eq(claims.revisionId, revisionId));
     await tx.delete(relationships).where(eq(relationships.revisionId, revisionId));
     await tx.delete(documents).where(eq(documents.revisionId, revisionId));
@@ -185,15 +190,31 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
         });
     }
     const entityIds = [...entityIdBySourceKey.values()];
-    if (entityIds.length)
-      await tx.delete(entityAliases).where(inArray(entityAliases.entityId, entityIds));
-    for (const candidateValue of allCandidates) {
+    const uniqueCandidates = [
+      ...new Map(
+        allCandidates.map((candidateValue) => [candidateValue.sourceKey, candidateValue]),
+      ).values(),
+    ];
+    if (entityIds.length) {
+      await tx.insert(entityRevisionMaterializations).values(
+        uniqueCandidates.map((candidateValue) => ({
+          revisionId,
+          entityId: entityIdBySourceKey.get(candidateValue.sourceKey)!,
+          entityType: candidateValue.type,
+          canonicalName: candidateValue.name,
+          normalizedName: normalize(candidateValue.name),
+          summary: candidateValue.summary,
+        })),
+      );
+    }
+    for (const candidateValue of uniqueCandidates) {
       const entityId = entityIdBySourceKey.get(candidateValue.sourceKey);
       if (!entityId || !candidateValue.aliases?.length) continue;
       const recordKey = entityRecordBySourceKey.get(candidateValue.sourceKey);
       await tx.insert(entityAliases).values(
         candidateValue.aliases.map((alias) => ({
           entityId,
+          revisionId,
           value: alias.value,
           normalizedValue: normalize(alias.value),
           language: alias.language ?? "und",

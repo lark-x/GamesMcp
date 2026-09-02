@@ -58,3 +58,67 @@ jobs:
       - run: pnpm test:db
         env:
           GIP_DB_TEST_URL: postgres://gip:gip@127.0.0.1:5432/gip
+
+  candidate-flow:
+    # Sprint 15/30: full candidate -> build -> preview -> promote -> materialize ->
+    # failure-path -> rollback flow against a disposable database.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: gip
+          POSTGRES_PASSWORD: gip
+          POSTGRES_DB: gip
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gip -d gip"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:candidate-flow
+        env:
+          DATABASE_URL: postgres://gip:gip@127.0.0.1:5432/gip
+
+  story-gates:
+    # Sprint 30: story search regression + MCP golden shape + QA golden shape gates.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Real-upstream corpus regression (uses memory adapter fallback when no DB is
+      # provisioned; the recorded fallbackReason keeps the run honest).
+      - run: pnpm eval:search-regression
+      # Golden datasets must exist, be parseable and respect minimum sizes.
+      - run: |
+          node --import tsx -e "
+            const fs = require('node:fs');
+            const qa = JSON.parse(fs.readFileSync('data/fixtures/qa-golden.json', 'utf8'));
+            const mcp = JSON.parse(fs.readFileSync('data/evaluation/genshin/mcp-golden.json', 'utf8'));
+            const qaCount = Array.isArray(qa) ? qa.length : (qa.cases?.length ?? 0);
+            const mcpCount = Array.isArray(mcp) ? mcp.length : (mcp.cases?.length ?? 0);
+            if (qaCount + mcpCount < 490) {
+              throw new Error('golden dataset too small: ' + (qaCount + mcpCount));
+            }
+            console.log('golden cases:', qaCount, '+', mcpCount);
+          "

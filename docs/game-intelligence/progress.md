@@ -1,4 +1,8 @@
-# Game Intelligence Platform Progress Ledger
+# Legacy Refactor Ledger (Game Intelligence Platform Rebuild)
+
+> Status: Legacy. This file records Phase 0-12 of the completed rebuild.
+> The active milestone is Story / Text / Mechanism Intelligence; its live ledger is
+> docs/game-intelligence/story-progress.md. Do not treat the table below as current status.
 
 > Update this file before starting a phase and after completing or blocking a phase.
 >

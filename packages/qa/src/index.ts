@@ -1,5 +1,5 @@
 import type { RuntimeConfig } from "@gip/config";
-import type { Citation, ClaimStatus, EvidenceAnswer } from "@gip/contracts";
+import type { Citation, ClaimStatus, EvidenceAnswer, SearchResult } from "@gip/contracts";
 import type { ClaimView, EntityDetail, KnowledgeRepository } from "@gip/domain";
 
 export * from "./evaluation.js";
@@ -54,11 +54,36 @@ export class EvidenceQaService {
     const evidenceBySegment = new Map<string, QaEvidence>();
     const claimContexts = new Map<string, ClaimContext>();
 
-    for (const result of search.segments.slice(0, maxEvidence)) {
-      const document = await this.repository.getDocument(gameId, result.id, search.revisionId);
-      const segment = document?.segments.find((item) => item.id === result.segmentId);
-      if (!document || !segment) continue;
-      this.addEvidence(evidenceBySegment, document, segment, segment.body);
+    // FIX-023: prefer hits from the real Search Core (PostgreSQL FTS) when available.
+    type CoreLoreHit = {
+      document: { id: string };
+      body: string;
+    };
+    const coreLore = (search as SearchResult & { coreHits?: { lore?: CoreLoreHit[] } }).coreHits
+      ?.lore;
+    if (coreLore?.length) {
+      for (const hit of coreLore.slice(0, maxEvidence)) {
+        const document = await this.repository.getDocument(
+          gameId,
+          hit.document.id,
+          search.revisionId,
+        );
+        if (!document) continue;
+        const segment =
+          document.segments.find((item) => item.body === hit.body) ?? document.segments[0];
+        if (!segment) continue;
+        this.addEvidence(evidenceBySegment, document, segment, segment.body);
+      }
+    }
+
+    // Legacy read-model path remains as fallback when the core produced no lore hits.
+    if (!evidenceBySegment.size) {
+      for (const result of search.segments.slice(0, maxEvidence)) {
+        const document = await this.repository.getDocument(gameId, result.id, search.revisionId);
+        const segment = document?.segments.find((item) => item.id === result.segmentId);
+        if (!document || !segment) continue;
+        this.addEvidence(evidenceBySegment, document, segment, segment.body);
+      }
     }
 
     if (typeof this.repository.getEntity === "function") {

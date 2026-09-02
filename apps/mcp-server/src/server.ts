@@ -1,6 +1,11 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { KnowledgeRepository } from "@gip/domain";
-import { DomainError, GameDomainService, KnowledgeService } from "@gip/domain";
+import {
+  DomainError,
+  GameDomainService,
+  KnowledgeService,
+  type TextBindingType,
+} from "@gip/domain";
 import {
   documentIdSchema,
   documentTypeSchema,
@@ -10,8 +15,17 @@ import {
   segmentIdSchema,
 } from "@gip/contracts";
 import { z } from "zod";
+import { DEFAULT_MCP_RESPONSE_BUDGET, shapeForBudget } from "@gip/search";
 
-const questTypeSchema = z.enum(["archon_quest", "story_quest", "world_quest", "event_quest"]);
+const questTypeSchema = z.enum([
+  "archon_quest",
+  "story_quest",
+  "world_quest",
+  "event_quest",
+  "commission",
+  "hangout",
+  "other",
+]);
 
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
@@ -24,6 +38,16 @@ function errorResult(code: string, message: string) {
   };
 }
 
+// Sprint 20: unified MCP response budget. List-returning search tools pass
+// their hits through this shaper so item count, excerpts and total bytes stay
+// bounded regardless of upstream result size.
+function shapeSearchForBudget(
+  items: Array<{ title?: string; excerpt?: string }>,
+  budget = DEFAULT_MCP_RESPONSE_BUDGET,
+) {
+  return shapeForBudget(items, budget);
+}
+
 function errorResultFrom(error: unknown, fallbackCode: string, fallbackMessage: string) {
   return error instanceof DomainError
     ? errorResult(error.code, error.message)
@@ -34,7 +58,26 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   const server = new McpServer({ name: "game-intelligence-platform", version: "0.1.0" });
   const domain = new KnowledgeService(repository);
   const gameDomain = new GameDomainService(repository);
-  const gameId = z.string().uuid();
+
+  // Sprint 19: game_id is optional on every tool. When omitted, the platform
+  // resolves the single registered public game so MCP callers never need an
+  // internal UUID. Ambiguity is an explicit error, not a guess.
+  const optionalGameId = z.string().uuid().optional();
+
+  async function resolveGameId(gameIdInput: string | undefined): Promise<string> {
+    if (gameIdInput) return gameIdInput;
+    const games = await repository.listGames();
+    const first = games[0];
+    if (games.length === 1 && first) return first.id;
+    if (games.length === 0)
+      throw new DomainError("no_game_registered", "No game is registered in the platform");
+    throw new DomainError(
+      "game_id_required",
+      "Multiple games are registered; pass game_id explicitly",
+      { registered: games.length },
+      400,
+    );
+  }
 
   server.tool("list_games", "List games registered in the knowledge platform.", {}, async () => {
     try {
@@ -47,9 +90,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "get_game_capabilities",
     "List capabilities enabled for a game.",
-    { game_id: gameId },
-    async ({ game_id }) => {
+    { game_id: optionalGameId },
+    async ({ game_id: gameIdInput }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireGame(game_id);
         return textResult({ game_id, capabilities: await repository.getCapabilities(game_id) });
       } catch (error) {
@@ -63,9 +107,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "get_character",
     "Get one Genshin character by display name with structured facts.",
-    { game_id: gameId, name: nameInput },
-    async ({ game_id, name }) => {
+    { game_id: optionalGameId, name: nameInput },
+    async ({ game_id: gameIdInput, name }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         const character = await gameDomain.findStructuredByName(game_id, "character", name);
         if (!character)
           return errorResult("character_not_found", `Character was not found: ${name}`);
@@ -79,9 +124,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "get_material",
     "Get one Genshin material by display name, including usage and sources.",
-    { game_id: gameId, name: nameInput },
-    async ({ game_id, name }) => {
+    { game_id: optionalGameId, name: nameInput },
+    async ({ game_id: gameIdInput, name }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         const material = await gameDomain.findStructuredByName(game_id, "material", name);
         if (!material) return errorResult("material_not_found", `Material was not found: ${name}`);
         return textResult({ material });
@@ -94,9 +140,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "get_weapon",
     "Get one Genshin weapon by display name with structured facts.",
-    { game_id: gameId, name: nameInput },
-    async ({ game_id, name }) => {
+    { game_id: optionalGameId, name: nameInput },
+    async ({ game_id: gameIdInput, name }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         const weapon = await gameDomain.findStructuredByName(game_id, "weapon", name);
         if (!weapon) return errorResult("weapon_not_found", `Weapon was not found: ${name}`);
         return textResult({ weapon });
@@ -109,9 +156,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "get_enemy",
     "Get one Genshin enemy by display name with structured facts.",
-    { game_id: gameId, name: nameInput },
-    async ({ game_id, name }) => {
+    { game_id: optionalGameId, name: nameInput },
+    async ({ game_id: gameIdInput, name }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         const enemy = await gameDomain.findStructuredByName(game_id, "enemy", name);
         if (!enemy) return errorResult("enemy_not_found", `Enemy was not found: ${name}`);
         return textResult({ enemy });
@@ -124,9 +172,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "resolve_entity",
     "Resolve a display name or alias to the canonical entity with confidence.",
-    { game_id: gameId, query: z.string().trim().min(1).max(200) },
-    async ({ game_id, query }) => {
+    { game_id: optionalGameId, query: z.string().trim().min(1).max(200) },
+    async ({ game_id: gameIdInput, query }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         const entity = await gameDomain.resolveAlias(game_id, query);
         if (!entity) return errorResult("entity_not_found", `Entity was not found: ${query}`);
         return textResult({
@@ -147,21 +196,31 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "search_dialogue",
     "Search published quest dialogue lines with citations.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       query: z.string().trim().min(1).max(500),
+      speaker: z.string().trim().min(1).max(200).optional(),
+      quest: z.string().trim().min(1).max(200).optional(),
+      node_type: z.string().trim().min(1).max(80).optional(),
+      locale: z.string().trim().min(1).max(40).optional(),
       limit: z.number().int().min(1).max(10).default(5),
     },
-    async ({ game_id, query, limit }) => {
+    async ({ game_id: gameIdInput, query, speaker, quest, node_type, locale, limit }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await gameDomain.requireCapability(game_id, "lore_search");
         const revisionId = await gameDomain.requirePublicRevision(game_id);
         if (!repository.searchDialogue)
           throw new DomainError("dialogue_tools_not_ready", "Dialogue search is not implemented");
-        const hits = await repository.searchDialogue(game_id, {
+        const request = {
           query,
           limit,
           revisionId,
-        });
+          speaker,
+          quest,
+          nodeType: node_type,
+          locale,
+        };
+        const hits = await repository.searchDialogue(game_id, request);
         return textResult({
           hits: hits.slice(0, limit).map((hit) => ({
             quest: hit.quest,
@@ -183,13 +242,14 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "search_entities",
     "[Deprecated] Prefer get_character / get_material / resolve_entity. Search entities by canonical name or alias.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       query: z.string().min(1).max(500),
       entity_type: entityTypeSchema.optional(),
       limit: z.number().int().min(1).max(50).default(20),
     },
-    async ({ game_id, query, entity_type, limit }) => {
+    async ({ game_id: gameIdInput, query, entity_type, limit }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "entity_search");
         const revisionId = await requirePublicRevision(repository, game_id);
         const result = await repository.search(game_id, {
@@ -200,9 +260,26 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
           revisionId,
           debug: false,
         });
-        return result.revision
-          ? textResult(result)
-          : errorResult("index_not_ready", "No searchable Dataset Revision is ready");
+        if (!result.revision)
+          return errorResult("index_not_ready", "No searchable Dataset Revision is ready");
+        const shapedEntities = shapeSearchForBudget(
+          result.entities.map((entity) => ({
+            id: entity.id,
+            sourceKey: entity.sourceKey,
+            name: entity.name,
+            type: entity.type,
+            revision: entity.revision,
+            title: entity.name,
+            excerpt: entity.summary ?? undefined,
+          })),
+        );
+        return textResult({
+          revision: result.revision,
+          indexStatus: result.indexStatus,
+          entities: shapedEntities.items,
+          truncated: shapedEntities.truncated,
+          estimatedBytes: shapedEntities.estimatedBytes,
+        });
       } catch (error) {
         return errorResultFrom(error, "search_failed", "Search failed");
       }
@@ -212,9 +289,10 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
   server.tool(
     "get_entity",
     "[Deprecated] Prefer get_character for structured facts. Get entity details, relationships, documents and evidence claims.",
-    { game_id: gameId, entity_id: entityIdSchema },
-    async ({ game_id, entity_id }) => {
+    { game_id: optionalGameId, entity_id: entityIdSchema },
+    async ({ game_id: gameIdInput, entity_id }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "entity_search");
         const revisionId = await requirePublicRevision(repository, game_id);
         return textResult({ entity: await domain.getEntity(game_id, entity_id, revisionId) });
@@ -228,13 +306,14 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "search_lore",
     "[Deprecated] Prefer search_dialogue for quest text. Search published lore documents and evidence-bearing segments.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       query: z.string().min(1).max(500),
       document_type: documentTypeSchema.optional(),
       limit: z.number().int().min(1).max(50).default(20),
     },
-    async ({ game_id, query, document_type, limit }) => {
+    async ({ game_id: gameIdInput, query, document_type, limit }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "lore_search");
         const revisionId = await requirePublicRevision(repository, game_id);
         const result = await repository.search(game_id, {
@@ -245,9 +324,31 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
           revisionId,
           debug: false,
         });
-        return result.revision
-          ? textResult(result)
-          : errorResult("index_not_ready", "No searchable Dataset Revision is ready");
+        if (!result.revision)
+          return errorResult("index_not_ready", "No searchable Dataset Revision is ready");
+        const loreHits = [
+          ...result.documents.map((doc) => ({
+            kind: "document" as const,
+            id: doc.id,
+            title: doc.title,
+            excerpt: doc.snippet,
+          })),
+          ...result.segments.map((seg) => ({
+            kind: "segment" as const,
+            id: seg.id,
+            segmentId: seg.segmentId,
+            title: seg.title,
+            excerpt: seg.snippet,
+          })),
+        ];
+        const shapedLore = shapeSearchForBudget(loreHits);
+        return textResult({
+          revision: result.revision,
+          indexStatus: result.indexStatus,
+          hits: shapedLore.items,
+          truncated: shapedLore.truncated,
+          estimatedBytes: shapedLore.estimatedBytes,
+        });
       } catch (error) {
         return errorResultFrom(error, "search_failed", "Search failed");
       }
@@ -258,15 +359,16 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "search_quests",
     "Search published quest documents by quest title, body, type, locale and game version.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       query: z.string().min(1).max(500),
       quest_type: questTypeSchema.optional(),
       locale: z.string().min(1).max(40).default("zh-CN"),
       game_version: z.string().min(1).max(40).optional(),
       limit: z.number().int().min(1).max(50).default(20),
     },
-    async ({ game_id, query, quest_type, locale, game_version, limit }) => {
+    async ({ game_id: gameIdInput, query, quest_type, locale, game_version, limit }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "lore_search");
         const revisionId = await requirePublicRevision(repository, game_id);
         if (!repository.searchQuests)
@@ -291,15 +393,16 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "get_quest",
     "Read a published quest with subquests, paginated dialogue nodes, branch edges and citations.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       quest_id: z.string().min(1).max(120),
       locale: z.string().min(1).max(40).default("zh-CN"),
       subquest_id: z.string().min(1).max(120).optional(),
       cursor: z.string().min(1).optional(),
       node_limit: z.number().int().min(1).max(300).default(100),
     },
-    async ({ game_id, quest_id, locale, subquest_id, cursor, node_limit }) => {
+    async ({ game_id: gameIdInput, quest_id, locale, subquest_id, cursor, node_limit }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "lore_search");
         const revisionId = await requirePublicRevision(repository, game_id);
         if (!repository.getQuest)
@@ -339,13 +442,14 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "get_lore_document",
     "Get a document and its citation-addressable segments.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       document_id: documentIdSchema,
       segment_id: segmentIdSchema.optional(),
       max_chars: z.number().int().min(100).max(20_000).default(8_000),
     },
-    async ({ game_id, document_id, segment_id, max_chars }) => {
+    async ({ game_id: gameIdInput, document_id, segment_id, max_chars }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "lore_search");
         const revisionId = await requirePublicRevision(repository, game_id);
         const document = await domain.getDocument(game_id, document_id, revisionId);
@@ -362,13 +466,14 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
     "get_relationships",
     "Get one-hop relationships for an entity.",
     {
-      game_id: gameId,
+      game_id: optionalGameId,
       entity_id: entityIdSchema,
       predicate: relationshipPredicateSchema.optional(),
       limit: z.number().int().min(1).max(100).default(50),
     },
-    async ({ game_id, entity_id, predicate, limit }) => {
+    async ({ game_id: gameIdInput, entity_id, predicate, limit }) => {
       try {
+        const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "relationships");
         const revisionId = await requirePublicRevision(repository, game_id);
         await domain.getEntity(game_id, entity_id, revisionId);
@@ -384,6 +489,126 @@ export function createMcpServer(repository: KnowledgeRepository): McpServer {
       } catch (error) {
         return errorResultFrom(error, "relationships_failed", "Relationships failed");
       }
+    },
+  );
+
+  server.tool(
+    "get_entity_texts",
+    "Get published texts bound to an entity (stories, mentions, descriptions) with citations.",
+    {
+      game_id: optionalGameId,
+      entity_id: z.string().min(1).max(200),
+      binding_type: z.string().trim().min(1).max(60).optional(),
+    },
+    async ({ game_id: gameIdInput, entity_id, binding_type }) => {
+      try {
+        const game_id = await resolveGameId(gameIdInput);
+        const texts = await gameDomain.getEntityTexts(
+          game_id,
+          entity_id,
+          binding_type as TextBindingType | undefined,
+        );
+        const shaped = shapeForBudget(
+          texts.map((binding) => ({
+            bindingType: binding.bindingType,
+            bindingSource: binding.bindingSource,
+            confidence: binding.confidence,
+            documentId: binding.documentId,
+            segmentId: binding.segmentId ?? undefined,
+            title: binding.bindingType,
+            excerpt: binding.metadata ? JSON.stringify(binding.metadata) : undefined,
+          })),
+        );
+        return textResult({
+          entity_id,
+          bindings: shaped.items,
+          truncated: shaped.truncated,
+          estimatedBytes: shaped.estimatedBytes,
+        });
+      } catch (error) {
+        return errorResultFrom(error, "entity_texts_failed", "Entity texts could not be loaded");
+      }
+    },
+  );
+
+  server.tool(
+    "search_items",
+    "Search item and material texts by name, description or type.",
+    {
+      game_id: optionalGameId,
+      query: z.string().trim().min(1).max(200),
+      item_type: z.string().trim().min(1).max(60).optional(),
+      limit: z.number().int().min(1).max(50).default(10),
+    },
+    async ({ game_id: gameIdInput, query, item_type, limit }) => {
+      try {
+        const game_id = await resolveGameId(gameIdInput);
+        const materials = await gameDomain.listMaterials(game_id, undefined, {
+          query,
+          limit,
+        });
+        const filtered = item_type
+          ? materials.filter(
+              (material) =>
+                (material as { category?: string }).category?.toLowerCase() ===
+                item_type.toLowerCase(),
+            )
+          : materials;
+        const shaped = shapeSearchForBudget(
+          filtered.map((material) => ({
+            id: material.stableId,
+            name: material.name,
+            title: material.name,
+            excerpt: material.description ?? undefined,
+            category: (material as { category?: string }).category,
+          })),
+        );
+        return textResult({
+          query,
+          items: shaped.items,
+          truncated: shaped.truncated,
+          estimatedBytes: shaped.estimatedBytes,
+        });
+      } catch (error) {
+        return errorResultFrom(error, "search_items_failed", "Item search failed");
+      }
+    },
+  );
+
+  server.tool(
+    "get_item_text",
+    "Get the full published text of one item/material by stable id.",
+    { game_id: optionalGameId, item_id: z.string().min(1).max(200) },
+    async ({ game_id: gameIdInput, item_id }) => {
+      try {
+        const game_id = await resolveGameId(gameIdInput);
+        const material = await gameDomain.getMaterial(game_id, item_id);
+        return textResult({ item: material });
+      } catch (error) {
+        return errorResultFrom(error, "item_not_found", "Item was not found");
+      }
+    },
+  );
+
+  server.tool(
+    "search_mechanics",
+    "Search official in-game mechanism and tutorial explanations. Returns an explicit empty contract while the mechanism corpus is absent from the pinned upstream snapshot.",
+    {
+      game_id: optionalGameId,
+      query: z.string().trim().min(1).max(200),
+      category: z.string().trim().min(1).max(60).optional(),
+      limit: z.number().int().min(1).max(20).default(5),
+    },
+    async ({ query, category, limit }) => {
+      return textResult({
+        query,
+        category: category ?? null,
+        limit,
+        hits: [],
+        truncated: false,
+        corpusStatus: "mechanism_source_missing",
+        note: "The pinned upstream snapshot (26df1df) contains no tutorial/mechanism body tables; discovered=0 is recorded in story-coverage.json. No records are fabricated.",
+      });
     },
   );
 

@@ -4,7 +4,6 @@ import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import type { DocumentType } from "../packages/contracts/src/index.ts";
 import type { NormalizedRecord, QuestRecordPayload } from "../packages/domain/src/index.ts";
 import { validateNormalizedRecords } from "../packages/domain/src/index.ts";
 import { isPathInside, runStoragePreflight } from "./check-data-storage.ts";
@@ -88,6 +87,8 @@ export type QuestConversionManifest = {
   };
   excluded: Array<{ sourceKey: string; reason: string }>;
   failures: Array<{ sourceKey: string; reason: string }>;
+  warnings: Array<{ sourceKey: string; warning: string }>;
+  completenessReasons: Array<{ sourceKey: string; reasons: string[] }>;
   unexplainedMissing: Array<{ scope: string; count: number }>;
 };
 
@@ -95,6 +96,17 @@ export type QuestConversionResult = {
   records: NormalizedRecord[];
   manifest: QuestConversionManifest;
 };
+
+type QuestType = QuestRecordPayload["questType"];
+type TitleResolutionMethod = "textmap_direct" | "codex_fallback" | "chapter_derived" | "unresolved";
+type TitleResolution = {
+  title: string;
+  method: TitleResolutionMethod;
+  locale: Locale;
+  hash?: string;
+  source: string;
+};
+type CodexQuestFile = Inputs["codexQuest"][number];
 
 type Inputs = {
   root: string;
@@ -181,6 +193,7 @@ const questTestPattern =
 export type QuestVisibilityReason =
   | "public"
   | "hidden_show_type"
+  | "unresolved_show_type"
   | "unreleased_marker"
   | "test_or_placeholder"
   | "unresolved_title"
@@ -196,8 +209,13 @@ export function classifyQuestVisibility(
   title: string | undefined,
 ): QuestVisibilityReason {
   const showType = text(main.showType ?? main.questShowType ?? main.visibility);
-  if (showType && /HIDDEN|UNRELEASED|TEST|DEBUG/i.test(showType)) {
-    return /UNRELEASED/i.test(showType) ? "unreleased_marker" : "hidden_show_type";
+  if (showType) {
+    if (/UNRELEASED/i.test(showType)) return "unreleased_marker";
+    if (/HIDDEN/i.test(showType)) return "hidden_show_type";
+    if (/TEST|DEBUG/i.test(showType)) return "test_or_placeholder";
+    if (!/^(?:PUBLIC|SHOW|VISIBLE|NORMAL|QUEST_PUBLIC|QUEST_SHOW)$/i.test(showType)) {
+      return "unresolved_show_type";
+    }
   }
   if (!title) return "unresolved_title";
   if (questMarkerPattern.test(title))
@@ -227,6 +245,21 @@ function tryResolveText(textMap: Record<string, unknown>, hash: unknown): string
   if (!key) return undefined;
   const value = textMap[key];
   return typeof value === "string" && value.trim() ? cleanDialogue(value) : undefined;
+}
+
+function resolveLocalizedText(
+  textMaps: Record<Locale, Record<string, unknown>>,
+  requestedLocale: Locale,
+  hash: unknown,
+): { value: string; locale: Locale; hash: string } | undefined {
+  const key = textRefHash(hash);
+  if (!key) return undefined;
+  const localesToTry: Locale[] = [requestedLocale, requestedLocale === "zh-CN" ? "en" : "zh-CN"];
+  for (const locale of localesToTry) {
+    const value = tryResolveText(textMaps[locale], key);
+    if (value) return { value, locale, hash: key };
+  }
+  return undefined;
 }
 
 function hashValue(value: unknown): string | undefined {
@@ -358,14 +391,94 @@ async function loadInputs(root: string): Promise<Inputs> {
   };
 }
 
-function questType(value: unknown): DocumentType | undefined {
+export function questType(value: unknown): QuestType {
   const raw = text(value)?.toLocaleLowerCase("en");
   if (raw === "aq" || raw === "iq" || raw === "archon" || raw === "archon_quest")
     return "archon_quest";
   if (raw === "lq" || raw === "story" || raw === "story_quest") return "story_quest";
   if (raw === "eq" || raw === "event" || raw === "event_quest") return "event_quest";
   if (raw === "wq" || raw === "world" || raw === "world_quest") return "world_quest";
+  if (
+    raw === "commission" ||
+    raw === "commissions" ||
+    raw === "cq" ||
+    raw === "daily" ||
+    raw === "daily_quest" ||
+    raw === "daily_commission" ||
+    raw === "commission_quest"
+  )
+    return "commission";
+  if (raw === "hangout" || raw === "hangout_quest" || raw === "hq") return "hangout";
+  return "other";
+}
+
+function questTypeWarning(value: unknown): string | undefined {
+  const raw = text(value);
+  return questType(value) === "other" ? `unknown_quest_type:${raw ?? "missing"}` : undefined;
+}
+
+function numericId(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isSafeInteger(value)) return String(value);
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) return value.trim();
   return undefined;
+}
+
+function resolveTitle(
+  inputs: Inputs,
+  main: Json,
+  codexFile: CodexQuestFile | undefined,
+  locale: Locale,
+  chapterTitle: { value: string; locale: Locale; hash?: string } | undefined,
+  mainId: string,
+): TitleResolution {
+  const mainTitle = main.titleTextMapHash ?? main.titleHash;
+  const codexTitle = codexFile?.value.HEDPNHPBMJH;
+  const directTitle = text(main.title);
+  if (directTitle) {
+    return {
+      title: cleanDialogue(directTitle),
+      method: "textmap_direct",
+      locale,
+      source: inputPaths.mainQuest,
+    };
+  }
+  const candidates: Array<{
+    hash: unknown;
+    method: Exclude<TitleResolutionMethod, "chapter_derived" | "unresolved">;
+    source: string;
+  }> = [
+    { hash: mainTitle, method: "textmap_direct", source: inputPaths.mainQuest },
+    ...(codexTitle !== undefined
+      ? [{ hash: codexTitle, method: "codex_fallback" as const, source: codexFile!.relativePath }]
+      : []),
+  ];
+  for (const candidate of candidates) {
+    const resolved = resolveLocalizedText(inputs.textMaps, locale, candidate.hash);
+    if (resolved) {
+      return {
+        title: resolved.value,
+        method: candidate.method,
+        locale: resolved.locale,
+        hash: resolved.hash,
+        source: candidate.source,
+      };
+    }
+  }
+  if (chapterTitle) {
+    return {
+      title: chapterTitle.value,
+      method: "chapter_derived",
+      locale: chapterTitle.locale,
+      hash: chapterTitle.hash,
+      source: inputPaths.chapter,
+    };
+  }
+  return {
+    title: `Quest ${mainId}`,
+    method: "unresolved",
+    locale,
+    source: inputPaths.mainQuest,
+  };
 }
 
 function participantEntity(row: Json, locale: Locale, textMap: Record<string, unknown>) {
@@ -673,37 +786,65 @@ function buildRecord(
   const codexFile = inputs.codexQuestByMainId.get(mainId);
   const originalQuestType = text(main.type ?? codexFile?.value.DCNPPIOLEOK ?? main.questType);
   const resolvedQuestType = questType(originalQuestType);
-  if (!resolvedQuestType)
-    throw new Error(`quest_type_out_of_scope:${originalQuestType ?? "missing"}`);
   const questRows = inputs.questByMainId.get(mainId) ?? [];
   const codexIndexRows = inputs.questCodex.filter(
     (row) => idText(row.parentQuestId ?? row.mainQuestId ?? row.mainId) === mainId,
   );
-  const titleHash = main.titleTextMapHash ?? main.titleHash ?? codexFile?.value.HEDPNHPBMJH;
-  const requestedTitle =
-    tryResolveText(requestedTextMap, titleHash) ??
-    tryResolveText(requestedTextMap, codexFile?.value.HEDPNHPBMJH);
-  const title =
-    requestedTitle ??
-    tryResolveText(fallbackTextMap, titleHash) ??
-    tryResolveText(fallbackTextMap, codexFile?.value.HEDPNHPBMJH) ??
-    `Quest ${mainId}`;
-  const titleFallbackUsed =
-    !tryResolveText(requestedTextMap, titleHash) &&
-    Boolean(tryResolveText(fallbackTextMap, titleHash));
   const chapterId = idText(
-    main.chapterId ?? main.series ?? codexIndexRows[0]?.chapterId ?? codexFile?.value.PBIOMJGIMAK,
+    main.chapterId ??
+      codexIndexRows[0]?.chapterId ??
+      codexFile?.value.PBIOMJGIMAK ??
+      (numericId(main.series) ? main.series : undefined),
   );
   const chapterRow = inputs.chapter.find((row) => idText(row.id ?? row.chapterId) === chapterId);
-  const chapter =
-    chapterRow && (chapterRow.titleTextMapHash ?? chapterRow.titleHash) !== undefined
-      ? resolveText(
-          textMap,
-          chapterRow.chapterTitleTextMapHash ?? chapterRow.titleTextMapHash ?? chapterRow.titleHash,
-          sourceKey,
-          "chapter",
-        )
-      : tryResolveText(textMap, codexFile?.value.ALOHJMPDFKI);
+  const chapterTitleHash =
+    chapterRow?.chapterTitleTextMapHash ??
+    chapterRow?.titleTextMapHash ??
+    chapterRow?.titleHash ??
+    codexFile?.value.ALOHJMPDFKI;
+  const chapterTitleResolution =
+    resolveLocalizedText(inputs.textMaps, locale, chapterTitleHash) ??
+    (text(chapterRow?.title)
+      ? { value: text(chapterRow.title)!, locale, hash: undefined }
+      : undefined);
+  const seriesValue = asObject(main.series);
+  const rawSeriesId =
+    main.seriesId ??
+    seriesValue.id ??
+    codexIndexRows[0]?.seriesId ??
+    (numericId(main.series) ? main.series : undefined);
+  const seriesId = idText(rawSeriesId);
+  const seriesTitleHash =
+    main.seriesTitleTextMapHash ??
+    main.seriesTitleHash ??
+    main.seriesNameTextMapHash ??
+    main.seriesNameHash ??
+    seriesValue.titleTextMapHash ??
+    seriesValue.titleHash ??
+    codexIndexRows[0]?.seriesTitleTextMapHash ??
+    codexIndexRows[0]?.seriesTitleHash;
+  const seriesTitleResolution =
+    resolveLocalizedText(inputs.textMaps, locale, seriesTitleHash) ??
+    (text(main.seriesTitle ?? main.seriesName) ||
+    (!seriesId && text(main.series) && !seriesValue.id)
+      ? {
+          value: text(main.seriesTitle ?? main.seriesName ?? main.series)!,
+          locale,
+          hash: undefined,
+        }
+      : undefined);
+  const titleResolution = resolveTitle(
+    inputs,
+    main,
+    codexFile,
+    locale,
+    chapterTitleResolution,
+    mainId,
+  );
+  const title = titleResolution.title;
+  const titleHash = titleResolution.hash ?? main.titleTextMapHash ?? main.titleHash;
+  const titleFallbackUsed =
+    titleResolution.method !== "textmap_direct" || titleResolution.locale !== locale;
   const speakerRows = inputs.npcById;
   const subquestKeyByTitleHash = new Map<string, string>();
   const subquests = questRows.map((row, index) => {
@@ -748,7 +889,10 @@ function buildRecord(
       node.subquestKey && subquestKeys.has(node.subquestKey) ? node.subquestKey : undefined,
   }));
   const dialogueEdges = graph.edges;
-  const visibilityReason = classifyQuestVisibility(main, requestedTitle);
+  const visibilityReason = classifyQuestVisibility(
+    main,
+    titleResolution.method === "unresolved" ? undefined : title,
+  );
   const visibility =
     visibilityReason === "public"
       ? "public"
@@ -759,13 +903,28 @@ function buildRecord(
           : visibilityReason === "test_or_placeholder"
             ? "test"
             : "unresolved";
+  const completenessReasons = [
+    ...(dialogueNodes.length ? [] : ["missingDialogue"]),
+    ...(subquests.length ? [] : ["missingSubquests"]),
+  ];
+  const warnings = [
+    questTypeWarning(originalQuestType),
+    visibilityReason === "unresolved_show_type"
+      ? `unknown_show_type:${text(main.showType ?? main.questShowType ?? main.visibility)}`
+      : undefined,
+    titleResolution.method === "unresolved" ? "title_unresolved" : undefined,
+  ].filter((warning): warning is string => Boolean(warning));
   const payload: QuestRecordPayload = {
     questKey: `quest/${mainId}`,
     mainQuestId: mainId,
     questType: resolvedQuestType,
     locale,
-    chapter,
-    series: chapterId,
+    chapterId,
+    chapterTitle: chapterTitleResolution?.value,
+    seriesId,
+    seriesTitle: seriesTitleResolution?.value,
+    chapter: chapterTitleResolution?.value,
+    series: seriesTitleResolution?.value ?? seriesId,
     order: Number(main.order ?? mainId),
     completeness:
       dialogueNodes.length && subquests.length
@@ -773,8 +932,10 @@ function buildRecord(
         : dialogueNodes.length || subquests.length
           ? "partial"
           : "metadata_only",
+    completenessReasons,
     visibility,
     visibilityReason,
+    warnings,
     prerequisites: [...asArray(main.prerequisites), ...asArray(main.BJOCFAJIGLH)].flatMap((row) => {
       const id = idText(row.id ?? row.mainQuestId ?? row.questId);
       return id ? [`quest/${id}`] : [];
@@ -788,7 +949,32 @@ function buildRecord(
       originalQuestType,
       titleTextMapHash: hashValue(titleHash),
       titleFallbackUsed,
-      titleUnresolved: title === `Quest ${mainId}`,
+      titleResolutionMethod: titleResolution.method,
+      titleResolutionLocale: titleResolution.locale,
+      titleResolutionSource: titleResolution.source,
+      titleUnresolved: titleResolution.method === "unresolved",
+      chapter: {
+        id: chapterId,
+        title: chapterTitleResolution?.value,
+        sourceFile: chapterRow
+          ? inputPaths.chapter
+          : (codexFile?.relativePath ?? inputPaths.mainQuest),
+        idField: chapterId
+          ? chapterRow
+            ? "ChapterExcelConfigData.id"
+            : "MainQuestExcelConfigData.chapterId"
+          : undefined,
+        titleField: chapterTitleHash ? "chapterTitleTextMapHash" : undefined,
+      },
+      series: {
+        id: seriesId,
+        title: seriesTitleResolution?.value,
+        sourceFile: inputPaths.mainQuest,
+        idField: seriesId ? "MainQuestExcelConfigData.series" : undefined,
+        titleField: seriesTitleHash ? "seriesTitleTextMapHash" : undefined,
+      },
+      completenessReasons,
+      warnings,
     },
   };
   const body = questBody(payload);
@@ -876,7 +1062,7 @@ function buildRecord(
             hash: inputs.inputHashes[
               locale === "zh-CN" ? inputPaths.textMapChs : inputPaths.textMapEn
             ],
-            valueHash: requestedTitle ? sha256(requestedTitle) : undefined,
+            valueHash: title ? sha256(title) : undefined,
           },
           dialogue: {
             relativeFile: codexFile?.relativePath ?? inputPaths.dialog,
@@ -910,10 +1096,15 @@ function buildRecord(
       quest: {
         questKey: payload.questKey,
         completeness: payload.completeness,
+        completenessReasons: payload.completenessReasons,
         visibility: payload.visibility,
         visibilityReason: payload.visibilityReason,
       },
       questPayload: payload,
+      titleResolutionMethod: titleResolution.method,
+      titleResolutionLocale: titleResolution.locale,
+      completenessReasons,
+      warnings,
     },
     contentHash: sha256(stableStringify(contentBasis)),
     parserVersion: QUEST_CONVERTER_VERSION,
@@ -937,6 +1128,7 @@ export async function convertQuestSnapshot(
   const builtRecords: NormalizedRecord[] = [];
   const excluded: Array<{ sourceKey: string; reason: string }> = [];
   const failures: Array<{ sourceKey: string; reason: string }> = [];
+  const warnings: Array<{ sourceKey: string; warning: string }> = [];
   let excludedDocumentCount = 0;
   const discoveredByType: Record<string, number> = {};
   const mainQuestRows =
@@ -947,21 +1139,19 @@ export async function convertQuestSnapshot(
     const mainId = idText(main.id ?? main.mainQuestId) ?? "unknown";
     const codexFile = inputs.codexQuestByMainId.get(mainId);
     const rawType = text(main.type ?? codexFile?.value.DCNPPIOLEOK ?? main.questType);
-    if (!questType(rawType)) {
-      excluded.push({
-        sourceKey: `quest/${mainId}`,
-        reason: `quest_type_out_of_scope:${rawType ?? "missing"}`,
-      });
-      excludedDocumentCount += locales.length;
-      continue;
-    }
-    discoveredByType[questType(rawType)!] = (discoveredByType[questType(rawType)!] ?? 0) + 1;
+    const resolvedType = questType(rawType);
+    discoveredByType[resolvedType] = (discoveredByType[resolvedType] ?? 0) + 1;
+    const typeWarning = questTypeWarning(rawType);
+    if (typeWarning) warnings.push({ sourceKey: `quest/${mainId}`, warning: typeWarning });
     const mainRecords: NormalizedRecord[] = [];
     for (const locale of locales) {
       try {
         const record = buildRecord(inputs, main, locale, context);
         builtRecords.push(record);
         mainRecords.push(record);
+        for (const warning of (record.metadata.warnings as string[] | undefined) ?? []) {
+          warnings.push({ sourceKey: record.sourceKey, warning });
+        }
       } catch (error) {
         failures.push({
           sourceKey: `quest/${mainId}/locale/${locale}`,
@@ -992,6 +1182,10 @@ export async function convertQuestSnapshot(
               : "bilingual_pair_incomplete";
         excluded.push({ sourceKey: record.sourceKey, reason });
         excludedDocumentCount += 1;
+        const reasons = (record.quest?.completenessReasons ?? []).join(",");
+        if (reasons && record.quest?.completeness !== "complete") {
+          excluded[excluded.length - 1]!.reason += `:${reasons}`;
+        }
       }
     }
   }
@@ -1041,6 +1235,15 @@ export async function convertQuestSnapshot(
   const excludedDocuments = excludedDocumentCount;
   const failedDocuments = failures.length;
   const accountedDocuments = convertedDocuments + excludedDocuments + failedDocuments;
+  const uniqueWarnings = [
+    ...new Map(
+      warnings.map((warning) => [`${warning.sourceKey}\u0000${warning.warning}`, warning]),
+    ).values(),
+  ];
+  const completenessReasonEntries = builtRecords.map((record) => ({
+    sourceKey: record.sourceKey,
+    reasons: record.quest?.completenessReasons ?? [],
+  }));
   return {
     records,
     manifest: {
@@ -1096,6 +1299,8 @@ export async function convertQuestSnapshot(
       },
       excluded,
       failures,
+      warnings: uniqueWarnings,
+      completenessReasons: completenessReasonEntries,
       unexplainedMissing: [
         ...(failures.length ? [{ scope: "validation", count: failures.length }] : []),
         ...(discoveredDocuments > accountedDocuments

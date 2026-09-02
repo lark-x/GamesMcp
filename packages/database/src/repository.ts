@@ -35,6 +35,8 @@ import {
   type SourceSnapshot,
   type StoredEmbedding,
   type StructuredImportRecords,
+  type TextBinding,
+  type TextBindingType,
   type ValidationIssue,
   type VectorSearchHit,
   type VectorEntityHit,
@@ -79,7 +81,7 @@ import * as verificationScreenshotOperations from "./repository-verification-scr
 import { SqlGenshinStructuredRepository } from "./repository-genshin-core.js";
 import { RepositoryReadModels } from "./repository-read-models.js";
 import { SqlSearchRepositoryPort } from "./search-port.js";
-import type { SearchCoreStructuredHit } from "@gip/search";
+import type { DialogueSearchFilters, SearchCoreStructuredHit } from "@gip/search";
 import * as revisionOperations from "./repository-revisions.js";
 
 import {
@@ -197,6 +199,22 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return this.readModels.getEntityDocuments(gameId, entityId, limit, revisionId);
   }
 
+  async getEntityTextBindings(
+    revisionId: string,
+    entityStableId: string,
+    bindingType?: TextBindingType,
+  ): Promise<TextBinding[]> {
+    return this.readModels.getEntityTextBindings(revisionId, entityStableId, bindingType);
+  }
+
+  async getBindingEntities(
+    revisionId: string,
+    documentId: string,
+    segmentId?: string,
+  ): Promise<TextBinding[]> {
+    return this.readModels.getBindingEntities(revisionId, documentId, segmentId);
+  }
+
   async listDocuments(
     gameId: string,
     options: {
@@ -224,10 +242,15 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     if (result.revisionId) {
       const core = new (await import("@gip/search")).SearchService(this.searchPort);
       const structured = await core.searchText(gameId, result.revisionId, request.query);
-      (result as SearchResult & { coreHits?: { structured: SearchCoreStructuredHit[] } }).coreHits =
-        {
-          structured: structured.structured,
-        };
+      const lore = await core.searchLore(gameId, result.revisionId, request.query);
+      (
+        result as SearchResult & {
+          coreHits?: { structured: SearchCoreStructuredHit[]; lore: unknown };
+        }
+      ).coreHits = {
+        structured: structured.structured,
+        lore,
+      };
     }
     return result;
   }
@@ -238,10 +261,16 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
 
   async searchDialogue(
     gameId: string,
-    request: DialogueSearchRequest,
+    request: DialogueSearchRequest & DialogueSearchFilters,
   ): Promise<DialogueSearchHit[]> {
     const core = new (await import("@gip/search")).SearchService(this.searchPort);
-    return core.searchDialogue(gameId, request.revisionId, request.query);
+    return core.searchDialogue(gameId, request.revisionId, request.query, {
+      speaker: request.speaker,
+      quest: request.quest,
+      questKey: request.questKey,
+      nodeType: request.nodeType,
+      locale: request.locale,
+    });
   }
 
   async getQuest(gameId: string, request: GetQuestRequest): Promise<QuestDialoguePage | null> {

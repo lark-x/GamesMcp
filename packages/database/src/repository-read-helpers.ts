@@ -1,17 +1,24 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { EntitySummary } from "@gip/contracts";
 import type { Database } from "./client.js";
 import { documents, entityAliases, evidence } from "./schema.js";
 
-export async function addAliases(db: Database, rows: EntitySummary[]): Promise<EntitySummary[]> {
+export async function addAliases(
+  db: Database,
+  rows: EntitySummary[],
+  revisionId: string,
+): Promise<EntitySummary[]> {
   if (!rows.length) return rows;
   const aliasRows = await db
     .select()
     .from(entityAliases)
     .where(
-      inArray(
-        entityAliases.entityId,
-        rows.map((row) => row.id),
+      and(
+        eq(entityAliases.revisionId, revisionId),
+        inArray(
+          entityAliases.entityId,
+          rows.map((row) => row.id),
+        ),
       ),
     );
   const map = new Map<string, string[]>();
@@ -23,12 +30,15 @@ export async function addAliases(db: Database, rows: EntitySummary[]): Promise<E
 export async function getAliases(
   db: Database,
   entityIds: string[],
+  revisionId: string,
 ): Promise<Map<string, string[]>> {
   if (!entityIds.length) return new Map();
   const rows = await db
     .select()
     .from(entityAliases)
-    .where(inArray(entityAliases.entityId, entityIds));
+    .where(
+      and(eq(entityAliases.revisionId, revisionId), inArray(entityAliases.entityId, entityIds)),
+    );
   const map = new Map<string, string[]>();
   for (const row of rows) map.set(row.entityId, [...(map.get(row.entityId) ?? []), row.value]);
   return map;

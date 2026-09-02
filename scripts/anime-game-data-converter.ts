@@ -21,6 +21,7 @@ export const INPUT_PATHS = {
   fetterInfo: "ExcelBinOutput/FetterInfoExcelConfigData.json",
   fetterStory: "ExcelBinOutput/FetterStoryExcelConfigData.json",
   booksCodex: "ExcelBinOutput/BooksCodexExcelConfigData.json",
+  bookSuit: "ExcelBinOutput/BookSuitExcelConfigData.json",
   document: "ExcelBinOutput/DocumentExcelConfigData.json",
   localization: "ExcelBinOutput/LocalizationExcelConfigData.json",
   material: "ExcelBinOutput/MaterialExcelConfigData.json",
@@ -67,6 +68,7 @@ export type AnimeGameRecord = {
   documentType: "book" | "character_story" | "item_description";
   gameVersion: string;
   body: string;
+  segments?: AnimeGameSegment[];
   entities?: Array<{
     sourceKey: string;
     name: string;
@@ -86,6 +88,21 @@ export type AnimeGameRecord = {
   };
   contentHash: string;
   parserVersion: string;
+};
+
+export type AnimeGameSegment = {
+  segmentKey: string;
+  ordinal: number;
+  headingPath: string[];
+  body: string;
+  startOffset: number;
+  endOffset: number;
+  metadata: {
+    segmentStableId: string;
+    bookStableId: string;
+    volumeStableId: string;
+    documentStableId: string;
+  };
 };
 
 export type Failure = {
@@ -168,6 +185,7 @@ type LoadedInputs = {
   fetterInfo: SourceFile<unknown>;
   fetterStory: SourceFile<unknown>;
   booksCodex: SourceFile<unknown>;
+  bookSuit: SourceFile<unknown>;
   document: SourceFile<unknown>;
   localization: SourceFile<unknown>;
   material: SourceFile<unknown>;
@@ -237,6 +255,190 @@ function cleanText(value: string): string {
     .replace(/\\t/g, "\t")
     .replace(/\r\n/g, "\n")
     .trim();
+}
+
+/**
+ * Stable identities deliberately do not contain a revision or content hash.
+ * A document/segment database id is revision-scoped, while these keys identify
+ * the same source object across re-imports.
+ */
+export function bookStableId(bookSuitId: number | string): string {
+  return `book/${bookSuitId}`;
+}
+
+export function volumeStableId(bookId: string, volumeId: number | string): string {
+  return `${bookId}/volume/${volumeId}`;
+}
+
+export function documentStableId(volumeId: string): string {
+  return `document/${volumeId}`;
+}
+
+export function segmentStableId(documentId: string, ordinal: number): string {
+  return `${documentId}/segment/${ordinal + 1}`;
+}
+
+function inferBookTitle(title: string): string {
+  return (
+    title
+      .replace(
+        /(?:[·・ ]+)?(?:第?[一二三四五六七八九十百千万\d]+(?:卷|册)|(?:卷|册)[一二三四五六七八九十百千万\d]+)$/,
+        "",
+      )
+      .trim() || title
+  );
+}
+
+const VOLUME_HEADING =
+  /^(?:《)?(?:.+?[·・ ]+)?(?:第?[一二三四五六七八九十百千万\d]+(?:卷|册)|(?:卷|册)[一二三四五六七八九十百千万\d]+)(?:》)?$/;
+
+function volumeHeading(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (trimmed.length > 120) return undefined;
+  const match = VOLUME_HEADING.exec(trimmed);
+  return match ? trimmed : undefined;
+}
+
+function splitParagraphGroups(
+  body: string,
+  headingPath: string[],
+  documentId: string,
+  ordinalStart: number,
+  ids: { bookStableId: string; volumeStableId: string },
+): AnimeGameSegment[] {
+  const paragraphs: Array<{ start: number; end: number }> = [];
+  const paragraphPattern = /\S[\s\S]*?(?=\n\s*\n|$)/g;
+  for (const match of body.matchAll(paragraphPattern)) {
+    const value = match[0];
+    if (!value?.trim() || match.index === undefined) continue;
+    const start = match.index + value.search(/\S/);
+    paragraphs.push({ start, end: match.index + value.trimEnd().length });
+  }
+  if (!paragraphs.length) return [];
+
+  const groups: Array<{ start: number; end: number }> = [];
+  let current = paragraphs[0];
+  for (const paragraph of paragraphs.slice(1)) {
+    if (!current) {
+      current = paragraph;
+      continue;
+    }
+    if (paragraph.end - current.start <= 2_000) {
+      current = { start: current.start, end: paragraph.end };
+    } else {
+      groups.push(current);
+      current = paragraph;
+    }
+  }
+  if (current) groups.push(current);
+
+  return groups.map((range, index) => {
+    const ordinal = ordinalStart + index;
+    const segmentId = segmentStableId(documentId, ordinal);
+    const path = groups.length > 1 ? [...headingPath, `段落组 ${index + 1}`] : headingPath;
+    return {
+      segmentKey: segmentId,
+      ordinal,
+      headingPath: path,
+      body: body.slice(range.start, range.end).trim(),
+      startOffset: range.start,
+      endOffset: range.end,
+      metadata: {
+        segmentStableId: segmentId,
+        bookStableId: ids.bookStableId,
+        volumeStableId: ids.volumeStableId,
+        documentStableId: documentId,
+      },
+    };
+  });
+}
+
+/**
+ * Build stable, citation-ready book segments. Normal source rows represent one
+ * volume, but this also accepts a body containing explicit volume headings so
+ * older/combined readable sources remain section-addressable.
+ */
+export function segmentBookBody(
+  bookTitle: string,
+  volumeTitle: string,
+  body: string,
+  documentId: string,
+  stableIds: {
+    bookStableId?: string;
+    volumeStableId?: string;
+  } = {},
+): AnimeGameSegment[] {
+  const bookId = stableIds.bookStableId ?? bookTitle;
+  const volumeId = stableIds.volumeStableId ?? volumeTitle;
+  const lines = body.split("\n");
+  const headings: Array<{ title: string; start: number; contentStart: number }> = [];
+  let offset = 0;
+  for (const line of lines) {
+    const title = volumeHeading(line);
+    if (title) headings.push({ title, start: offset, contentStart: offset + line.length + 1 });
+    offset += line.length + 1;
+  }
+
+  if (headings.length >= 2) {
+    const segments: AnimeGameSegment[] = [];
+    for (const [index, heading] of headings.entries()) {
+      const next = headings[index + 1];
+      const start = heading.contentStart;
+      const end = next?.start ?? body.length;
+      const volumeBody = body.slice(start, end).trim();
+      if (!volumeBody) continue;
+      const headingPath = [bookTitle, heading.title];
+      const volumeDocumentId = `${documentId}/volume/${index + 1}`;
+      const headingVolumeId = `${volumeId}/volume/${index + 1}`;
+      const volumeSegments =
+        volumeBody.length > 2_000
+          ? splitParagraphGroups(volumeBody, headingPath, volumeDocumentId, segments.length, {
+              bookStableId: bookId,
+              volumeStableId: headingVolumeId,
+            })
+          : [
+              {
+                segmentKey: segmentStableId(volumeDocumentId, 0),
+                ordinal: segments.length,
+                headingPath,
+                body: volumeBody,
+                startOffset: start,
+                endOffset: end,
+                metadata: {
+                  segmentStableId: segmentStableId(volumeDocumentId, 0),
+                  bookStableId: bookId,
+                  volumeStableId: headingVolumeId,
+                  documentStableId: volumeDocumentId,
+                },
+              },
+            ];
+      segments.push(...volumeSegments);
+    }
+    if (segments.length) return segments;
+  }
+
+  const headingPath = [bookTitle, volumeTitle];
+  return body.length > 2_000
+    ? splitParagraphGroups(body, headingPath, documentId, 0, {
+        bookStableId: bookId,
+        volumeStableId: volumeId,
+      })
+    : [
+        {
+          segmentKey: segmentStableId(documentId, 0),
+          ordinal: 0,
+          headingPath,
+          body,
+          startOffset: 0,
+          endOffset: body.length,
+          metadata: {
+            segmentStableId: segmentStableId(documentId, 0),
+            bookStableId: bookId,
+            volumeStableId: volumeId,
+            documentStableId: documentId,
+          },
+        },
+      ];
 }
 
 function hasReplacementCharacter(value: unknown): boolean {
@@ -374,6 +576,7 @@ function normalizedHash(record: {
   gameVersion: string;
   body: string;
   entities?: unknown;
+  segments?: unknown;
 }): string {
   return sha256(
     stableStringify({
@@ -384,6 +587,7 @@ function normalizedHash(record: {
       gameVersion: record.gameVersion,
       body: record.body,
       entities: record.entities ?? [],
+      segments: record.segments ?? [],
     }),
   );
 }
@@ -500,6 +704,7 @@ async function loadInputs(upstreamDir: string): Promise<LoadedInputs> {
     fetterInfo: byName.fetterInfo,
     fetterStory: byName.fetterStory,
     booksCodex: byName.booksCodex,
+    bookSuit: byName.bookSuit,
     document: byName.document,
     localization: byName.localization,
     material: byName.material,
@@ -637,6 +842,7 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
   const textMap = inputs.textMap;
   const documents = mapRowsById(asArray(inputs.document.value), "id");
   const localizations = mapRowsById(asArray(inputs.localization.value), "id");
+  const bookSuits = mapRowsById(asArray(inputs.bookSuit.value), "id");
   const avatars = mapRowsById(asArray(inputs.avatar.value), "id");
   const materials = mapRowsById(asArray(inputs.material.value), "id");
   const fetterInfos = asArray(inputs.fetterInfo.value);
@@ -705,6 +911,24 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
       addFailure(failures, "book", String(documentId), "empty_body");
       continue;
     }
+    const material = materials.get(documentId);
+    const suitId = idValue(material?.setID) ?? idValue(codex.bookSuitId);
+    const stableBookId =
+      suitId === undefined
+        ? bookStableId(`title:${inferBookTitle(titleValue.value)}`)
+        : bookStableId(suitId);
+    const stableVolumeId = volumeStableId(stableBookId, codexId);
+    const stableDocumentId = documentStableId(stableVolumeId);
+    const suit = suitId === undefined ? undefined : bookSuits.get(suitId);
+    const suitTitleValue = suit ? textValue(suit.suitNameTextMapHash, textMap, suitId) : undefined;
+    const bookTitle = suitTitleValue?.value ?? titleValue.value;
+    const segments = segmentBookBody(
+      bookTitle,
+      titleValue.value,
+      readable.value,
+      stableDocumentId,
+      { bookStableId: stableBookId, volumeStableId: stableVolumeId },
+    );
     const codexLineage = sourceRowLineage(inputs.booksCodex, codex, codexId);
     const documentLineage = sourceRowLineage(inputs.document, document, documentId);
     const localizationLineage = sourceRowLineage(
@@ -727,10 +951,12 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
       documentType: "book" as const,
       gameVersion: context.gameVersion,
       body: readable.value,
+      segments,
     };
     const rawContentHash = rawHashFor({
       codex: { file: inputs.booksCodex.relativePath, row: codex },
       document: { file: inputs.document.relativePath, row: document },
+      bookSuit: suit ? { file: inputs.bookSuit.relativePath, row: suit } : undefined,
       localization: { file: inputs.localization.relativePath, row: localizationEntry.row },
       title: titleValue.raw,
       readable: { path: readablePath, content: readable.raw },
@@ -748,6 +974,7 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
           localization: localizationLineage,
           title: titleLineage,
           body: bodyLineage,
+          ...(suit ? { bookSuit: sourceRowLineage(inputs.bookSuit, suit, suitId) } : {}),
         },
         rawContentHash,
         [
@@ -761,6 +988,7 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
           canonicalKey: sourceKey,
           sourceFiles: [
             inputs.booksCodex.relativePath,
+            ...(suit ? [inputs.bookSuit.relativePath] : []),
             inputs.document.relativePath,
             inputs.localization.relativePath,
             textMap.relativePath,
@@ -775,6 +1003,11 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
           textMapHashes: { title: titleValue.hash },
           readableFile: readablePath,
           readablePathField: readableResolution.field,
+          bookStableId: stableBookId,
+          volumeStableId: stableVolumeId,
+          documentStableId: stableDocumentId,
+          bookSuitId: suitId,
+          volumeId: codexId,
           sortOrder: idValue(codex.sortOrder),
           verificationRiskFlags,
         },

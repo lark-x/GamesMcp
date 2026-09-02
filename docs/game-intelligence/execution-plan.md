@@ -4,6 +4,10 @@
 >
 > This file is the staged execution view. If there is any conflict, the authoritative plan wins, with the covering rules at the top of that file taking highest priority.
 
+> Active milestone: Story / Text / Mechanism Intelligence.
+> Scope: `docs/game-intelligence/story-scope.md` · live progress: `docs/game-intelligence/story-progress.md`.
+> The refactor plan below remains the structural baseline for the platform.
+
 ## Execution Rules
 
 1. No parallel version track.

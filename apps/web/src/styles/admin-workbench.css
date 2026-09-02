@@ -624,6 +624,13 @@
 .quest-branch-list li span {
   font-weight: 600;
 }
+.quest-branch-list li span small {
+  display: block;
+  margin-top: 3px;
+  color: #829ab1;
+  font-size: 10px;
+  font-weight: 400;
+}
 
 .quest-branch-list li small {
   color: #627d98;

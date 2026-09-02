@@ -14,11 +14,17 @@ import { apiFetch } from "./api.js";
 import {
   CodexAchievementsPage,
   CodexArtifactsPage,
+  CodexBooksPage,
   CodexCharactersPage,
+  CodexCharacterStoriesPage,
   CodexEnemiesPage,
+  CodexItemsPage,
   CodexMaterialsPage,
+  CodexMechanicsPage,
+  CodexVoicesPage,
   CodexWeaponsPage,
 } from "./codex/CodexPages.js";
+import { mapArchiveHomeResponse } from "./codex/mappers.js";
 import {
   parsePreviewRoute,
   revisionQuery,
@@ -113,7 +119,7 @@ export function App() {
       if (cancelled) return;
       setOverview({
         ready: ready.status === "fulfilled" ? ready.value : null,
-        home: home.status === "fulfilled" ? home.value : null,
+        home: home.status === "fulfilled" ? mapArchiveHomeResponse(home.value) : null,
         sources: sources.status === "fulfilled" ? sources.value.sources : [],
       });
       if ([ready, home, sources].some((result) => result.status === "rejected")) {
@@ -248,6 +254,12 @@ export function App() {
   }
 
   function selectArchiveCategory(category: ArchiveCategory) {
+    if (category.route) {
+      window.location.hash = category.route;
+      setIsQuestRoute(category.route === "quests");
+      setCodexKind(category.route.startsWith("codex/") ? category.route.slice(6) : null);
+      return;
+    }
     setActiveCategory(category.id);
     setTypes(category.types);
     setEntityType(category.entityType ?? "");
@@ -289,10 +301,22 @@ export function App() {
     const codexPages: Record<string, React.ReactNode> = {
       characters: <CodexCharactersPage gameId={gameId} />,
       materials: <CodexMaterialsPage gameId={gameId} />,
+      items: <CodexItemsPage gameId={gameId} revisionId={selectedRevision} />,
       weapons: <CodexWeaponsPage gameId={gameId} />,
       artifacts: <CodexArtifactsPage gameId={gameId} />,
       achievements: <CodexAchievementsPage gameId={gameId} />,
       enemies: <CodexEnemiesPage gameId={gameId} />,
+      books: <CodexBooksPage gameId={gameId} revisionId={selectedRevision} />,
+      "character-stories": (
+        <CodexCharacterStoriesPage gameId={gameId} revisionId={selectedRevision} />
+      ),
+      mechanics: <CodexMechanicsPage gameId={gameId} revisionId={selectedRevision} />,
+      tutorials: (
+        <CodexMechanicsPage gameId={gameId} revisionId={selectedRevision} title="教程与机制" />
+      ),
+      voices: (
+        <CodexVoicesPage gameId={gameId} home={overview.home} revisionId={selectedRevision} />
+      ),
     };
     return (
       <div className="app-shell library-shell">
@@ -301,9 +325,21 @@ export function App() {
           gameId={gameId}
           overview={overview}
           onGameChange={setGameId}
-          onPreview={() => {}}
-          onRevision={() => {}}
-          onCurrent={() => {}}
+          onPreview={(candidateId, buildId) => {
+            window.location.hash = `preview/${candidateId}${buildId ? `/${buildId}` : ""}`;
+          }}
+          onRevision={(revisionId, revision?: Revision) => {
+            setSelectedRevision(revisionId);
+            setSelectedRevisionLabel(
+              revision?.revisionNumber
+                ? `r${revision.revisionNumber}`
+                : (revision?.version ?? revisionId),
+            );
+          }}
+          onCurrent={() => {
+            setSelectedRevision(undefined);
+            setSelectedRevisionLabel(undefined);
+          }}
           onQuests={() => {
             window.location.hash = "quests";
             setIsQuestRoute(true);
@@ -317,10 +353,15 @@ export function App() {
             {Object.entries({
               characters: "角色",
               materials: "材料",
+              items: "物品文本",
               weapons: "武器",
               artifacts: "圣遗物",
               achievements: "成就",
               enemies: "敌人",
+              books: "书籍阅读",
+              "character-stories": "角色故事",
+              mechanics: "教程/机制",
+              voices: "语音",
             }).map(([kind, label]) => (
               <button
                 key={kind}

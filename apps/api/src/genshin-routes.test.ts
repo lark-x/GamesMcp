@@ -124,6 +124,13 @@ const genshin: GenshinStructuredRepository = {
   upsertEnemy: async () => {
     throw new Error("not used");
   },
+  findCharacterByNormalizedName: async () => null,
+  findWeaponByNormalizedName: async () => null,
+  findArtifactByNormalizedName: async () => null,
+  findArtifactSetByNormalizedName: async () => null,
+  findMaterialByNormalizedName: async () => null,
+  findAchievementByNormalizedName: async () => null,
+  findEnemyByNormalizedName: async () => null,
   getEnemy: async () => null,
   listEnemies: async (options) => {
     calls.push(`enemies:${options.query ?? ""}:${options.limit}:${options.offset ?? 0}`);

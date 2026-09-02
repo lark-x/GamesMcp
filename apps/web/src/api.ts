@@ -106,7 +106,14 @@ export type QuestSearchHit = {
   questKey: string;
   mainQuestId: string;
   title: string;
-  type: "archon_quest" | "story_quest" | "world_quest" | "event_quest";
+  type:
+    | "archon_quest"
+    | "story_quest"
+    | "world_quest"
+    | "event_quest"
+    | "commission"
+    | "hangout"
+    | "other";
   chapter?: string | null;
   series?: string | null;
   completeness: "complete" | "partial" | "metadata_only";
@@ -150,6 +157,10 @@ export type QuestDetail = QuestSearchHit & {
     questKey: string;
     subquestKey?: string;
     dialogueNodeKey?: string;
+    segmentId?: string | null;
+    sourceKey?: string;
+    sourceName?: string;
+    sourceSnapshotId?: string | null;
     revision: string;
   }>;
   warnings: string[];

@@ -4,6 +4,21 @@
   gap: 16px;
 }
 
+.codex-page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.codex-page-heading h2 {
+  margin-bottom: 4px;
+}
+
+.codex-page-heading > small {
+  color: var(--muted-color, #8a8578);
+}
+
 .codex-nav {
   display: flex;
   flex-wrap: wrap;
@@ -68,4 +83,319 @@
   font-size: 14px;
   padding: 24px 0;
   text-align: center;
+}
+
+.codex-filter-form {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #d8d4c8);
+  border-radius: 10px;
+  background: var(--card-bg, #fffdf7);
+}
+
+.codex-filter-form label {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  color: var(--muted-color, #8a8578);
+  font-size: 12px;
+}
+
+.codex-filter-form input {
+  min-height: 34px;
+  border: 1px solid var(--border-color, #d8d4c8);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: transparent;
+  color: inherit;
+}
+
+.codex-filter-form button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 16px;
+  background: var(--accent-color, #4a6df0);
+  color: #fff;
+  cursor: pointer;
+}
+
+.codex-filter-form button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.codex-reader-layout {
+  display: grid;
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.codex-reader-sidebar,
+.codex-reader-main,
+.codex-detail-card,
+.codex-status-panel {
+  border: 1px solid var(--border-color, #d8d4c8);
+  border-radius: 10px;
+  background: var(--card-bg, #fffdf7);
+}
+
+.codex-reader-sidebar {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 10px;
+}
+
+.codex-reader-sidebar section + section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color, #d8d4c8);
+}
+
+.codex-reader-sidebar h3 {
+  margin: 2px 4px 3px;
+  font-size: 15px;
+}
+
+.codex-reader-sidebar > section > small {
+  display: block;
+  margin: 0 4px 7px;
+  color: var(--muted-color, #8a8578);
+  font-size: 11px;
+}
+
+.codex-reader-sidebar button {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  margin-top: 5px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 8px 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.codex-reader-sidebar button:hover,
+.codex-reader-sidebar button.is-active {
+  border-color: var(--accent-color, #4a6df0);
+  background: color-mix(in srgb, var(--accent-color, #4a6df0) 10%, transparent);
+}
+
+.codex-reader-sidebar button span,
+.codex-reader-sidebar button small {
+  color: var(--muted-color, #8a8578);
+  font-size: 11px;
+}
+
+.codex-reader-main {
+  min-width: 0;
+  padding: 18px;
+}
+
+.codex-reader-document .detail-header {
+  margin-bottom: 16px;
+}
+
+.codex-reader-body {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.codex-reader-toc {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.codex-reader-toc > strong {
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.codex-reader-toc button {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border-color, #d8d4c8);
+  border-radius: 7px;
+  padding: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.codex-reader-toc button.is-active {
+  border-color: var(--accent-color, #4a6df0);
+  box-shadow: inset 3px 0 var(--accent-color, #4a6df0);
+}
+
+.codex-reader-toc small {
+  color: var(--muted-color, #8a8578);
+  font-size: 11px;
+}
+
+.codex-reader-content {
+  min-width: 0;
+}
+
+.codex-reader-segment {
+  scroll-margin-top: 24px;
+  padding: 4px 0 20px;
+}
+
+.codex-reader-segment + .codex-reader-segment {
+  border-top: 1px solid var(--border-color, #d8d4c8);
+  padding-top: 20px;
+}
+
+.codex-reader-segment.is-active {
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent-color, #4a6df0) 5%, transparent);
+}
+
+.codex-reader-segment h3 {
+  margin: 6px 0 10px;
+  font-size: 17px;
+}
+
+.codex-reader-segment > p,
+.codex-section-read > p {
+  white-space: pre-wrap;
+  line-height: 1.9;
+}
+
+.codex-citation {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  border-left: 3px solid var(--accent-color, #4a6df0);
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--accent-color, #4a6df0) 6%, transparent);
+  color: var(--muted-color, #8a8578);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.codex-citation strong {
+  color: inherit;
+  font-size: 12px;
+}
+
+.codex-section-read {
+  margin-top: 18px;
+  border-top: 1px solid var(--border-color, #d8d4c8);
+  padding-top: 16px;
+}
+
+.codex-card-button {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.codex-card-button.is-active {
+  border-color: var(--accent-color, #4a6df0);
+  box-shadow: 0 0 0 1px var(--accent-color, #4a6df0);
+}
+
+.codex-list-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.codex-detail-card {
+  position: sticky;
+  top: 16px;
+  min-height: 180px;
+  padding: 16px;
+}
+
+.codex-detail-card h2 {
+  margin: 10px 0;
+}
+
+.codex-detail-card h3 {
+  margin: 18px 0 4px;
+  font-size: 14px;
+}
+
+.codex-detail-card p {
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.corpus-status {
+  color: var(--accent-color, #4a6df0);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.codex-status-empty {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  border: 1px dashed var(--border-color, #d8d4c8);
+  border-radius: 10px;
+  padding: 32px 18px;
+}
+
+.codex-status-empty p,
+.codex-status-empty small {
+  max-width: 620px;
+  margin: 0;
+  line-height: 1.7;
+}
+
+.codex-status-panel {
+  padding: 16px;
+}
+
+.codex-status-panel > p {
+  line-height: 1.7;
+}
+
+@media (max-width: 850px) {
+  .codex-reader-layout,
+  .codex-list-detail-layout,
+  .codex-reader-body {
+    grid-template-columns: 1fr;
+  }
+
+  .codex-reader-sidebar,
+  .codex-detail-card {
+    position: static;
+    max-height: none;
+  }
+
+  .codex-reader-sidebar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+  }
+
+  .codex-reader-sidebar section + section {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .codex-filter-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }

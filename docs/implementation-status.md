@@ -2,6 +2,10 @@
 
 本文件只记录已经由代码、数据库或运行结果证明的状态，不把计划、接口占位或单项单元测试写成“全部完成”。
 
+> **2026-09-02 更新：** Story / Text / Mechanism 里程碑（Sprint 0-30）已按
+> docs/game-intelligence/story-scope.md 与 docs/game-intelligence/story-progress.md 执行并逐项记录证据。
+> 本文件保留原重构阶段的登记口径；当前活跃状态以 story-progress.md 为准。
+
 ## 当前产品链路
 
 正式采用以下版本模型：

@@ -41,7 +41,7 @@ describe("AnimeGameData structured converter", () => {
       artifactSets: 1,
       artifacts: 1,
       materials: 2,
-      achievements: 1,
+      achievements: 6,
       enemies: 1,
       voices: 1,
     });
@@ -51,7 +51,7 @@ describe("AnimeGameData structured converter", () => {
       artifactSets: 1,
       artifacts: 1,
       materials: 2,
-      achievements: 1,
+      achievements: 6,
       enemies: 1,
       voices: 1,
     });
@@ -102,13 +102,19 @@ describe("AnimeGameData structured converter", () => {
       category: "wonders_of_the_world",
       requirement: "完成测试条件",
       rewardPrimogems: null,
-      hidden: true,
-      displayState: "hidden",
+      hidden: false,
+      displayState: "displayed",
       provenance: {
-        goalId: "13001",
+        goalId: null,
         goalName: "天地万象",
+        goalCanonicalCategory: "wonders_of_the_world",
+        goalMappingKnown: true,
         finishRewardId: "5",
         rewardPrimogemsResolved: false,
+        displayState: "displayed",
+        achievementHiddenSource: "isShow",
+        isShow: null,
+        isDisuse: false,
       },
     });
     expect(result.records.enemies[0]).toMatchObject({
@@ -149,6 +155,70 @@ describe("AnimeGameData structured converter", () => {
     expect(() => genshinMaterialSchema.parse(result.records.materials[0])).not.toThrow();
     expect(() => genshinAchievementSchema.parse(result.records.achievements[0])).not.toThrow();
     expect(() => genshinEnemySchema.parse(result.records.enemies[0])).not.toThrow();
+  });
+
+  it("uses goal mappings and keeps isShow separate from isDisuse", async () => {
+    const result = await convertStructuredAnimeGameData({ upstreamDir: fixtureDir, context });
+
+    expect(
+      result.records.achievements.map((achievement) => ({
+        stableId: achievement.stableId,
+        category: achievement.category,
+        hidden: achievement.hidden,
+        displayState: achievement.displayState,
+        goalName: achievement.provenance.goalName,
+        isDisuse: achievement.provenance.isDisuse,
+      })),
+    ).toEqual([
+      {
+        stableId: "genshin:achievement:13011",
+        category: "wonders_of_the_world",
+        hidden: false,
+        displayState: "displayed",
+        goalName: "天地万象",
+        isDisuse: false,
+      },
+      {
+        stableId: "genshin:achievement:13012",
+        category: "memories_of_the_heart",
+        hidden: true,
+        displayState: "hidden",
+        goalName: "心跳的记忆",
+        isDisuse: false,
+      },
+      {
+        stableId: "genshin:achievement:13013",
+        category: "challenger",
+        hidden: false,
+        displayState: "displayed",
+        goalName: "挑战者·第一辑",
+        isDisuse: true,
+      },
+      {
+        stableId: "genshin:achievement:13014",
+        category: "elemental_specialist",
+        hidden: false,
+        displayState: "displayed",
+        goalName: "元素专家·第一辑",
+        isDisuse: false,
+      },
+      {
+        stableId: "genshin:achievement:13015",
+        category: "teyvat_fishing_guide",
+        hidden: false,
+        displayState: "displayed",
+        goalName: "提瓦特钓鱼指南·第一辑",
+        isDisuse: false,
+      },
+      {
+        stableId: "genshin:achievement:13016",
+        category: "other",
+        hidden: false,
+        displayState: "displayed",
+        goalName: "尘世巡游·第一辑",
+        isDisuse: false,
+      },
+    ]);
   });
 
   it("does not serialize unresolved upstream fields as gameplay facts", async () => {
@@ -213,7 +283,7 @@ describe("AnimeGameData structured converter", () => {
     expect(JSON.parse(await readFile(join(outputRoot, "manifest.json"), "utf8"))).toMatchObject({
       generatedAt: "2026-09-01T00:00:00.000Z",
       contentHash: result.manifest.contentHash,
-      converted: { characters: 1, achievements: 1 },
+      converted: { characters: 1, achievements: 6 },
     });
     await expect(
       readFile(join(outputRoot, "records", "characters.json"), "utf8"),

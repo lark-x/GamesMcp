@@ -13,6 +13,84 @@
   display: grid;
   gap: 22px;
 }
+.archive-overview {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) minmax(170px, 0.5fr) minmax(300px, 1.8fr);
+  gap: 16px;
+  align-items: stretch;
+  padding: 16px;
+  border: 1px solid #dce3e9;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #f9fbfc, #fffdf7);
+}
+.archive-overview-heading {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+.archive-overview-heading h3 {
+  margin: 3px 0 0;
+  color: #243b53;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: 17px;
+}
+.archive-overview-heading p {
+  margin: 5px 0 0;
+  color: #829ab1;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.archive-overview-revisions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.archive-overview-revisions div {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px;
+  border-left: 2px solid #d4b76d;
+  background: #ffffffb8;
+}
+.archive-overview-revisions span,
+.archive-overview-counts span {
+  color: #829ab1;
+  font-size: 10px;
+}
+.archive-overview-revisions strong {
+  color: #334e68;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.archive-overview-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.archive-overview-counts button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #e4eaf0;
+  border-radius: 7px;
+  background: #fff;
+  color: #486581;
+  text-align: left;
+}
+.archive-overview-counts button:hover {
+  border-color: #cbb36e;
+  background: #fffdf7;
+  filter: none;
+}
+.archive-overview-counts strong {
+  color: #96762e;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 .archive-home-section,
 .search-result-group {
   min-width: 0;

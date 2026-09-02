@@ -1,5 +1,27 @@
 import type { DocumentSummary } from "@gip/contracts";
 import type { DocumentType } from "@gip/contracts";
+import type { ResolverCandidate } from "./entity-resolver.js";
+
+export type SearchMatchType = "fts" | "trgm" | "prefix" | "exact";
+
+export type DialogueSearchFilters = {
+  /** Canonical speaker key or display name. */
+  speaker?: string;
+  /** Quest key, source key, or exact display title. */
+  quest?: string;
+  /** Alias accepted by callers that use the persisted field name. */
+  questKey?: string;
+  nodeType?: string;
+  locale?: string;
+};
+
+export type EntityCandidateSearchRequest = {
+  gameId: string;
+  revisionId: string;
+  query: string;
+  entityTypes?: string[];
+  limit?: number;
+};
 
 export type StructuredSearchKind =
   | "character"
@@ -23,24 +45,18 @@ export type SearchRepositoryPort = {
       name: string;
       aliases: string[];
       body: string;
+      /** PostgreSQL rank before the shared-core tier mapping. */
+      rank?: number;
+      /** PostgreSQL match class; absent only for legacy in-memory fakes. */
+      matchType?: SearchMatchType;
     }>
   >;
-  listEntityCandidates(
-    gameId: string,
-    revisionId: string,
-  ): Promise<
-    Array<{
-      id: string;
-      entityType: string;
-      canonicalName: string;
-      aliases: string[];
-      normalized?: string | null;
-    }>
-  >;
+  resolveEntityCandidates(request: EntityCandidateSearchRequest): Promise<ResolverCandidate[]>;
   listDialogueHits(
     gameId: string,
     revisionId: string,
     query: string,
+    filters?: DialogueSearchFilters,
   ): Promise<
     Array<{
       key: string;
@@ -60,6 +76,8 @@ export type SearchRepositoryPort = {
         dialogueNodeKey: string;
         revision: string;
       };
+      rank?: number;
+      matchType?: SearchMatchType;
     }>
   >;
   listDocumentHits(
@@ -74,6 +92,8 @@ export type SearchRepositoryPort = {
       };
       body: string;
       title: string;
+      rank?: number;
+      matchType?: SearchMatchType;
     }>
   >;
 };

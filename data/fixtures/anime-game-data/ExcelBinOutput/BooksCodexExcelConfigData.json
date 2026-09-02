@@ -2,11 +2,13 @@
   {
     "id": 9001,
     "materialId": 7001,
+    "bookSuitId": 1,
     "sortOrder": 1
   },
   {
     "id": 9002,
     "materialId": 7001,
+    "bookSuitId": 1,
     "sortOrder": 2
   },
   {
@@ -15,8 +17,14 @@
     "sortOrder": 3
   },
   {
+    "id": 9005,
+    "materialId": 7003,
+    "bookSuitId": 1,
+    "sortOrder": 4
+  },
+  {
     "id": 9004,
     "materialId": 7999,
-    "sortOrder": 4
+    "sortOrder": 5
   }
 ]

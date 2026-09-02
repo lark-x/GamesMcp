@@ -35,12 +35,23 @@ type ChecklistCase = {
   node: QuestNodeRow | null;
 };
 
-const questTypes = ["archon_quest", "story_quest", "world_quest", "event_quest"] as const;
+const questTypes = [
+  "archon_quest",
+  "story_quest",
+  "world_quest",
+  "event_quest",
+  "commission",
+  "hangout",
+  "other",
+] as const;
 const typeLabels: Record<string, string> = {
   archon_quest: "魔神任务",
   story_quest: "传说任务",
   world_quest: "世界任务",
   event_quest: "活动任务",
+  commission: "委托",
+  hangout: "邀约任务",
+  other: "其他任务",
 };
 const completenessLabels: Record<string, string> = {
   complete: "完整",

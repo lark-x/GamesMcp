@@ -150,7 +150,7 @@ describe("MCP server", () => {
     expect(createMcpServer(repository)).toBeDefined();
   });
 
-  it("exposes the fifteen-tool and four-resource public contract", async () => {
+  it("exposes the nineteen-tool and four-resource public contract", async () => {
     const server = createMcpServer(repository);
     const client = new Client(
       { name: "contract-test-client", version: "0.1.0" },
@@ -165,7 +165,9 @@ describe("MCP server", () => {
       "get_character",
       "get_enemy",
       "get_entity",
+      "get_entity_texts",
       "get_game_capabilities",
+      "get_item_text",
       "get_lore_document",
       "get_material",
       "get_quest",
@@ -175,7 +177,9 @@ describe("MCP server", () => {
       "resolve_entity",
       "search_dialogue",
       "search_entities",
+      "search_items",
       "search_lore",
+      "search_mechanics",
       "search_quests",
     ]);
     const templates = await client.listResourceTemplates();
@@ -316,6 +320,106 @@ describe("MCP server", () => {
     await server.close();
   });
 
+  it("resolves the default game when game_id is omitted (Sprint 19)", async () => {
+    const server = createMcpServer(repository);
+    const client = new Client(
+      { name: "default-game-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const capabilities = await client.callTool({
+      name: "get_game_capabilities",
+      arguments: {},
+    });
+    expect(capabilities.isError).toBeFalsy();
+    expect((resultJson(capabilities) as { game_id?: string })?.game_id).toBe(gameId);
+
+    const ambiguousRepository = {
+      ...repository,
+      listGames: async () => [
+        {
+          id: gameId,
+          slug: "genshin-impact",
+          name: "原神",
+          status: "active",
+          currentRevision: "r1",
+        },
+        {
+          id: entityId,
+          slug: "second-game",
+          name: "第二游戏",
+          status: "active",
+          currentRevision: "r1",
+        },
+      ],
+    };
+    const ambiguousServer = createMcpServer(ambiguousRepository as unknown as KnowledgeRepository);
+    const ambiguousClient = new Client(
+      { name: "ambiguous-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [ambCT, ambST] = InMemoryTransport.createLinkedPair();
+    await ambiguousServer.connect(ambST);
+    await ambiguousClient.connect(ambCT);
+    const ambiguous = await ambiguousClient.callTool({
+      name: "get_game_capabilities",
+      arguments: {},
+    });
+    expect(ambiguous.isError).toBe(true);
+    expect((resultJson(ambiguous) as { error?: { code?: string } })?.error?.code).toBe(
+      "game_id_required",
+    );
+
+    await ambiguousClient.close();
+    await ambiguousServer.close();
+    await client.close();
+    await server.close();
+  });
+
+  it("shapes search_lore results under the unified response budget (Sprint 20)", async () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      id: `doc-${index}`,
+      title: `文档${index}`,
+      type: "book" as const,
+      snippet: "很长的摘要".repeat(100),
+    }));
+    const shapingRepository = {
+      ...repository,
+      search: async () => ({
+        entities: [],
+        documents: many,
+        segments: [],
+        revision: "r1",
+        indexStatus: "ready",
+      }),
+    };
+    const server = createMcpServer(shapingRepository as unknown as KnowledgeRepository);
+    const client = new Client({ name: "budget-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+    const result = await client.callTool({
+      name: "search_lore",
+      arguments: { game_id: gameId, query: "测试" },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = resultJson(result) as {
+      hits?: Array<Record<string, unknown>>;
+      truncated?: boolean;
+      estimatedBytes?: number;
+    };
+    expect(body.hits?.length).toBeLessThanOrEqual(10);
+    expect(body.truncated).toBe(true);
+    for (const hit of body.hits ?? []) {
+      expect(String(hit.excerpt).length).toBeLessThanOrEqual(501);
+    }
+    await client.close();
+    await server.close();
+  });
+
   it("serves structured character and material tools over the shared domain service", async () => {
     const character = {
       id: "00000000-0000-0000-0000-0000000000b1",
@@ -400,6 +504,31 @@ describe("MCP server", () => {
         }),
         getAchievement: async () => null,
         getEnemy: async () => enemy,
+        findCharacterByNormalizedName: async (_rev: string, normalizedName: string) =>
+          normalizedName === "胡桃" ? character : null,
+        findWeaponByNormalizedName: async (_rev: string, normalizedName: string) =>
+          normalizedName === "无锋剑" ? weapon : null,
+        findMaterialByNormalizedName: async (_rev: string, normalizedName: string) =>
+          normalizedName === "霓裳花"
+            ? {
+                id: "00000000-0000-0000-0000-0000000000c1",
+                gameId,
+                revisionId: "00000000-0000-0000-0000-000000000010",
+                stableId: "material/nichang",
+                sourceKey: "structured/material/nichang",
+                name: "霓裳花",
+                locale: "zh-CN",
+                provenance: {},
+                category: "local_specialty",
+                sources: [],
+                usedBy: [],
+              }
+            : null,
+        findArtifactByNormalizedName: async () => null,
+        findArtifactSetByNormalizedName: async () => null,
+        findAchievementByNormalizedName: async () => null,
+        findEnemyByNormalizedName: async (_rev: string, normalizedName: string) =>
+          normalizedName === "史莱姆" ? enemy : null,
       },
     } as unknown as KnowledgeRepository;
     const server = createMcpServer(structuredRepository);
@@ -451,6 +580,96 @@ describe("MCP server", () => {
     expect((resultJson(missing) as { error?: { code?: string } })?.error?.code).toBe(
       "character_not_found",
     );
+
+    await client.close();
+    await server.close();
+  });
+
+  it("serves item text tools and entity text bindings with budget shaping", async () => {
+    const material = {
+      id: "00000000-0000-0000-0000-0000000000c1",
+      gameId,
+      revisionId: "00000000-0000-0000-0000-000000000010",
+      stableId: "material/nichang",
+      sourceKey: "structured/material/nichang",
+      name: "霓裳花",
+      locale: "zh-CN",
+      provenance: {},
+      category: "local_specialty",
+      sources: [],
+      usedBy: [],
+    };
+    const bindingsRepository = {
+      ...repository,
+      getEntityTextBindings: async () => [
+        {
+          id: "00000000-0000-0000-0000-0000000000d1",
+          gameId,
+          revisionId: "00000000-0000-0000-0000-000000000010",
+          entityType: "material",
+          entityStableId: "material/nichang",
+          documentId: "00000000-0000-0000-0000-000000000020",
+          segmentId: null,
+          bindingType: "item_description",
+          confidence: null,
+          bindingSource: "direct_upstream",
+          metadata: { note: "材料描述绑定" },
+          createdAt: new Date("2026-09-01T00:00:00Z"),
+        },
+      ],
+      genshin: {
+        listMaterials: async (_revisionId: string, options?: { query?: string }) =>
+          !options?.query || options.query.includes("霓裳") ? [material] : [],
+        getMaterial: async () => material,
+      },
+    };
+    const server = createMcpServer(bindingsRepository as unknown as KnowledgeRepository);
+    const client = new Client({ name: "bindings-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    const texts = await client.callTool({
+      name: "get_entity_texts",
+      arguments: { entity_id: "material/nichang" },
+    });
+    const textsBody = resultJson(texts) as {
+      bindings?: Array<{ bindingType?: string; documentId?: string }>;
+    };
+    expect(texts.isError).toBeFalsy();
+    expect(textsBody.bindings?.[0]?.bindingType).toBe("item_description");
+    expect(textsBody.bindings?.[0]?.documentId).toBe("00000000-0000-0000-0000-000000000020");
+
+    const searchItems = await client.callTool({
+      name: "search_items",
+      arguments: { query: "霓裳" },
+    });
+    const itemsBody = resultJson(searchItems) as {
+      items?: Array<{ name?: string }>;
+      truncated?: boolean;
+    };
+    expect(searchItems.isError).toBeFalsy();
+    expect(itemsBody.items?.[0]?.name).toBe("霓裳花");
+    expect(itemsBody.truncated).toBe(false);
+
+    const itemText = await client.callTool({
+      name: "get_item_text",
+      arguments: { item_id: "material/nichang" },
+    });
+    const itemBody = resultJson(itemText) as { item?: { stableId?: string } };
+    expect(itemBody.item?.stableId).toBe("material/nichang");
+
+    const mechanics = await client.callTool({
+      name: "search_mechanics",
+      arguments: { query: "超载" },
+    });
+    const mechanicsBody = resultJson(mechanics) as {
+      hits?: unknown[];
+      corpusStatus?: string;
+    };
+    expect(mechanics.isError).toBeFalsy();
+    expect(mechanicsBody.corpusStatus).toBe("mechanism_source_missing");
+    expect(mechanicsBody.hits).toEqual([]);
 
     await client.close();
     await server.close();

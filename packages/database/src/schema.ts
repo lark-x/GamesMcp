@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgSchema,
   primaryKey,
   real,
@@ -19,11 +20,19 @@ import type {
   ImportDiff,
   NormalizedRecord,
   StructuredImportRecords,
+  TextBindingSource,
+  TextBindingType,
   ValidationIssue,
 } from "@gip/domain";
 
 export const platform = pgSchema("platform");
 export const knowledge = pgSchema("knowledge");
+
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 const vector = customType<{ data: number[]; driverData: string; config: { dimensions: number } }>({
   dataType: (config) => `vector(${config?.dimensions ?? 1536})`,
@@ -564,6 +573,38 @@ export const entities = knowledge.table(
   ],
 );
 
+/**
+ * Revision-scoped materialization of the stable entity identity. The entity
+ * row carries identity; this table carries the revision-visible name/type.
+ */
+export const entityRevisionMaterializations = knowledge.table(
+  "entity_revision_materializations",
+  {
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    summary: text("summary"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.revisionId, table.entityId] }),
+    index("entity_revision_materializations_entity_index").on(table.entityId),
+    index("entity_revision_materializations_search_index").on(
+      table.revisionId,
+      table.normalizedName,
+    ),
+    index("entity_revision_materializations_trgm_index").using(
+      "gin",
+      table.normalizedName.op("gin_trgm_ops"),
+    ),
+  ],
+);
+
 export const entityAliases = knowledge.table(
   "entity_aliases",
   {
@@ -571,13 +612,20 @@ export const entityAliases = knowledge.table(
     entityId: uuid("entity_id")
       .notNull()
       .references(() => entities.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
     value: text("value").notNull(),
     normalizedValue: text("normalized_value").notNull(),
     language: text("language").notNull().default("und"),
     sourceId: uuid("source_id").references(() => sources.id),
     isPrimary: boolean("is_primary").notNull().default(false),
   },
-  (table) => [index("entity_aliases_normalized_index").on(table.normalizedValue)],
+  (table) => [
+    index("entity_aliases_trgm_index").using("gin", table.normalizedValue.op("gin_trgm_ops")),
+    index("entity_aliases_revision_normalized_index").on(table.revisionId, table.normalizedValue),
+    index("entity_aliases_entity_revision_index").on(table.entityId, table.revisionId),
+  ],
 );
 
 export const documents = knowledge.table(
@@ -597,6 +645,9 @@ export const documents = knowledge.table(
       .notNull()
       .references(() => sourceSnapshots.id),
     body: text("body").notNull(),
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('simple'::regconfig, coalesce(title, '') || ' ' || coalesce(body, ''))`,
+    ),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     revisionId: uuid("revision_id")
       .notNull()
@@ -642,6 +693,9 @@ export const documentSegments = knowledge.table(
     tokenEstimate: integer("token_estimate").notNull().default(0),
     contentHash: text("content_hash").notNull(),
     searchText: text("search_text").notNull(),
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('simple'::regconfig, coalesce(search_text, '') || ' ' || coalesce(body, ''))`,
+    ),
   },
   (table) => [
     uniqueIndex("document_segments_document_ordinal_unique").on(table.documentId, table.ordinal),
@@ -650,6 +704,50 @@ export const documentSegments = knowledge.table(
       .where(sql`${table.segmentKey} IS NOT NULL`),
     index("document_segments_search_index").on(table.searchText),
     index("document_segments_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
+  ],
+);
+
+export const textBindings = knowledge.table(
+  "text_bindings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    entityStableId: text("entity_stable_id").notNull(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    segmentId: uuid("segment_id").references(() => documentSegments.id, { onDelete: "cascade" }),
+    bindingType: text("binding_type").$type<TextBindingType>().notNull(),
+    confidence: numeric("confidence", { mode: "number" }),
+    bindingSource: text("binding_source").$type<TextBindingSource>().notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("text_bindings_revision_stable_index").on(table.revisionId, table.entityStableId),
+    index("text_bindings_revision_document_index").on(table.revisionId, table.documentId),
+    check(
+      "text_bindings_binding_type_valid",
+      sql`${table.bindingType} IN ('primary_description', 'character_story', 'voice', 'speaker', 'quest_participant', 'item_description', 'book_reference', 'achievement_reference', 'tutorial_reference', 'mechanism_reference', 'mention', 'related_text')`,
+    ),
+    check(
+      "text_bindings_binding_source_valid",
+      sql`${table.bindingSource} IN ('direct_upstream', 'speaker_resolution', 'participant_resolution', 'canonical_exact', 'alias_exact', 'manual_curated')`,
+    ),
+    check(
+      "text_bindings_mention_source_valid",
+      sql`${table.bindingType} <> 'mention' OR ${table.bindingSource} IN ('canonical_exact', 'alias_exact')`,
+    ),
+    check(
+      "text_bindings_mention_confidence_valid",
+      sql`${table.bindingType} <> 'mention' OR (${table.confidence} IS NOT NULL AND ((${table.bindingSource} = 'canonical_exact' AND ${table.confidence} = 1.0) OR (${table.bindingSource} = 'alias_exact' AND ${table.confidence} = 0.9)))`,
+    ),
   ],
 );
 

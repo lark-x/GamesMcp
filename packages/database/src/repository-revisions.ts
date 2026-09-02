@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DomainError, type DatasetRevision } from "@gip/domain";
 import type { Database } from "./client.js";
 import {
@@ -6,6 +6,7 @@ import {
   datasetRevisions,
   entities,
   entityAliases,
+  entityRevisionMaterializations,
   importBatches,
   sources,
 } from "./schema.js";
@@ -79,6 +80,10 @@ export async function rollbackRevision(
         (record.entities ?? []).map((candidate) => [candidate.sourceKey, candidate]),
       ),
     );
+    await tx
+      .delete(entityRevisionMaterializations)
+      .where(eq(entityRevisionMaterializations.revisionId, target.id));
+    await tx.delete(entityAliases).where(eq(entityAliases.revisionId, target.id));
     const targetRows = await tx.select().from(entities).where(eq(entities.gameId, target.gameId));
     const [targetBatch] = await tx
       .select({ sourceId: importBatches.sourceId })
@@ -111,11 +116,22 @@ export async function rollbackRevision(
           updatedAt: new Date(),
         })
         .where(eq(entities.id, row.id));
-      await tx.delete(entityAliases).where(eq(entityAliases.entityId, row.id));
+      await tx.insert(entityRevisionMaterializations).values({
+        revisionId: target.id,
+        entityId: row.id,
+        entityType: candidate.type,
+        canonicalName: candidate.name,
+        normalizedName: normalize(candidate.name),
+        summary: candidate.summary,
+      });
+      await tx
+        .delete(entityAliases)
+        .where(and(eq(entityAliases.entityId, row.id), eq(entityAliases.revisionId, target.id)));
       if (candidate.aliases?.length && targetSource)
         await tx.insert(entityAliases).values(
           candidate.aliases.map((alias) => ({
             entityId: row.id,
+            revisionId: target.id,
             value: alias.value,
             normalizedValue: normalize(alias.value),
             language: alias.language ?? "und",
@@ -144,10 +160,19 @@ export async function rollbackRevision(
           deleted: false,
         })
         .onConflictDoNothing();
+      await tx.insert(entityRevisionMaterializations).values({
+        revisionId: target.id,
+        entityId: id,
+        entityType: candidate.type,
+        canonicalName: candidate.name,
+        normalizedName: normalize(candidate.name),
+        summary: candidate.summary,
+      });
       if (candidate.aliases?.length && targetSource)
         await tx.insert(entityAliases).values(
           candidate.aliases.map((alias) => ({
             entityId: id,
+            revisionId: target.id,
             value: alias.value,
             normalizedValue: normalize(alias.value),
             language: alias.language ?? "und",

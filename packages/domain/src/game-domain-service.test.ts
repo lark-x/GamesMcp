@@ -70,6 +70,8 @@ function makeRepository(overrides: Partial<KnowledgeRepository> = {}): Knowledge
         },
       ],
     }),
+    getEntityTextBindings: async () => [],
+    getBindingEntities: async () => [],
     genshin: {
       getCharacter: async (_revision: string, stableId: string) =>
         stableId === "char/hutao"
@@ -187,30 +189,13 @@ describe("GameDomainService", () => {
       makeRepository({
         genshin: {
           ...makeRepository().genshin,
-          listMaterials: async (options) => {
-            calls.push(`materials:${options.query}:${options.limit}`);
-            return [
-              {
-                id: "material-1",
-                gameId,
-                revisionId,
-                stableId: "material/nichang",
-                sourceKey: "structured/material/nichang",
-                name: "霓裳花",
-                locale: "zh-CN",
-                provenance: {},
-                category: "local_specialty",
-                sources: [],
-                usedBy: [],
-              },
-            ];
-          },
-          getMaterial: async (_revision, stableId) =>
-            stableId === "material/nichang"
+          findMaterialByNormalizedName: async (rev, normalizedName) => {
+            calls.push(`materials:${normalizedName}`);
+            return normalizedName === "霓裳花"
               ? {
                   id: "material-1",
                   gameId,
-                  revisionId,
+                  revisionId: rev,
                   stableId: "material/nichang",
                   sourceKey: "structured/material/nichang",
                   name: "霓裳花",
@@ -220,14 +205,7 @@ describe("GameDomainService", () => {
                   sources: [],
                   usedBy: [],
                 }
-              : null,
-          listCharacters: async () => {
-            calls.push("characters");
-            return [];
-          },
-          listWeapons: async () => {
-            calls.push("weapons");
-            return [];
+              : null;
           },
         },
       }),
@@ -236,6 +214,69 @@ describe("GameDomainService", () => {
     const material = await service.findStructuredByName(gameId, "material", "霓裳花");
 
     expect(material).toMatchObject({ stableId: "material/nichang", name: "霓裳花" });
-    expect(calls).toEqual(["materials:霓裳花:200"]);
+    expect(calls).toEqual(["materials:霓裳花"]);
+  });
+
+  it("gets entity texts from the public revision with an optional binding type", async () => {
+    const calls: Array<{
+      revisionId: string;
+      entityStableId: string;
+      bindingType?: string;
+    }> = [];
+    const service = new GameDomainService(
+      makeRepository({
+        getEntityTextBindings: async (revision, stableId, bindingType) => {
+          calls.push({ revisionId: revision, entityStableId: stableId, bindingType });
+          return [
+            {
+              id: "binding-1",
+              gameId,
+              revisionId: revision,
+              entityType: "character",
+              entityStableId: stableId,
+              documentId: "doc-1",
+              segmentId: "seg-1",
+              bindingType: bindingType ?? "character_story",
+              confidence: 1,
+              bindingSource: "direct_upstream",
+              metadata: {},
+              createdAt: new Date("2026-08-30T00:00:00.000Z"),
+            },
+          ];
+        },
+      }),
+    );
+
+    await expect(
+      service.getEntityTexts(gameId, "char/hutao", "character_story"),
+    ).resolves.toMatchObject([
+      {
+        revisionId,
+        entityStableId: "char/hutao",
+        documentId: "doc-1",
+        segmentId: "seg-1",
+      },
+    ]);
+    expect(calls).toEqual([
+      { revisionId, entityStableId: "char/hutao", bindingType: "character_story" },
+    ]);
+  });
+
+  it("passes an explicitly requested revision and binding type to entity text reads", async () => {
+    const requestedRevision = "00000000-0000-0000-0000-0000000000bb";
+    const calls: Array<[string, string, string | undefined]> = [];
+    const service = new GameDomainService(
+      makeRepository({
+        getEntityTextBindings: async (revision, stableId, bindingType) => {
+          calls.push([revision, stableId, bindingType]);
+          return [];
+        },
+      }),
+    );
+
+    await expect(
+      service.getEntityTexts(gameId, "char/hutao", "voice", requestedRevision),
+    ).resolves.toEqual([]);
+    expect(calls).toEqual([[requestedRevision, "char/hutao", "voice"]]);
   });
 });

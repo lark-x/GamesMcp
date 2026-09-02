@@ -24,6 +24,8 @@ import {
   type QuestSearchHit,
   type QuestSearchRequest,
   type RelationshipView,
+  type TextBinding,
+  type TextBindingType,
   type VectorEntityHit,
   type VectorSearchHit,
 } from "@gip/domain";
@@ -39,7 +41,7 @@ import {
   evidence,
   gameCapabilities,
   games,
-  importBatches,
+  genshinVoiceLines,
   questDialogueEdges,
   questDialogueNodes,
   questSubquests,
@@ -47,14 +49,13 @@ import {
   sourceSnapshots,
   sources,
 } from "./schema.js";
-import { addAliases, evidenceViews, getAliases } from "./repository-read-helpers.js";
+import { evidenceViews, getAliases } from "./repository-read-helpers.js";
 import {
   asDocumentSummary,
   asEntitySummary,
   decodeQuestCursor,
   defaultLimit,
   encodeQuestCursor,
-  escapeLike,
   lexicalScore,
   mainQuestIdFromKey,
   normalize,
@@ -127,12 +128,26 @@ export class RepositoryReadModels {
   ): Promise<ArchiveHome> {
     const current = await this.getCurrentRevision(gameId);
     if (!current)
-      return { gameId, revision: "", locale: options.locale ?? "zh-CN", categories: [] };
+      return {
+        gameId,
+        revision: "",
+        locale: options.locale ?? "zh-CN",
+        categories: [],
+        latestRevision: undefined,
+        latestRevisionId: undefined,
+      };
     const revision = options.revisionId
       ? await this.getRevision(options.revisionId, gameId)
       : await this.getSearchableRevision(gameId, current);
     if (!revision)
-      return { gameId, revision: "", locale: options.locale ?? "zh-CN", categories: [] };
+      return {
+        gameId,
+        revision: "",
+        locale: options.locale ?? "zh-CN",
+        categories: [],
+        latestRevision: revisionLabel(current.revisionNumber),
+        latestRevisionId: current.id,
+      };
     const locale = options.locale ?? "zh-CN";
     const limit = Math.min(Math.max(options.limit ?? 6, 1), 12);
     const entityCategory = async (
@@ -245,16 +260,120 @@ export class RepositoryReadModels {
         })),
       };
     };
-    const [characters, quests, items, books, regions, factions] = await Promise.all([
+    const dialogueCategory = async () => {
+      const conditions = [
+        eq(questDialogueNodes.revisionId, revision.id),
+        eq(questDialogueNodes.documentId, documents.id),
+        eq(documents.gameId, gameId),
+        eq(documents.revisionId, revision.id),
+        eq(documents.deleted, false),
+        eq(documents.locale, locale),
+        publicDocumentCondition(),
+        publicQuestCondition(),
+      ];
+      const [countRows, rows] = await Promise.all([
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(questDialogueNodes)
+          .innerJoin(documents, eq(questDialogueNodes.documentId, documents.id))
+          .where(and(...conditions)),
+        this.db
+          .select({
+            id: questDialogueNodes.nodeKey,
+            documentId: questDialogueNodes.documentId,
+            name: documents.title,
+            speakerName: questDialogueNodes.speakerName,
+            type: questDialogueNodes.nodeType,
+            locale: documents.locale,
+          })
+          .from(questDialogueNodes)
+          .innerJoin(documents, eq(questDialogueNodes.documentId, documents.id))
+          .where(and(...conditions))
+          .orderBy(asc(documents.title), asc(questDialogueNodes.ordinal))
+          .limit(limit),
+      ]);
+      return {
+        id: "dialogue",
+        label: "对话节点",
+        description: "任务对话、旁白、选项与分支关系",
+        count: Number(countRows[0]?.count ?? 0),
+        entries: rows.map((row) => ({
+          id: row.id,
+          documentId: row.documentId,
+          anchorId: row.id,
+          name: row.speakerName ? `${row.name} · ${row.speakerName}` : row.name,
+          kind: "document" as const,
+          type: row.type === "player_choice" ? "player_choice" : "dialogue",
+          locale: row.locale,
+        })),
+      };
+    };
+    const voiceCategory = async () => {
+      const conditions = [
+        eq(genshinVoiceLines.gameId, gameId),
+        eq(genshinVoiceLines.revisionId, revision.id),
+        eq(genshinVoiceLines.locale, locale),
+        sql`${genshinVoiceLines.title} <> ''`,
+      ];
+      const [countRows, rows] = await Promise.all([
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(genshinVoiceLines)
+          .where(and(...conditions)),
+        this.db
+          .select({
+            id: genshinVoiceLines.id,
+            name: genshinVoiceLines.title,
+            type: sql<string>`'voice'`,
+            locale: genshinVoiceLines.locale,
+          })
+          .from(genshinVoiceLines)
+          .where(and(...conditions))
+          .orderBy(asc(genshinVoiceLines.title), asc(genshinVoiceLines.stableId))
+          .limit(limit),
+      ]);
+      return {
+        id: "voices",
+        label: "角色语音",
+        description: "角色语音文本与对应的游戏版本",
+        count: Number(countRows[0]?.count ?? 0),
+        entries: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          kind: "document" as const,
+          type: row.type,
+          locale: row.locale,
+        })),
+      };
+    };
+    const [
+      characters,
+      quests,
+      dialogue,
+      items,
+      books,
+      voices,
+      characterStories,
+      regions,
+      factions,
+    ] = await Promise.all([
       entityCategory("characters", "角色", "人物、别名与关系", ["character"]),
       documentCategory("quests", "任务剧情", "魔神、传说、世界与活动任务", [
         "archon_quest",
         "story_quest",
         "world_quest",
         "event_quest",
+        "commission",
+        "hangout",
+        "other",
       ]),
+      dialogueCategory(),
       entityCategory("items", "物品图鉴", "物品实体与描述", ["item"]),
       documentCategory("books", "书籍与设定", "书籍、世界设定与背景资料", ["book", "lore"]),
+      voiceCategory(),
+      documentCategory("character-stories", "角色故事", "角色档案、故事与解锁文本", [
+        "character_story",
+      ]),
       entityCategory("regions", "地区与地点", "国家、区域与场景", ["region", "location"]),
       entityCategory("factions", "阵营与 NPC", "组织、势力与非玩家角色", ["faction", "npc"]),
     ]);
@@ -262,7 +381,20 @@ export class RepositoryReadModels {
       gameId,
       revision: revisionLabel(revision.revisionNumber),
       locale,
-      categories: [characters, quests, items, books, regions, factions],
+      revisionId: revision.id,
+      latestRevision: revisionLabel(current.revisionNumber),
+      latestRevisionId: current.id,
+      categories: [
+        characters,
+        quests,
+        dialogue,
+        books,
+        characterStories,
+        voices,
+        items,
+        regions,
+        factions,
+      ],
     };
   }
 
@@ -325,6 +457,7 @@ export class RepositoryReadModels {
         const aliases = await getAliases(
           this.db,
           rows.map((row) => row.id),
+          current.id,
         );
         const query = options.query ? normalize(options.query) : undefined;
         return rows
@@ -347,6 +480,7 @@ export class RepositoryReadModels {
       const aliases = await getAliases(
         this.db,
         rows.map((row) => row.id),
+        current.id,
       );
       const query = options.query ? normalize(options.query) : undefined;
       return rows
@@ -382,10 +516,7 @@ export class RepositoryReadModels {
       .where(and(eq(entities.gameId, gameId), eq(entities.deleted, false)))
       .limit(options.limit)
       .offset(options.offset);
-    return addAliases(
-      this.db,
-      rows.map((row) => asEntitySummary(row)),
-    );
+    return rows.map((row) => asEntitySummary(row));
   }
 
   async getEntity(
@@ -410,7 +541,7 @@ export class RepositoryReadModels {
     const enforceSnapshotMembership =
       revision.lifecycleStatus === "preview" || revision.normalizedRecords !== null;
     if (!revisionCandidate && (enforceSnapshotMembership || row.deleted)) return null;
-    const aliases = await getAliases(this.db, [row.id]);
+    const aliases = await getAliases(this.db, [row.id], revision.id);
     const entitySummary = revisionCandidate
       ? {
           id: row.id,
@@ -589,6 +720,62 @@ export class RepositoryReadModels {
       }));
   }
 
+  async getEntityTextBindings(
+    revisionId: string,
+    entityStableId: string,
+    bindingType?: TextBindingType,
+  ): Promise<TextBinding[]> {
+    const bindingTypeCondition = bindingType ? sql`and binding_type = ${bindingType}` : sql``;
+    const result = await this.db.execute(sql`
+      select id,
+             game_id,
+             revision_id,
+             entity_type,
+             entity_stable_id,
+             document_id,
+             segment_id,
+             binding_type,
+             confidence,
+             binding_source,
+             metadata,
+             created_at
+      from knowledge.text_bindings
+      where revision_id = ${revisionId}::uuid
+        and entity_stable_id = ${entityStableId}
+        ${bindingTypeCondition}
+      order by created_at asc, id asc
+    `);
+    return textBindingRows(result).map(mapTextBinding);
+  }
+
+  async getBindingEntities(
+    revisionId: string,
+    documentId: string,
+    segmentId?: string,
+  ): Promise<TextBinding[]> {
+    const segmentCondition = segmentId ? sql`and segment_id = ${segmentId}::uuid` : sql``;
+    const result = await this.db.execute(sql`
+      select id,
+             game_id,
+             revision_id,
+             entity_type,
+             entity_stable_id,
+             document_id,
+             segment_id,
+             binding_type,
+             confidence,
+             binding_source,
+             metadata,
+             created_at
+      from knowledge.text_bindings
+      where revision_id = ${revisionId}::uuid
+        and document_id = ${documentId}::uuid
+        ${segmentCondition}
+      order by entity_type asc, entity_stable_id asc, created_at asc, id asc
+    `);
+    return textBindingRows(result).map(mapTextBinding);
+  }
+
   async listDocuments(
     gameId: string,
     options: {
@@ -601,7 +788,7 @@ export class RepositoryReadModels {
     },
   ): Promise<DocumentSummary[]> {
     const revision = options.revisionId
-      ? await this.getRevision(options.revisionId, gameId)
+      ? await this.getRevisionMeta(options.revisionId, gameId)
       : await this.getCurrentRevision(gameId);
     if (!revision) return [];
     const conditions = [
@@ -643,7 +830,23 @@ export class RepositoryReadModels {
       : await this.getCurrentRevision(gameId);
     if (!revision) return null;
     const rows = await this.db
-      .select()
+      .select({
+        id: documents.id,
+        gameId: documents.gameId,
+        sourceKey: documents.sourceKey,
+        type: documents.type,
+        title: documents.title,
+        normalizedTitle: documents.normalizedTitle,
+        gameVersion: documents.gameVersion,
+        locale: documents.locale,
+        sourceSnapshotId: documents.sourceSnapshotId,
+        body: documents.body,
+        searchVector: documents.searchVector,
+        metadata: documents.metadata,
+        revisionId: documents.revisionId,
+        deleted: documents.deleted,
+        createdAt: documents.createdAt,
+      })
       .from(documents)
       .where(
         and(
@@ -666,28 +869,21 @@ export class RepositoryReadModels {
     const source = sourceRows[0]?.sources;
     const sourceSnapshot = sourceRows[0]?.source_snapshots;
     const segmentRows = await this.db
-      .select()
+      .select({
+        id: documentSegments.id,
+        documentId: documentSegments.documentId,
+        revisionId: documentSegments.revisionId,
+        ordinal: documentSegments.ordinal,
+        headingPath: documentSegments.headingPath,
+        body: documentSegments.body,
+        startOffset: documentSegments.startOffset,
+        endOffset: documentSegments.endOffset,
+      })
       .from(documentSegments)
       .where(
         and(eq(documentSegments.documentId, row.id), eq(documentSegments.revisionId, revision.id)),
       )
       .orderBy(asc(documentSegments.ordinal));
-    const revisionEntityNames = revision.isCurrent
-      ? new Map(
-          (
-            await this.db
-              .select({ sourceKey: entities.sourceKey, name: entities.canonicalName })
-              .from(entities)
-              .where(and(eq(entities.gameId, gameId), eq(entities.deleted, false)))
-          ).flatMap((candidate) =>
-            candidate.sourceKey ? [[candidate.sourceKey, candidate.name] as const] : [],
-          ),
-        )
-      : new Map(
-          (await this.getRevisionRecords(revision)).flatMap((record) =>
-            (record.entities ?? []).map((candidate) => [candidate.sourceKey, candidate.name]),
-          ),
-        );
     const mentionRows = segmentRows.length
       ? await this.db
           .select({ mention: entityMentions, entity: entities })
@@ -700,6 +896,38 @@ export class RepositoryReadModels {
             ),
           )
       : [];
+    // PERF: resolve display names only for entities actually mentioned in this document
+    // (was: full game-wide entity scan per getDocument call).
+    const mentionedSourceKeys = [
+      ...new Set(
+        mentionRows.flatMap((row) => (row.entity.sourceKey ? [row.entity.sourceKey] : [])),
+      ),
+    ];
+    const revisionEntityNames =
+      mentionedSourceKeys.length === 0
+        ? new Map<string, string>()
+        : revision.isCurrent
+          ? new Map(
+              (
+                await this.db
+                  .select({ sourceKey: entities.sourceKey, name: entities.canonicalName })
+                  .from(entities)
+                  .where(
+                    and(
+                      eq(entities.gameId, gameId),
+                      eq(entities.deleted, false),
+                      inArray(entities.sourceKey, mentionedSourceKeys),
+                    ),
+                  )
+              ).flatMap((candidate) =>
+                candidate.sourceKey ? [[candidate.sourceKey, candidate.name] as const] : [],
+              ),
+            )
+          : new Map(
+              (await this.getRevisionRecords(revision)).flatMap((record) =>
+                (record.entities ?? []).map((candidate) => [candidate.sourceKey, candidate.name]),
+              ),
+            );
     const mentionsBySegment = new Map<string, typeof mentionRows>();
     for (const row of mentionRows)
       mentionsBySegment.set(row.mention.segmentId, [
@@ -774,8 +1002,6 @@ export class RepositoryReadModels {
     const limit = request.limit ?? defaultLimit;
     const types = request.types ?? ["entity", "document", "segment"];
     const query = normalize(request.query);
-    const likeQuery = escapeLike(request.query);
-    const normalizedLikeQuery = escapeLike(query);
 
     if (types.includes("entity")) {
       result.entities = await this.searchEntitiesAtRevision(gameId, request, searchable);
@@ -788,11 +1014,8 @@ export class RepositoryReadModels {
         eq(documents.deleted, false),
         publicDocumentCondition(),
         or(
-          ilike(documents.normalizedTitle, `%${normalizedLikeQuery}%`),
-          ilike(documents.title, `%${likeQuery}%`),
-          ilike(documents.body, `%${likeQuery}%`),
-          sql`similarity(${documents.normalizedTitle}, ${query}) >= 0.15`,
-          sql`similarity(${documents.body}, ${request.query}) >= 0.05`,
+          sql`${documents.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
+          sql`${documents.normalizedTitle} % ${query}`,
         ),
       ];
       if (request.documentTypes?.length)
@@ -830,8 +1053,7 @@ export class RepositoryReadModels {
           eq(documents.deleted, false),
           publicDocumentCondition(),
           or(
-            ilike(documentSegments.searchText, `%${likeQuery}%`),
-            sql`similarity(${documentSegments.searchText}, ${request.query}) >= 0.05`,
+            sql`${documentSegments.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
           ),
         ];
         if (request.documentTypes?.length)
@@ -884,24 +1106,29 @@ export class RepositoryReadModels {
     const current = await this.getCurrentRevision(gameId);
     if (!current) return [];
     const revision = request.revisionId
-      ? await this.getRevision(request.revisionId, gameId)
+      ? await this.getRevisionMeta(request.revisionId, gameId)
       : await this.getSearchableRevision(gameId, current);
     if (!revision) return [];
-    const likeQuery = `%${escapeLike(request.query)}%`;
-    const normalizedLikeQuery = `%${escapeLike(normalize(request.query))}%`;
+    const normalizedQuery = normalize(request.query);
     const questTypes = request.questTypes?.length
       ? request.questTypes
-      : (["archon_quest", "story_quest", "world_quest", "event_quest"] as const);
+      : ([
+          "archon_quest",
+          "story_quest",
+          "world_quest",
+          "event_quest",
+          "commission",
+          "hangout",
+          "other",
+        ] as const);
     const conditions = [
       eq(documents.gameId, gameId),
       eq(documents.revisionId, revision.id),
       eq(documents.deleted, false),
       inArray(documents.type, [...questTypes]),
       or(
-        ilike(documents.sourceKey, likeQuery),
-        ilike(documents.normalizedTitle, normalizedLikeQuery),
-        ilike(documents.title, likeQuery),
-        ilike(documents.body, likeQuery),
+        sql`${documents.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
+        sql`${documents.normalizedTitle} % ${normalizedQuery}`,
       ),
     ];
     if (request.publicOnly !== false) conditions.push(publicQuestCondition());
@@ -936,7 +1163,7 @@ export class RepositoryReadModels {
     const current = await this.getCurrentRevision(gameId);
     if (!current) return null;
     const revision = request.revisionId
-      ? await this.getRevision(request.revisionId, gameId)
+      ? await this.getRevisionMeta(request.revisionId, gameId)
       : await this.getSearchableRevision(gameId, current);
     if (!revision) return null;
     const cursor = decodeQuestCursor(request.cursor);
@@ -1049,6 +1276,14 @@ export class RepositoryReadModels {
           .from(entities)
           .where(and(eq(entities.gameId, gameId), inArray(entities.sourceKey, speakerKeys)))
       : [];
+    const sourceRows = await this.db
+      .select({ source: sources, snapshot: sourceSnapshots })
+      .from(sources)
+      .innerJoin(sourceSnapshots, eq(sourceSnapshots.sourceId, sources.id))
+      .where(eq(sourceSnapshots.id, document.sourceSnapshotId))
+      .limit(1);
+    const source = sourceRows[0]?.source;
+    const sourceSnapshot = sourceRows[0]?.snapshot;
     return {
       questKey,
       title: document.title,
@@ -1095,6 +1330,10 @@ export class RepositoryReadModels {
         questKey,
         subquestKey: row.subquestKey ?? undefined,
         dialogueNodeKey: row.nodeKey,
+        segmentId: row.segmentId,
+        sourceKey: document.sourceKey,
+        sourceName: source?.name,
+        sourceSnapshotId: sourceSnapshot?.id ?? document.sourceSnapshotId,
         revision: revisionLabel(revision.revisionNumber),
       })),
       warnings,
@@ -1125,7 +1364,7 @@ export class RepositoryReadModels {
     const current = await this.getCurrentRevision(gameId);
     if (!current) return [];
     const revision = request.revisionId
-      ? await this.getRevision(request.revisionId, gameId)
+      ? await this.getRevisionMeta(request.revisionId, gameId)
       : await this.getSearchableRevision(gameId, current);
     if (!revision) return [];
     const vectorLiteral = `[${vectorValue.join(",")}]`;
@@ -1165,7 +1404,7 @@ export class RepositoryReadModels {
         and d.game_id = ${gameId}
         and d.deleted = false
         and (
-          d.type not in ('archon_quest', 'story_quest', 'world_quest', 'event_quest')
+          d.type not in ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'other')
           or (
             coalesce(d.metadata->'questPayload'->>'visibility', d.metadata->'quest'->>'visibility') = 'public'
             or (
@@ -1250,6 +1489,7 @@ export class RepositoryReadModels {
     const aliases = await getAliases(
       this.db,
       entityRows.map((row) => row.id),
+      revision.id,
     );
     const candidates = new Map(
       (await this.getRevisionRecords(revision)).flatMap((record) =>
@@ -1321,6 +1561,45 @@ export class RepositoryReadModels {
     return rows[0];
   }
 
+  /**
+   * PERF: metadata-only revision lookup for hot read paths. Unlike getRevision, this
+   * excludes the normalizedRecords JSON column (tens of megabytes per published
+   * revision), which dominated per-call latency on entity/document read paths.
+   */
+  private async getRevisionMeta(revisionId: string, gameId?: string) {
+    const rows = await this.db
+      .select({
+        id: datasetRevisions.id,
+        gameId: datasetRevisions.gameId,
+        revisionNumber: datasetRevisions.revisionNumber,
+        sourceBatchId: datasetRevisions.sourceBatchId,
+        releaseNote: datasetRevisions.releaseNote,
+        lifecycleStatus: datasetRevisions.lifecycleStatus,
+        publishedAt: datasetRevisions.publishedAt,
+        isCurrent: datasetRevisions.isCurrent,
+        indexStatus: datasetRevisions.indexStatus,
+        manifestId: datasetRevisions.manifestId,
+        activatedAt: datasetRevisions.activatedAt,
+        activationBuildId: datasetRevisions.activationBuildId,
+        activationCandidateId: datasetRevisions.activationCandidateId,
+        activationError: datasetRevisions.activationError,
+        provenance: datasetRevisions.provenance,
+        sourceId: datasetRevisions.sourceId,
+        gameVersion: datasetRevisions.gameVersion,
+        locale: datasetRevisions.locale,
+        archivedReason: datasetRevisions.archivedReason,
+        archivedAt: datasetRevisions.archivedAt,
+      })
+      .from(datasetRevisions)
+      .where(
+        gameId
+          ? and(eq(datasetRevisions.id, revisionId), eq(datasetRevisions.gameId, gameId))
+          : eq(datasetRevisions.id, revisionId),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
   private async getSearchableRevision(
     gameId: string,
     current: typeof datasetRevisions.$inferSelect,
@@ -1344,14 +1623,19 @@ export class RepositoryReadModels {
   private async getRevisionRecords(
     revision: typeof datasetRevisions.$inferSelect,
   ): Promise<NormalizedRecord[]> {
-    if (revision.normalizedRecords) return revision.normalizedRecords;
+    const cached = this.revisionRecordsCache.get(revision.id);
+    if (cached) return cached;
     const rows = await this.db
-      .select({ stagedRecords: importBatches.stagedRecords })
-      .from(importBatches)
-      .where(eq(importBatches.id, revision.sourceBatchId))
+      .select({ normalizedRecords: datasetRevisions.normalizedRecords })
+      .from(datasetRevisions)
+      .where(eq(datasetRevisions.id, revision.id))
       .limit(1);
-    return rows[0]?.stagedRecords ?? [];
+    const records = rows[0]?.normalizedRecords ?? [];
+    this.revisionRecordsCache.set(revision.id, Promise.resolve(records));
+    return records;
   }
+
+  private revisionRecordsCache = new Map<string, Promise<NormalizedRecord[]>>();
 
   private async searchEntitiesAtRevision(
     gameId: string,
@@ -1362,14 +1646,24 @@ export class RepositoryReadModels {
     // do not deserialize the complete normalized-record JSON for every search.
     // Historical/preview revisions still use their immutable candidate payload
     // so their membership remains exact.
-    if (!request.revisionId && revision.isCurrent) {
+    if (revision.isCurrent) {
       const rows = await this.db
         .select()
         .from(entities)
-        .where(and(eq(entities.gameId, gameId), eq(entities.deleted, false)));
+        .where(
+          and(
+            eq(entities.gameId, gameId),
+            eq(entities.deleted, false),
+            or(
+              sql`${entities.canonicalName} % ${request.query}`,
+              sql`${entities.normalizedName} % ${request.query}`,
+            ),
+          ),
+        );
       const aliases = await getAliases(
         this.db,
         rows.map((row) => row.id),
+        revision.id,
       );
       const query = normalize(request.query);
       return rows
@@ -1458,4 +1752,48 @@ export class RepositoryReadModels {
 
 function revisionNumberLabel(value: number): string {
   return revisionLabel(value);
+}
+
+type TextBindingRow = {
+  id: string;
+  game_id: string;
+  revision_id: string;
+  entity_type: string;
+  entity_stable_id: string;
+  document_id: string;
+  segment_id: string | null;
+  binding_type: TextBindingType;
+  confidence: number | string | null;
+  binding_source: TextBinding["bindingSource"];
+  metadata: Record<string, unknown> | null;
+  created_at: Date | string;
+};
+
+function textBindingRows(result: unknown): TextBindingRow[] {
+  if (Array.isArray(result)) return result as TextBindingRow[];
+  if (
+    result &&
+    typeof result === "object" &&
+    "rows" in result &&
+    Array.isArray((result as { rows?: unknown }).rows)
+  )
+    return (result as { rows: TextBindingRow[] }).rows;
+  return [];
+}
+
+function mapTextBinding(row: TextBindingRow): TextBinding {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    revisionId: row.revision_id,
+    entityType: row.entity_type,
+    entityStableId: row.entity_stable_id,
+    documentId: row.document_id,
+    segmentId: row.segment_id,
+    bindingType: row.binding_type,
+    confidence: row.confidence === null ? null : Number(row.confidence),
+    bindingSource: row.binding_source,
+    metadata: row.metadata ?? {},
+    createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+  };
 }

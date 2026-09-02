@@ -55,6 +55,42 @@ describe("evidence QA", () => {
     expect(answer.citations).toHaveLength(0);
   });
 
+  it("prefers Search Core lore hits over legacy read-model segments (FIX-023)", async () => {
+    const base = repository({ segments: [], revision: "r1" });
+    const coreRepository = {
+      ...base,
+      search: async () => ({
+        entities: [],
+        documents: [],
+        segments: [],
+        revision: "r1",
+        revisionId: "00000000-0000-0000-0000-000000000020",
+        indexStatus: "ready",
+        coreHits: {
+          lore: [
+            {
+              document: { id: document.id },
+              body: "旅行者来到提瓦特。",
+              score: 3.2,
+              matchedBy: "fts",
+            },
+          ],
+        },
+      }),
+    } as unknown as KnowledgeRepository;
+    const service = new EvidenceQaService(coreRepository, loadConfig({}));
+    const answer = await service.answer(
+      "00000000-0000-0000-0000-000000000001",
+      "旅行者去了哪里",
+      8,
+      "00000000-0000-0000-0000-000000000020",
+    );
+    expect(answer.citations).toHaveLength(1);
+    expect(answer.citations[0]?.documentId).toBe(document.id);
+    expect(answer.citations[0]?.segmentId).toBe("00000000-0000-0000-0000-000000000012");
+    expect(answer.warnings).not.toContain("没有找到可引用的已发布证据。");
+  });
+
   it("returns structured citations without an LLM", async () => {
     const service = new EvidenceQaService(
       repository({

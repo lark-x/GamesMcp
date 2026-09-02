@@ -1,5 +1,11 @@
-import type { SearchRepositoryPort, StructuredSearchKind } from "./port.js";
-import { rankCandidate } from "./ranking.js";
+import type {
+  DialogueSearchFilters,
+  EntityCandidateSearchRequest,
+  SearchRepositoryPort,
+  SearchMatchType,
+  StructuredSearchKind,
+} from "./port.js";
+import { rankCandidate, scoreSearchMatch } from "./ranking.js";
 import { resolveEntityFromCandidates, type ResolvedEntity } from "./entity-resolver.js";
 import { shapeForBudget, type McpResponseBudget, type ShapedPage } from "./token-budget.js";
 
@@ -62,11 +68,16 @@ export class SearchService {
     ]);
     const structuredHits = structured
       .map((item) => {
-        const ranked = rankCandidate(query, {
-          title: item.name,
-          aliases: item.aliases,
-          body: item.body,
-        });
+        const ranked = item.matchType
+          ? {
+              score: scoreSearchMatch(item.matchType, item.rank),
+              matchedBy: item.matchType,
+            }
+          : rankCandidate(query, {
+              title: item.name,
+              aliases: item.aliases,
+              body: item.body,
+            });
         return {
           kind: item.kind,
           stableId: item.stableId,
@@ -80,7 +91,12 @@ export class SearchService {
       .slice(0, 20);
     const documentHits = documents
       .map((item) => {
-        const ranked = rankCandidate(query, { title: item.document.title, body: item.body });
+        const ranked = item.matchType
+          ? {
+              score: scoreSearchMatch(item.matchType, item.rank),
+              matchedBy: item.matchType,
+            }
+          : rankCandidate(query, { title: item.document.title, body: item.body });
         return {
           document: item.document,
           body: item.body,
@@ -91,25 +107,7 @@ export class SearchService {
       .filter((hit) => hit.score > 0)
       .sort((left, right) => right.score - left.score)
       .slice(0, 20);
-    const dialogueHits = dialogue
-      .map((item) => {
-        const ranked = rankCandidate(query, {
-          title: item.title,
-          body: item.body,
-          speaker: item.speaker,
-          questTitle: item.questTitle,
-          questType: item.questType,
-        });
-        return {
-          quest: item.questTitle ?? item.title,
-          subquest: item.subquestKey,
-          speaker: item.speaker,
-          text: item.body,
-          dialogueNodeKey: item.nodeKey,
-          citation: item.citation,
-          score: ranked.score,
-        };
-      })
+    const dialogueHits = this.mapDialogueHits(query, dialogue)
       .filter((hit) => hit.score > 0)
       .sort((left, right) => right.score - left.score)
       .slice(0, 10);
@@ -120,9 +118,13 @@ export class SearchService {
     gameId: string,
     revisionId: string,
     query: string,
+    filters?: DialogueSearchFilters,
   ): Promise<SearchCoreDialogueHit[]> {
-    const result = await this.searchText(gameId, revisionId, query);
-    return result.dialogue;
+    const dialogue = await this.repository.listDialogueHits(gameId, revisionId, query, filters);
+    return this.mapDialogueHits(query, dialogue)
+      .filter((hit) => hit.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 10);
   }
 
   async searchLore(
@@ -130,8 +132,25 @@ export class SearchService {
     revisionId: string,
     query: string,
   ): Promise<SearchCoreDocumentHit[]> {
-    const result = await this.searchText(gameId, revisionId, query);
-    return result.documents;
+    const documents = await this.repository.listDocumentHits(gameId, revisionId, query);
+    return documents
+      .map((item) => {
+        const ranked = item.matchType
+          ? {
+              score: scoreSearchMatch(item.matchType, item.rank),
+              matchedBy: item.matchType,
+            }
+          : rankCandidate(query, { title: item.document.title, body: item.body });
+        return {
+          document: item.document,
+          body: item.body,
+          score: ranked.score,
+          matchedBy: ranked.matchedBy,
+        };
+      })
+      .filter((hit) => hit.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 20);
   }
 
   async resolveEntity(
@@ -139,8 +158,17 @@ export class SearchService {
     revisionId: string,
     query: string,
   ): Promise<ResolvedEntity | null> {
-    const candidates = await this.repository.listEntityCandidates(gameId, revisionId);
+    const candidates = await this.resolveEntityCandidates({
+      gameId,
+      revisionId,
+      query,
+      limit: 100,
+    });
     return resolveEntityFromCandidates(query, candidates);
+  }
+
+  async resolveEntityCandidates(request: EntityCandidateSearchRequest) {
+    return this.repository.resolveEntityCandidates(request);
   }
 
   shapeForMcp<T extends { title?: string; excerpt?: string }>(
@@ -148,5 +176,45 @@ export class SearchService {
     budget?: McpResponseBudget,
   ): ShapedPage {
     return shapeForBudget(hits, budget);
+  }
+
+  private mapDialogueHits(
+    query: string,
+    dialogue: Array<{
+      title: string;
+      body: string;
+      speaker: string | null;
+      questTitle: string | null;
+      questType: string | null;
+      nodeKey: string;
+      subquestKey: string | null;
+      citation: SearchCoreDialogueHit["citation"];
+      rank?: number;
+      matchType?: SearchMatchType;
+    }>,
+  ): SearchCoreDialogueHit[] {
+    return dialogue.map((item) => {
+      const ranked = item.matchType
+        ? {
+            score: scoreSearchMatch(item.matchType, item.rank),
+            matchedBy: item.matchType,
+          }
+        : rankCandidate(query, {
+            title: item.title,
+            body: item.body,
+            speaker: item.speaker,
+            questTitle: item.questTitle,
+            questType: item.questType,
+          });
+      return {
+        quest: item.questTitle ?? item.title,
+        subquest: item.subquestKey,
+        speaker: item.speaker,
+        text: item.body,
+        dialogueNodeKey: item.nodeKey,
+        citation: item.citation,
+        score: ranked.score,
+      };
+    });
   }
 }

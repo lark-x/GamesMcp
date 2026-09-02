@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import type { GenshinCharacter, NormalizedRecord } from "@gip/domain";
 import type { Database } from "./client.js";
 import { SqlGenshinStructuredRepository } from "./repository-genshin-core.js";
+import { SqlSearchRepositoryPort } from "./search-port.js";
 import {
   mergeReleaseCandidateRecords,
   releaseCandidateChecksum,
+  SqlKnowledgeRepository,
   stableEntityId,
 } from "./repository.js";
 
@@ -166,5 +170,198 @@ describe("Genshin structured repository", () => {
       }),
     ).resolves.toHaveLength(1);
     expect(calls).toHaveLength(1);
+  });
+
+  it("finds records by exact normalized name within a revision", async () => {
+    const { db, calls } = fakeDb([[characterRow], []]);
+    const repository = new SqlGenshinStructuredRepository(db);
+
+    await expect(
+      repository.findCharacterByNormalizedName(characterInput.revisionId, "纳西妲"),
+    ).resolves.toMatchObject({ stableId: characterInput.stableId });
+    await expect(
+      repository.findCharacterByNormalizedName("00000000-0000-0000-0000-000000000099", "纳西妲"),
+    ).resolves.toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+
+  it("queries entity text bindings with revision and binding type filters", async () => {
+    const bindingRow = {
+      id: "00000000-0000-0000-0000-000000000010",
+      game_id: characterInput.gameId,
+      revision_id: characterInput.revisionId,
+      entity_type: "character",
+      entity_stable_id: characterInput.stableId,
+      document_id: "00000000-0000-0000-0000-000000000011",
+      segment_id: "00000000-0000-0000-0000-000000000012",
+      binding_type: "character_story" as const,
+      confidence: "1.0",
+      binding_source: "direct_upstream" as const,
+      metadata: { field: "story" },
+      created_at: new Date("2026-08-30T00:00:00.000Z"),
+    };
+    const { db, calls } = fakeDb([[bindingRow]]);
+    const repository = new SqlKnowledgeRepository(db);
+
+    await expect(
+      repository.getEntityTextBindings(
+        characterInput.revisionId,
+        characterInput.stableId,
+        "character_story",
+      ),
+    ).resolves.toMatchObject([
+      {
+        revisionId: characterInput.revisionId,
+        entityStableId: characterInput.stableId,
+        documentId: bindingRow.document_id,
+        segmentId: bindingRow.segment_id,
+        confidence: 1,
+      },
+    ]);
+
+    const query = new PgDialect().sqlToQuery(calls[0] as SQL);
+    expect(query.sql).toContain("from knowledge.text_bindings");
+    expect(query.sql).toContain("revision_id = $1::uuid");
+    expect(query.sql).toContain("entity_stable_id = $2");
+    expect(query.sql).toContain("binding_type = $3");
+    expect(query.params).toEqual([
+      characterInput.revisionId,
+      characterInput.stableId,
+      "character_story",
+    ]);
+  });
+
+  it("queries binding entities within one revision and optional segment", async () => {
+    const { db, calls } = fakeDb([[]]);
+    const repository = new SqlKnowledgeRepository(db);
+    const documentId = "00000000-0000-0000-0000-000000000011";
+    const segmentId = "00000000-0000-0000-0000-000000000012";
+
+    await expect(
+      repository.getBindingEntities(characterInput.revisionId, documentId, segmentId),
+    ).resolves.toEqual([]);
+
+    const query = new PgDialect().sqlToQuery(calls[0] as SQL);
+    expect(query.sql).toContain("from knowledge.text_bindings");
+    expect(query.sql).toContain("revision_id = $1::uuid");
+    expect(query.sql).toContain("document_id = $2::uuid");
+    expect(query.sql).toContain("segment_id = $3::uuid");
+    expect(query.params).toEqual([characterInput.revisionId, documentId, segmentId]);
+  });
+});
+
+describe("PostgreSQL search port", () => {
+  function fakeSearchDb(resultSets: Array<unknown[]>): {
+    db: Database;
+    calls: unknown[];
+  } {
+    const calls: unknown[] = [];
+    return {
+      db: {
+        execute: async (query: unknown) => {
+          calls.push(query);
+          return resultSets.shift() ?? [];
+        },
+      } as unknown as Database,
+      calls,
+    };
+  }
+
+  it("uses revision-scoped PostgreSQL FTS and returns match metadata for structured hits", async () => {
+    const { db, calls } = fakeSearchDb([
+      [
+        {
+          kind: "character",
+          stableId: "genshin:character:hutao",
+          name: "胡桃",
+          aliases: [],
+          body: "往生堂堂主",
+          rank: 1,
+          matchType: "exact",
+        },
+      ],
+    ]);
+    const repository = new SqlSearchRepositoryPort(db);
+
+    await expect(
+      repository.listStructuredAtRevision("game-id", "revision-id", "胡桃"),
+    ).resolves.toMatchObject([
+      { stableId: "genshin:character:hutao", rank: 1, matchType: "exact" },
+    ]);
+    const shape = new PgDialect().sqlToQuery(calls[0] as SQL).sql;
+    expect(shape).toContain("search_vector");
+    expect(shape).toContain("@@");
+    expect(shape).toContain("plainto_tsquery");
+    expect(shape).toContain("websearch_to_tsquery");
+    expect(shape).toContain("matchType");
+    expect(shape).toContain("revision_id");
+  });
+
+  it("pushes dialogue filters into the revision-scoped SQL query", async () => {
+    const { db, calls } = fakeSearchDb([
+      [
+        {
+          document_id: "document-id",
+          node_key: "node-1",
+          subquest_key: "subquest-1",
+          quest_key: "quest-1",
+          speaker: "派蒙",
+          body: "我们出发吧",
+          document_title: "序章",
+          document_type: "archon_quest",
+          locale: "zh-CN",
+          rank: 0.7,
+          matchType: "fts",
+        },
+      ],
+    ]);
+    const repository = new SqlSearchRepositoryPort(db);
+
+    await expect(
+      repository.listDialogueHits("game-id", "revision-id", "出发", {
+        speaker: "派蒙",
+        quest: "quest-1",
+        nodeType: "dialogue",
+        locale: "zh-CN",
+      }),
+    ).resolves.toHaveLength(1);
+    const shape = new PgDialect().sqlToQuery(calls[0] as SQL).sql;
+    expect(shape).toContain("speaker_name");
+    expect(shape).toContain("quest_key");
+    expect(shape).toContain("node_type");
+    expect(shape).toContain("d.locale");
+    expect(shape).toContain("q.revision_id");
+    expect(shape).toContain("matchType");
+  });
+
+  it("keeps a segment-only FTS hit when its parent document is not a direct hit", async () => {
+    const { db } = fakeSearchDb([
+      [],
+      [
+        {
+          document_id: "document-id",
+          segment_body: "只在段落中出现的文本",
+          id: "document-id",
+          source_key: "book/segment-only",
+          title: "书籍",
+          type: "book",
+          locale: "zh-CN",
+          document_body: "",
+          rank: 0.4,
+          matchType: "fts",
+        },
+      ],
+    ]);
+    const repository = new SqlSearchRepositoryPort(db);
+
+    await expect(
+      repository.listDocumentHits("game-id", "revision-id", "段落"),
+    ).resolves.toMatchObject([
+      {
+        key: "document-id",
+        body: "只在段落中出现的文本",
+        matchType: "fts",
+      },
+    ]);
   });
 });

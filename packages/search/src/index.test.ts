@@ -42,6 +42,37 @@ describe("entity resolver", () => {
     ]);
     expect(ambiguous?.candidates?.length).toBe(2);
   });
+
+  it("does not resolve an alias materialized only in another revision", async () => {
+    const aliasesByRevision = new Map([
+      ["revision-a", []],
+      [
+        "revision-b",
+        [
+          {
+            id: "entity-1",
+            entityType: "character",
+            canonicalName: "钟离",
+            aliases: ["摩拉克斯"],
+            matchTier: "alias" as const,
+            matchedText: "摩拉克斯",
+          },
+        ],
+      ],
+    ]);
+    const service = new SearchService({
+      listStructuredAtRevision: async () => [],
+      resolveEntityCandidates: async ({ revisionId }) => aliasesByRevision.get(revisionId) ?? [],
+      listDialogueHits: async () => [],
+      listDocumentHits: async () => [],
+    });
+
+    await expect(service.resolveEntity("game", "revision-a", "摩拉克斯")).resolves.toBeNull();
+    await expect(service.resolveEntity("game", "revision-b", "摩拉克斯")).resolves.toMatchObject({
+      id: "entity-1",
+      matchedBy: "alias",
+    });
+  });
 });
 
 describe("rrf fusion", () => {
@@ -89,7 +120,7 @@ describe("search service over port", () => {
           body: "",
         },
       ],
-      listEntityCandidates: async () => [],
+      resolveEntityCandidates: async () => [],
       listDialogueHits: async () => [
         {
           key: "q1/n1",
@@ -132,5 +163,68 @@ describe("search service over port", () => {
     expect(result.dialogue[0]?.dialogueNodeKey).toBe("n1");
     const lore = await service.searchLore("game", "rev", "胡桃");
     expect(lore.length).toBeGreaterThan(0);
+  });
+
+  it("uses database match metadata and forwards dialogue filters", async () => {
+    let receivedFilters: unknown;
+    const service = new SearchService({
+      listStructuredAtRevision: async () => [
+        {
+          kind: "character" as const,
+          stableId: "char/hutao",
+          name: "胡桃",
+          aliases: [],
+          body: "",
+          rank: 0.4,
+          matchType: "exact" as const,
+        },
+      ],
+      resolveEntityCandidates: async () => [],
+      listDialogueHits: async (_gameId, _revisionId, _query, filters) => {
+        receivedFilters = filters;
+        return [
+          {
+            key: "q1/n1",
+            title: "传说任务",
+            body: "胡桃来了",
+            speaker: "胡桃",
+            questTitle: "胡桃传说",
+            questType: "story_quest",
+            documentId: "d1",
+            nodeKey: "n1",
+            subquestKey: null,
+            citation: {
+              documentId: "d1",
+              locale: "zh-CN",
+              questKey: "q1",
+              dialogueNodeKey: "n1",
+              revision: "r1",
+            },
+            rank: 0.4,
+            matchType: "fts" as const,
+          },
+        ];
+      },
+      listDocumentHits: async () => [],
+    });
+
+    await expect(service.searchText("game", "rev", "胡桃")).resolves.toMatchObject({
+      structured: [{ score: 10.4, matchedBy: "exact" }],
+      dialogue: [{ score: 6.4 }],
+    });
+    await expect(
+      service.searchDialogue("game", "rev", "胡桃", {
+        speaker: "胡桃",
+        quest: "q1",
+        nodeType: "dialogue",
+        locale: "zh-CN",
+      }),
+    ).resolves.toHaveLength(1);
+    expect(receivedFilters).toEqual({
+      speaker: "胡桃",
+      quest: "q1",
+      nodeType: "dialogue",
+      locale: "zh-CN",
+    });
   });
 });

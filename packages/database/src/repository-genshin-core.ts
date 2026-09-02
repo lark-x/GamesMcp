@@ -270,6 +270,96 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
     return row ? mapRow(kind, row) : null;
   }
 
+  /** Find a single structured record by exact normalized name within a revision. */
+  async findByNormalizedName(
+    kind: StructuredKind,
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<StructuredRecord | null> {
+    const config = configs[kind];
+    const normalized = normalize(normalizedName);
+    const [row] = rowsFromExecuteResult(
+      await this.db.execute(sql`
+      select * from ${sql.raw(config.table)}
+      where revision_id = ${revisionId}::uuid
+        and normalized_name = ${normalized}
+      limit 1
+    `),
+    );
+    return row ? mapRow(kind, row) : null;
+  }
+
+  async findCharacterByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinCharacter | null> {
+    return this.findByNormalizedName(
+      "character",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinCharacter | null>;
+  }
+  async findWeaponByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinWeapon | null> {
+    return this.findByNormalizedName(
+      "weapon",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinWeapon | null>;
+  }
+  async findMaterialByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinMaterial | null> {
+    return this.findByNormalizedName(
+      "material",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinMaterial | null>;
+  }
+  async findAchievementByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinAchievement | null> {
+    return this.findByNormalizedName(
+      "achievement",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinAchievement | null>;
+  }
+  async findEnemyByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinEnemy | null> {
+    return this.findByNormalizedName(
+      "enemy",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinEnemy | null>;
+  }
+  async findArtifactByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinArtifact | null> {
+    return this.findByNormalizedName(
+      "artifact",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinArtifact | null>;
+  }
+  async findArtifactSetByNormalizedName(
+    revisionId: string,
+    normalizedName: string,
+  ): Promise<GenshinArtifactSet | null> {
+    return this.findByNormalizedName(
+      "artifactSet",
+      revisionId,
+      normalizedName,
+    ) as Promise<GenshinArtifactSet | null>;
+  }
+
   private async list(
     kind: StructuredKind,
     options: GenshinStructuredListOptions,

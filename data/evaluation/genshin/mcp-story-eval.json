@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "upstreamCommit": "26df1dfbdf05a82bbb1d97506859f3e1c40718d8",
+  "corpusSource": "real-upstream",
+  "cases": 247,
+  "passed": 114,
+  "failed": 0,
+  "excluded": 133,
+  "averageToolCalls": 0.46153846153846156,
+  "realServer": true,
+  "allowPartial": false,
+  "failures": [],
+  "generatedAt": "2026-09-01T21:21:30.868Z"
+}

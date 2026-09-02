@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 1,
+  "description": "Raw Story/Text/Mechanism baseline from the pinned AnimeGameData snapshot.",
+  "generatedAt": "2026-09-01T13:38:19.674Z",
+  "upstreamSource": "DimbreathBot/AnimeGameData",
+  "upstreamCommit": "26df1dfbdf05a82bbb1d97506859f3e1c40718d8",
+  "upstreamDate": "2026-08-16T17:59:21-03:00",
+  "upstreamVersion": "CNRELWin7.0.0_R47482070_S47579390_D47579390",
+  "locale": "zh-CN",
+  "counts": {
+    "quests": 4372,
+    "subquests": 17814,
+    "dialogueNodes": 203908,
+    "dialogueEdges": 180916,
+    "books": 293,
+    "documents": 1852,
+    "segments": 0,
+    "characterStories": 958,
+    "voiceLines": 0,
+    "items": 10404,
+    "materials": 10279,
+    "achievements": 0,
+    "tutorials": 0,
+    "mechanisms": 0,
+    "unresolvedTitles": 126,
+    "unresolvedSpeakers": 35383,
+    "metadataOnlyQuests": 642
+  },
+  "sources": {
+    "quests": {
+      "files": ["ExcelBinOutput/MainQuestExcelConfigData.json"],
+      "field": "row count; MainQuest.id is the quest key",
+      "rows": 4372
+    },
+    "subquests": {
+      "files": ["ExcelBinOutput/QuestExcelConfigData.json"],
+      "field": "row count; Quest.subId is the subquest key",
+      "rows": 17814
+    },
+    "dialogueNodes": {
+      "files": ["ExcelBinOutput/DialogExcelConfigData.json"],
+      "field": "row count; Dialog.GFLDJMJKIKE is the dialogue node key",
+      "rows": 203908
+    },
+    "dialogueEdges": {
+      "files": ["ExcelBinOutput/DialogExcelConfigData.json"],
+      "field": "sum of nextDialogs array lengths; declared source references, including dangling targets",
+      "declared": 180916,
+      "danglingTargets": 635
+    },
+    "books": {
+      "files": ["ExcelBinOutput/BooksCodexExcelConfigData.json"],
+      "field": "row count; BooksCodex catalog rows",
+      "rows": 293
+    },
+    "documents": {
+      "files": ["ExcelBinOutput/DocumentExcelConfigData.json"],
+      "field": "row count; Document metadata rows",
+      "rows": 1852
+    },
+    "segments": {
+      "files": [],
+      "field": "0: no explicit segment table in this snapshot; Readable/CHS/*.txt are raw unsegmented bodies",
+      "rawReadableFiles": 1910
+    },
+    "characterStories": {
+      "files": ["ExcelBinOutput/FetterStoryExcelConfigData.json"],
+      "field": "row count; (avatarId, fetterId) story rows",
+      "rows": 958
+    },
+    "voiceLines": {
+      "files": ["ExcelBinOutput/AvatarVoiceExcelConfigData.json"],
+      "field": "0: source file absent in pinned snapshot"
+    },
+    "items": {
+      "files": ["ExcelBinOutput/MaterialExcelConfigData.json"],
+      "field": "row count; MaterialExcelConfigData is the available item catalog source",
+      "rows": 10404
+    },
+    "materials": {
+      "files": ["ExcelBinOutput/MaterialExcelConfigData.json"],
+      "field": "rows where itemType == ITEM_MATERIAL",
+      "rows": 10279
+    },
+    "achievements": {
+      "files": [
+        "ExcelBinOutput/AchievementExcelConfigData.json",
+        "ExcelBinOutput/AchievementGoalExcelConfigData.json"
+      ],
+      "field": "0: achievement source files absent in pinned snapshot"
+    },
+    "tutorials": {
+      "files": [],
+      "field": "0: no canonical tutorial/help source table identified in pinned snapshot"
+    },
+    "mechanisms": {
+      "files": [],
+      "field": "0: no canonical mechanism/help source table identified in pinned snapshot"
+    },
+    "unresolvedTitles": {
+      "files": [
+        "ExcelBinOutput/MainQuestExcelConfigData.json",
+        "TextMap/TextMapCHS.json",
+        "TextMap/TextMap_MediumCHS.json"
+      ],
+      "field": "MainQuest.titleTextMapHash absent or blank in merged zh-CN TextMap",
+      "rows": 126
+    },
+    "unresolvedSpeakers": {
+      "files": [
+        "ExcelBinOutput/DialogExcelConfigData.json",
+        "ExcelBinOutput/NpcExcelConfigData.json",
+        "TextMap/TextMapCHS.json",
+        "TextMap/TextMap_MediumCHS.json"
+      ],
+      "field": "Dialog.talkRoleNameTextMapHash unresolved, with exact NPC name fallback for TALK_ROLE_NPC",
+      "rows": 35383
+    },
+    "metadataOnlyQuests": {
+      "files": [
+        "ExcelBinOutput/MainQuestExcelConfigData.json",
+        "ExcelBinOutput/QuestExcelConfigData.json",
+        "ExcelBinOutput/TalkExcelConfigData_0.json",
+        "ExcelBinOutput/TalkExcelConfigData_1.json",
+        "BinOutput/CodexQuest/0638dc10.json",
+        "BinOutput/CodexQuest/1000.json",
+        "BinOutput/CodexQuest/10011.json",
+        "BinOutput/CodexQuest/10012.json",
+        "BinOutput/CodexQuest/10013.json",
+        "BinOutput/CodexQuest/1002.json",
+        "BinOutput/CodexQuest/1003.json",
+        "BinOutput/CodexQuest/1008.json",
+        "BinOutput/CodexQuest/1009.json",
+        "BinOutput/CodexQuest/1010.json",
+        "BinOutput/CodexQuest/10100.json",
+        "BinOutput/CodexQuest/10101.json",
+        "BinOutput/CodexQuest/1011.json",
+        "BinOutput/CodexQuest/10110.json",
+        "BinOutput/CodexQuest/10111.json",
+        "BinOutput/CodexQuest/10112.json",
+        "BinOutput/CodexQuest/10113.json",
+        "BinOutput/CodexQuest/1012.json",
+        "BinOutput/CodexQuest/10120.json",
+        "BinOutput/CodexQuest/10121.json",
+        "BinOutput/CodexQuest/10122.json",
+        "BinOutput/CodexQuest/1013.json",
+        "BinOutput/CodexQuest/1014.json",
+        "BinOutput/CodexQuest/1015.json",
+        "BinOutput/CodexQuest/1016.json",
+        "BinOutput/CodexQuest/1018.json",
+        "BinOutput/CodexQuest/1019.json",
+        "BinOutput/CodexQuest/1020.json",
+        "BinOutput/CodexQuest/10200.json",
+        "BinOutput/CodexQuest/10201.json",
+        "BinOutput/CodexQuest/10202.json",
+        "BinOutput/CodexQuest/1021.json",
+        "BinOutput/CodexQuest/1022.json",
+        "BinOutput/CodexQuest/1023.json",
+        "BinOutput/CodexQuest/1024.json",
+        "BinOutput/CodexQuest/1025.json",
+        "BinOutput/CodexQuest/1028.json",
+        "BinOutput/CodexQuest/1029.json",
+        "BinOutput/CodexQuest/1030.json",
+        "BinOutput/CodexQuest/1031.json",
+        "BinOutput/CodexQuest/10500.json",
+        "BinOutput/CodexQuest/10501.json",
+        "BinOutput/CodexQuest/10502.json",
+        "BinOutput/CodexQuest/11000.json",
+        "BinOutput/CodexQuest/11001.json",
+        "BinOutput/CodexQuest/11002.json",
+        "BinOutput/CodexQuest/11003.json",
+        "BinOutput/CodexQuest/11004.json",
+        "BinOutput/CodexQuest/11005.json",
+        "BinOutput/CodexQuest/11009.json",
+        "BinOutput/CodexQuest/11010.json",
+        "BinOutput/CodexQuest/11011.json",
+        "BinOutput/CodexQuest/11012.json",
+        "BinOutput/CodexQuest/11013.json",
+        "BinOutput/CodexQuest/11014.json",
+        "BinOutput/CodexQuest/11015.json",
+        "BinOutput/CodexQuest/11018.json",
+        "BinOutput/CodexQuest/11019.json",
+        "BinOutput/CodexQuest/11020.json",
+        "BinOutput/CodexQuest/11021.json",
+        "BinOutput/CodexQuest/11022.json",
+        "BinOutput/CodexQuest/11023.json",
+        "BinOutput/CodexQuest/11024.json",
+        "BinOutput/CodexQuest/11026.json",
+        "BinOutput/CodexQuest/11027.json",
+        "BinOutput/CodexQuest/11028.json",
+        "BinOutput/CodexQuest/11029.json",
+        "BinOutput/CodexQuest/11030.json",
+        "BinOutput/CodexQuest/11031.json",
+        "BinOutput/CodexQuest/11032.json",
+        "BinOutput/CodexQuest/11033.json",
+        "BinOutput/CodexQuest/11034.json",
+        "BinOutput/CodexQuest/11035.json",
+        "BinOutput/CodexQuest/11040.json",
+        "BinOutput/CodexQuest/11041.json",
+        "BinOutput/CodexQuest/11042.json",
+        "BinOutput/CodexQuest/11043.json",
+        "BinOutput/CodexQuest/11044.json",
+        "BinOutput/CodexQuest/11045.json",
+        "BinOutput/CodexQuest/11100.json",
+        "BinOutput/CodexQuest/11101.json",
+        "BinOutput/CodexQuest/11102.json",
+        "BinOutput/CodexQuest/11103.json",
+        "BinOutput/CodexQuest/11110.json",
+        "BinOutput/CodexQuest/11111.json",
+        "BinOutput/CodexQuest/11112.json",
+        "BinOutput/CodexQuest/11113.json",
+        "BinOutput/CodexQuest/11120.json",
+        "BinOutput/CodexQuest/11121.json",
+        "BinOutput/CodexQuest/11122.json",
+        "BinOutput/CodexQuest/11123.json",
+        "BinOutput/CodexQuest/12000.json",
+        "BinOutput/CodexQuest/12001.json",
+        "BinOutput/CodexQuest/12002.json",
+        "BinOutput/CodexQuest/12003.json",
+        "BinOutput/CodexQuest/12004.json",
+        "BinOutput/CodexQuest/12005.json",
+        "BinOutput/CodexQuest/12006.json",
+        "BinOutput/CodexQuest/12007.json",
+        "BinOutput/CodexQuest/12008.json",
+        "BinOutput/CodexQuest/12009.json",
+        "BinOutput/CodexQuest/12010.json",
+        "BinOutput/CodexQuest/12011.json",
+        "BinOutput/CodexQuest/12012.json",
+        "BinOutput/CodexQuest/12013.json",
+        "BinOutput/CodexQuest/12015.json",
+        "BinOutput/CodexQuest/12016.json"
+      ],
+      "field": "MainQuest rows with no Quest.mainId, CodexQuest main id, or Talk.questId relation",
+      "rows": 642
+    }
+  },
+  "notes": [
+    "Counts are raw upstream inventory counts, not converted/published coverage.",
+    "Text resolution uses merged TextMapCHS.json and TextMap_MediumCHS.json for the zh-CN baseline locale.",
+    "TalkExcelConfigData_0 and _1 are both read; dialogue node/edge counts come from the single DialogExcelConfigData table.",
+    "Weapon, achievement, voice-line, tutorial/help, mechanism/help, and explicit segment tables are absent or not represented in this snapshot; those required domains remain 0."
+  ]
+}

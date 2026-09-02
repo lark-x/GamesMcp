@@ -97,6 +97,15 @@ export type ArchiveCategory = {
   description: string;
   marker: string;
   types: Array<"entity" | "document" | "segment">;
+  /** Optional dedicated reader route for domains that are not generic search results. */
+  route?:
+    | "quests"
+    | "codex/voices"
+    | "codex/achievements"
+    | "codex/books"
+    | "codex/character-stories"
+    | "codex/items"
+    | "codex/mechanics";
   entityType?: string;
   entityTypes?: string[];
   documentType?: string;
@@ -141,14 +150,49 @@ export const ARCHIVE_CATEGORIES: ArchiveCategory[] = [
     description: "魔神、传说、世界与活动任务",
     marker: "任",
     types: ["document", "segment"],
-    documentTypes: ["archon_quest", "story_quest", "world_quest", "event_quest"],
+    route: "quests",
+    documentTypes: [
+      "archon_quest",
+      "story_quest",
+      "world_quest",
+      "event_quest",
+      "commission",
+      "hangout",
+      "other",
+    ],
+  },
+  {
+    id: "dialogue",
+    label: "对话节点",
+    description: "任务对话、旁白、选项与分支关系",
+    marker: "话",
+    types: ["document", "segment"],
+    route: "quests",
+    documentTypes: [
+      "archon_quest",
+      "story_quest",
+      "world_quest",
+      "event_quest",
+      "commission",
+      "hangout",
+      "other",
+    ],
+  },
+  {
+    id: "voices",
+    label: "角色语音",
+    description: "角色语音文本与对应的游戏版本",
+    marker: "声",
+    types: ["document"],
+    route: "codex/voices",
   },
   {
     id: "items",
     label: "物品图鉴",
-    description: "物品实体与描述",
+    description: "物品文本、描述与来源",
     marker: "物",
     types: ["entity", "document", "segment"],
+    route: "codex/items",
     entityTypes: ["item"],
     documentTypes: ["item_description"],
   },
@@ -158,7 +202,33 @@ export const ARCHIVE_CATEGORIES: ArchiveCategory[] = [
     description: "书籍、世界设定与背景资料",
     marker: "书",
     types: ["document", "segment"],
+    route: "codex/books",
     documentTypes: ["book", "lore"],
+  },
+  {
+    id: "character-stories",
+    label: "角色故事",
+    description: "角色档案、故事与解锁文本",
+    marker: "史",
+    types: ["document", "segment"],
+    route: "codex/character-stories",
+    documentType: "character_story",
+  },
+  {
+    id: "achievements",
+    label: "成就",
+    description: "成就目标、分类与奖励文本",
+    marker: "成",
+    types: ["document"],
+    route: "codex/achievements",
+  },
+  {
+    id: "mechanics",
+    label: "教程与机制",
+    description: "游戏内教程、帮助与机制说明",
+    marker: "机",
+    types: ["document", "segment"],
+    route: "codex/mechanics",
   },
 ];
 
@@ -188,6 +258,9 @@ export function documentTypeLabel(type: string): string {
       character_story: "角色故事",
       item_description: "物品描述",
       event_quest: "活动任务",
+      commission: "委托",
+      hangout: "邀约任务",
+      other: "其他任务",
     }[type] ?? type
   );
 }
@@ -198,10 +271,20 @@ export const questTypeOptions = [
   ["story_quest", "传说任务"],
   ["world_quest", "世界任务"],
   ["event_quest", "活动任务"],
+  ["commission", "委托"],
+  ["hangout", "邀约任务"],
+  ["other", "其他任务"],
 ] as const;
 
 export function questTypeLabel(
-  type: "archon_quest" | "story_quest" | "world_quest" | "event_quest",
+  type:
+    | "archon_quest"
+    | "story_quest"
+    | "world_quest"
+    | "event_quest"
+    | "commission"
+    | "hangout"
+    | "other",
 ): string {
   return (
     {
@@ -209,6 +292,9 @@ export function questTypeLabel(
       story_quest: "传说任务",
       world_quest: "世界任务",
       event_quest: "活动任务",
+      commission: "委托",
+      hangout: "邀约任务",
+      other: "其他任务",
     }[type] ?? type
   );
 }

@@ -29,6 +29,9 @@ export type ResolverCandidate = {
   canonicalName: string;
   normalized?: string | null;
   aliases?: string[];
+  matchTier?: EntityMatchTier;
+  matchedText?: string;
+  matchConfidence?: number;
 };
 
 export function matchedByForTier(tier: SearchTierName | "none"): ResolvedEntity["matchedBy"] {
@@ -77,6 +80,15 @@ export function resolveEntityFromCandidates<T extends ResolverCandidate>(
   };
   const scored: Scored[] = [];
   for (const candidate of candidates) {
+    if (candidate.matchTier) {
+      scored.push({
+        candidate,
+        matchedBy: candidate.matchTier,
+        matchedText: candidate.matchedText ?? candidate.canonicalName,
+        confidence: candidate.matchConfidence ?? confidenceForMatch(candidate.matchTier),
+      });
+      continue;
+    }
     const name = normalizeText(candidate.canonicalName);
     if (name === q) {
       scored.push({
@@ -154,4 +166,19 @@ export function resolveEntityFromCandidates<T extends ResolverCandidate>(
     }));
   }
   return result;
+}
+
+function confidenceForMatch(tier: EntityMatchTier): number {
+  switch (tier) {
+    case "canonical_name":
+      return 1;
+    case "alias":
+      return 0.95;
+    case "prefix":
+      return 0.6;
+    case "normalized":
+      return 0.7;
+    case "trigram":
+      return 0.2;
+  }
 }

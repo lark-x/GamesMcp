@@ -11,40 +11,16 @@ import type {
 import type { DocumentDetail, EntityDetail } from "@gip/domain";
 import { apiFetch } from "../api.js";
 import type { QuestDetail, QuestSearchHit } from "../api.js";
+import { mapQuestDetail, mergeQuestPages } from "../codex/mappers.js";
 import {
   ARCHIVE_CATEGORIES,
+  completenessLabel,
   documentTypeLabel,
   entityTypeLabel,
+  questTypeLabel,
+  questTypeOptions,
   type ArchiveCategory,
 } from "../shared.js";
-const questTypeOptions = [
-  ["", "全部任务"],
-  ["archon_quest", "魔神任务"],
-  ["story_quest", "传说任务"],
-  ["world_quest", "世界任务"],
-  ["event_quest", "活动任务"],
-] as const;
-
-function questTypeLabel(type: QuestSearchHit["type"]): string {
-  return (
-    {
-      archon_quest: "魔神任务",
-      story_quest: "传说任务",
-      world_quest: "世界任务",
-      event_quest: "活动任务",
-    }[type] ?? type
-  );
-}
-
-function completenessLabel(value: QuestSearchHit["completeness"]): string {
-  return (
-    {
-      complete: "完整",
-      partial: "部分",
-      metadata_only: "仅元数据",
-    }[value] ?? value
-  );
-}
 
 function dialogueTypeLabel(type: string): string {
   return (
@@ -124,20 +100,11 @@ export function QuestReader({
       const result = await apiFetch<{ quest: QuestDetail }>(
         `/api/games/${gameId}/quests/${encodeURIComponent(hit.questKey)}?${params.toString()}`,
       );
+      const page = mapQuestDetail(result.quest, hit);
       setSelectedQuest((current) =>
-        nextCursor && current
-          ? {
-              ...result.quest,
-              dialogueNodes: [...current.dialogueNodes, ...result.quest.dialogueNodes],
-              dialogueEdges: [...current.dialogueEdges, ...result.quest.dialogueEdges],
-              citations: [...current.citations, ...result.quest.citations],
-              loadedDialogueNodes:
-                (current.loadedDialogueNodes ?? current.dialogueNodes.length) +
-                (result.quest.loadedDialogueNodes ?? result.quest.dialogueNodes.length),
-            }
-          : result.quest,
+        nextCursor && current ? mergeQuestPages(current, page) : page,
       );
-      setCursor(result.quest.nextCursor);
+      setCursor(page.nextCursor);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "任务详情加载失败");
     } finally {
@@ -257,7 +224,11 @@ export function QuestReader({
                 <h2>{selectedQuest.title}</h2>
                 <p>
                   {completenessLabel(selectedQuest.completeness)} ·{" "}
-                  {selectedQuest.locale === "en" ? "English" : "简体中文"}
+                  {selectedQuest.locale === "en" ? "English" : "简体中文"} · 游戏版本{" "}
+                  {selectedQuest.gameVersion ?? "未知"} · Revision {selectedQuest.revision || "—"}
+                </p>
+                <p className="quest-source-summary">
+                  来源文档：{selectedQuest.documentId || "未知"}
                 </p>
               </div>
               {selectedQuest.warnings.length > 0 && (
@@ -306,7 +277,7 @@ export function QuestReader({
               <h3>对话</h3>
               <div className="quest-dialogue-list">
                 {selectedQuest.dialogueNodes
-                  .filter((node) => node.body.trim() && node.type !== "system_text")
+                  .filter((node) => node.body.trim())
                   .map((node) => (
                     <article
                       id={node.nodeKey}
@@ -328,15 +299,26 @@ export function QuestReader({
                   <h3>分支与选择</h3>
                   <ul>
                     {selectedQuest.dialogueEdges.map((edge, index) => {
+                      const source = selectedQuest.dialogueNodes.find(
+                        (node) => node.nodeKey === edge.fromNodeKey,
+                      );
                       const target = selectedQuest.dialogueNodes.find(
                         (node) => node.nodeKey === edge.toNodeKey,
                       );
                       return (
                         <li key={`${edge.fromNodeKey}:${edge.toNodeKey}:${index}`}>
-                          <span>{edge.optionText ?? dialogueTypeLabel(edge.type)}</span>
+                          <span>
+                            {edge.optionText ?? dialogueTypeLabel(edge.type)}
+                            <small>
+                              {source?.speakerName ??
+                                (source ? dialogueTypeLabel(source.type) : "起点")}
+                              {" → "}
+                              {target?.speakerName ??
+                                (target ? dialogueTypeLabel(target.type) : "后续节点")}
+                            </small>
+                          </span>
                           <small>
-                            {target?.speakerName ? `${target.speakerName}：` : ""}
-                            {target?.body ?? "后续节点未加载"}
+                            {target?.nodeKey ?? edge.toNodeKey} · {target?.body ?? "后续节点未加载"}
                           </small>
                         </li>
                       );
@@ -344,6 +326,49 @@ export function QuestReader({
                   </ul>
                 </section>
               )}
+              <section className="quest-citation-list" aria-label="来源引用">
+                <div className="section-title-row compact">
+                  <h3>来源引用</h3>
+                  <span>{selectedQuest.citations.length}</span>
+                </div>
+                {selectedQuest.citations.length ? (
+                  <ol>
+                    {selectedQuest.citations.map((citation, index) => (
+                      <li
+                        key={`${citation.documentId}:${citation.dialogueNodeKey ?? index}:${citation.revision}`}
+                      >
+                        <button
+                          type="button"
+                          className="quest-citation-card"
+                          onClick={() => {
+                            if (!citation.dialogueNodeKey) return;
+                            globalThis.document
+                              .getElementById(citation.dialogueNodeKey)
+                              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }}
+                        >
+                          <strong>
+                            引用 {index + 1} · {citation.sourceName ?? "游戏内文本来源"}
+                          </strong>
+                          <small>
+                            {citation.sourceKey ?? citation.documentId} · {citation.locale} ·{" "}
+                            {citation.revision}
+                          </small>
+                          <small>
+                            {citation.dialogueNodeKey
+                              ? `节点 ${citation.dialogueNodeKey}`
+                              : "任务级来源"}
+                            {citation.subquestKey ? ` · 子任务 ${citation.subquestKey}` : ""}
+                            {citation.segmentId ? ` · 片段 ${citation.segmentId}` : ""}
+                          </small>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="muted">当前页没有可定位的来源引用。</p>
+                )}
+              </section>
               <p className="quest-page-status" role="status">
                 已加载 {selectedQuest.loadedDialogueNodes ?? selectedQuest.dialogueNodes.length} /{" "}
                 {selectedQuest.totalDialogueNodes ?? selectedQuest.dialogueNodes.length} 条对话
@@ -391,8 +416,41 @@ export function ArchiveHome({
   onCategory: (category: ArchiveCategory) => void;
 }) {
   const categories = home?.categories ?? [];
+  const latestRevision = home?.latestRevision ?? home?.revision;
   return (
     <div className="archive-home">
+      <section className="archive-overview" aria-label="资料概览">
+        <div className="archive-overview-heading">
+          <span className="eyebrow">DATA OVERVIEW</span>
+          <h3>资料概览</h3>
+          <p>按内容域快速进入游戏内文本与结构化资料。</p>
+        </div>
+        <div className="archive-overview-revisions">
+          <div>
+            <span>当前读取</span>
+            <strong>{home?.revision || "未发布"}</strong>
+          </div>
+          <div>
+            <span>最新发布</span>
+            <strong>{latestRevision || "未发布"}</strong>
+          </div>
+        </div>
+        <div className="archive-overview-counts">
+          {categories.map((category) => (
+            <button
+              type="button"
+              key={category.id}
+              onClick={() => {
+                const definition = ARCHIVE_CATEGORIES.find((item) => item.id === category.id);
+                if (definition) onCategory(definition);
+              }}
+            >
+              <span>{category.label}</span>
+              <strong>{category.count}</strong>
+            </button>
+          ))}
+        </div>
+      </section>
       <section className="archive-home-section">
         <div className="section-title-row">
           <div>
@@ -435,40 +493,49 @@ export function ArchiveHome({
           <small>首页只展示有意义的游戏名称</small>
         </div>
         <div className="archive-category-preview-grid">
-          {categories.map((category) => (
-            <section className="archive-category-preview" key={category.id}>
-              <div className="section-title-row compact">
-                <h4>{category.label}</h4>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const definition = ARCHIVE_CATEGORIES.find((item) => item.id === category.id);
-                    if (definition) onCategory(definition);
-                  }}
-                >
-                  查看全部
-                </button>
-              </div>
-              {category.entries.length ? (
-                <div className="archive-name-list">
-                  {category.entries.map((entry) => (
-                    <button
-                      type="button"
-                      key={`${entry.kind}:${entry.id}`}
-                      onClick={() =>
-                        entry.kind === "entity" ? onEntity(entry.id) : onDocument(entry.id)
-                      }
-                    >
-                      <span>{entry.name}</span>
-                      <b aria-hidden="true">›</b>
-                    </button>
-                  ))}
+          {categories.map((category) => {
+            const definition = ARCHIVE_CATEGORIES.find((item) => item.id === category.id);
+            return (
+              <section className="archive-category-preview" key={category.id}>
+                <div className="section-title-row compact">
+                  <h4>{category.label}</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const definition = ARCHIVE_CATEGORIES.find((item) => item.id === category.id);
+                      if (definition) onCategory(definition);
+                    }}
+                  >
+                    查看全部
+                  </button>
                 </div>
-              ) : (
-                <p className="muted">暂无已发布资料</p>
-              )}
-            </section>
-          ))}
+                {category.entries.length ? (
+                  <div className="archive-name-list">
+                    {category.entries.map((entry) => (
+                      <button
+                        type="button"
+                        key={`${entry.kind}:${entry.id}`}
+                        onClick={() => {
+                          if (definition?.route) {
+                            onCategory(definition);
+                          } else if (entry.kind === "entity") {
+                            onEntity(entry.id);
+                          } else {
+                            onDocument(entry.documentId ?? entry.id);
+                          }
+                        }}
+                      >
+                        <span>{entry.name}</span>
+                        <b aria-hidden="true">›</b>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">暂无已发布资料</p>
+                )}
+              </section>
+            );
+          })}
         </div>
       </section>
     </div>

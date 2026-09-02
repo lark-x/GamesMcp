@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "description": "Story/Text/Mechanism coverage from the pinned AnimeGameData snapshot; coverage is converted/discovered for the stated source unit.",
+  "upstreamCommit": "26df1dfbdf05a82bbb1d97506859f3e1c40718d8",
+  "upstreamVersion": "CNRELWin7.0.0_R47482070_S47579390_D47579390",
+  "locale": "zh-CN",
+  "domains": {
+    "quest": {
+      "status": "Partial",
+      "extractor": "scripts/anime-game-data-quest-converter.ts",
+      "sourceUnit": "MainQuest rows; converted is public zh-CN main-quest documents",
+      "discovered": 4372,
+      "converted": 1140,
+      "failed": 0,
+      "coverage": 0.2607502287282708,
+      "outputRecords": 2280,
+      "excluded": 3232,
+      "accountedCoverage": 1,
+      "needs_run": false,
+      "evidence": "convertQuestSnapshot on pinned upstream: 4,372 main rows, 1,140 public zh-CN documents, 0 failed documents; story-baseline counts.quests=4,372"
+    },
+    "dialogue": {
+      "status": "Integrated",
+      "extractor": "packages/ingestion/src/anime-game-data/dialogue/extractor.ts",
+      "sourceUnit": "Dialog rows / dialogue nodes",
+      "discovered": 203908,
+      "converted": 203908,
+      "failed": 0,
+      "coverage": 1,
+      "needs_run": false,
+      "evidence": "dialogueExtractor on pinned upstream; story-baseline counts.dialogueNodes=203,908"
+    },
+    "book": {
+      "status": "Partial",
+      "extractor": "scripts/anime-game-data-converter.ts",
+      "sourceUnit": "BooksCodex rows",
+      "discovered": 293,
+      "converted": 288,
+      "failed": 0,
+      "coverage": 0.9829351535836177,
+      "excluded": 5,
+      "accountedCoverage": 1,
+      "needs_run": false,
+      "evidence": "convertAnimeGameData on pinned upstream; book-source-inventory.md records 293 catalog rows and 288 unique mapped volumes"
+    },
+    "character_story": {
+      "status": "Integrated",
+      "extractor": "packages/ingestion/src/anime-game-data/character-story/extractor.ts",
+      "sourceUnit": "FetterStory rows",
+      "discovered": 958,
+      "converted": 958,
+      "failed": 0,
+      "coverage": 1,
+      "needs_run": false,
+      "evidence": "CharacterStoryExtractor on pinned upstream; story-baseline counts.characterStories=958"
+    },
+    "voice": {
+      "status": "Unsupported",
+      "extractor": "packages/ingestion/src/anime-game-data/voice/extractor.ts",
+      "sourceUnit": "AvatarVoice rows",
+      "discovered": 0,
+      "converted": 0,
+      "failed": 0,
+      "coverage": 1,
+      "needs_run": false,
+      "evidence": "VoiceExtractor ran on pinned upstream and reported voice_source_missing; story-baseline counts.voiceLines=0"
+    },
+    "item": {
+      "status": "Partial",
+      "extractor": "packages/ingestion/src/anime-game-data/item-text/extractor.ts",
+      "sourceUnit": "MaterialExcelConfigData rows",
+      "discovered": 10404,
+      "converted": 10404,
+      "failed": 0,
+      "coverage": 1,
+      "needs_run": false,
+      "evidence": "ItemTextExtractor on pinned upstream; story-baseline counts.items=10,404 and counts.materials=10,279"
+    },
+    "tutorial_mechanism": {
+      "status": "Unsupported",
+      "extractor": "packages/ingestion/src/anime-game-data/mechanism/extractor.ts",
+      "sourceUnit": "Readable canonical tutorial/guide/help rows",
+      "discovered": 0,
+      "converted": 0,
+      "failed": 0,
+      "coverage": 1,
+      "needs_run": false,
+      "evidence": "MechanismExtractor ran on pinned upstream; all 12 text candidates were absent from sparse checkout and unreadable as local git blobs; story-baseline counts.tutorials=0 and counts.mechanisms=0"
+    },
+    "achievement": {
+      "status": "Not Integrated",
+      "extractor": null,
+      "sourceUnit": "Achievement rows",
+      "discovered": 0,
+      "converted": null,
+      "failed": null,
+      "coverage": null,
+      "needs_run": true,
+      "evidence": "No achievement extractor run against pinned upstream; story-baseline counts.achievements=0 because the two achievement source files are absent"
+    }
+  },
+  "statusDefinitions": {
+    "Integrated": "An extractor/converter ran on the pinned source unit and produced records for every discovered row.",
+    "Partial": "An extractor/converter ran, but output is a subset, legacy-only path, or narrower source class; exclusions or scope gaps are retained.",
+    "Not Integrated": "The domain is in scope but no extractor output is available for this pinned run; unknown metrics are null and needs_run is true.",
+    "Unsupported": "The domain extractor can report absence, but the pinned snapshot does not provide a readable source for the domain.",
+    "Not Relevant": "Reserved for domains outside the Story/Text/Mechanism scope; none of the eight listed domains is Not Relevant."
+  },
+  "references": [
+    "docs/game-intelligence/story-scope.md",
+    "docs/game-intelligence/current-upstream.md",
+    "docs/game-intelligence/book-source-inventory.md",
+    "data/evaluation/genshin/story-baseline.json",
+    "docs/game-intelligence/tutorial-source-inventory.md"
+  ]
+}
