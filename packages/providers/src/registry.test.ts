@@ -40,10 +40,13 @@ describe("GameProviderRegistry", () => {
   it("routes providers by normalized game slug", () => {
     const registry = new GameProviderRegistry();
     registry.register(fakeProvider("genshin"));
+    registry.register(fakeProvider("starrail"));
     registry.register(fakeProvider("test-game"));
 
     expect(registry.get("genshin").id).toBe("fake-genshin");
     expect(registry.get("genshin-impact").id).toBe("fake-genshin");
+    expect(registry.get("honkai-star-rail").id).toBe("fake-starrail");
+    expect(registry.get("hsr").id).toBe("fake-starrail");
     expect(registry.get("test-game").id).toBe("fake-test-game");
   });
 

@@ -1,0 +1,357 @@
+{
+  "schemaVersion": 1,
+  "provider": "starrail-local",
+  "game": "starrail",
+  "cases": [
+    {
+      "id": "starrail-001",
+      "mode": "hybrid",
+      "query": "星神",
+      "mustContainAny": ["星神"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-002",
+      "mode": "hybrid",
+      "query": "开拓",
+      "mustContainAny": ["开拓"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-003",
+      "mode": "hybrid",
+      "query": "星核",
+      "mustContainAny": ["星核"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-004",
+      "mode": "hybrid",
+      "query": "雅利洛",
+      "mustContainAny": ["雅利洛"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-005",
+      "mode": "hybrid",
+      "query": "贝洛伯格",
+      "mustContainAny": ["贝洛伯格"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-006",
+      "mode": "hybrid",
+      "query": "仙舟",
+      "mustContainAny": ["仙舟"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-007",
+      "mode": "hybrid",
+      "query": "罗浮",
+      "mustContainAny": ["罗浮"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-008",
+      "mode": "hybrid",
+      "query": "匹诺康尼",
+      "mustContainAny": ["匹诺康尼"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-009",
+      "mode": "hybrid",
+      "query": "空间站",
+      "mustContainAny": ["空间站"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-010",
+      "mode": "hybrid",
+      "query": "命途",
+      "mustContainAny": ["命途"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-011",
+      "mode": "hybrid",
+      "query": "星穹列车",
+      "mustContainAny": ["星穹列车"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-012",
+      "mode": "hybrid",
+      "query": "黑塔",
+      "mustContainAny": ["黑塔"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-013",
+      "mode": "hybrid",
+      "query": "丹恒",
+      "mustContainAny": ["丹恒"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-014",
+      "mode": "hybrid",
+      "query": "三月七",
+      "mustContainAny": ["三月七"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-015",
+      "mode": "hybrid",
+      "query": "姬子",
+      "mustContainAny": ["姬子"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-016",
+      "mode": "hybrid",
+      "query": "瓦尔特",
+      "mustContainAny": ["瓦尔特"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-017",
+      "mode": "hybrid",
+      "query": "卡芙卡",
+      "mustContainAny": ["卡芙卡"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-018",
+      "mode": "hybrid",
+      "query": "银狼",
+      "mustContainAny": ["银狼"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-019",
+      "mode": "hybrid",
+      "query": "刃",
+      "mustContainAny": ["刃"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-020",
+      "mode": "hybrid",
+      "query": "景元",
+      "mustContainAny": ["景元"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-021",
+      "mode": "hybrid",
+      "query": "符玄",
+      "mustContainAny": ["符玄"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-022",
+      "mode": "hybrid",
+      "query": "彦卿",
+      "mustContainAny": ["彦卿"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-023",
+      "mode": "hybrid",
+      "query": "希儿",
+      "mustContainAny": ["希儿"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-024",
+      "mode": "hybrid",
+      "query": "布洛妮娅",
+      "mustContainAny": ["布洛妮娅"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-025",
+      "mode": "hybrid",
+      "query": "可可利亚",
+      "mustContainAny": ["可可利亚"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-026",
+      "mode": "hybrid",
+      "query": "桑博",
+      "mustContainAny": ["桑博"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-027",
+      "mode": "hybrid",
+      "query": "娜塔莎",
+      "mustContainAny": ["娜塔莎"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-028",
+      "mode": "hybrid",
+      "query": "希露瓦",
+      "mustContainAny": ["希露瓦"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-029",
+      "mode": "hybrid",
+      "query": "克拉拉",
+      "mustContainAny": ["克拉拉"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-030",
+      "mode": "hybrid",
+      "query": "史瓦罗",
+      "mustContainAny": ["史瓦罗"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-031",
+      "mode": "hybrid",
+      "query": "停云",
+      "mustContainAny": ["停云"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-032",
+      "mode": "hybrid",
+      "query": "驭空",
+      "mustContainAny": ["驭空"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-033",
+      "mode": "hybrid",
+      "query": "镜流",
+      "mustContainAny": ["镜流"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-034",
+      "mode": "hybrid",
+      "query": "罗刹",
+      "mustContainAny": ["罗刹"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-035",
+      "mode": "hybrid",
+      "query": "托帕",
+      "mustContainAny": ["托帕"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-036",
+      "mode": "hybrid",
+      "query": "阮梅",
+      "mustContainAny": ["阮梅"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-037",
+      "mode": "hybrid",
+      "query": "真理医生",
+      "mustContainAny": ["真理医生"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-038",
+      "mode": "hybrid",
+      "query": "花火",
+      "mustContainAny": ["花火"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-039",
+      "mode": "hybrid",
+      "query": "黄泉",
+      "mustContainAny": ["黄泉"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-040",
+      "mode": "hybrid",
+      "query": "知更鸟",
+      "mustContainAny": ["知更鸟"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-041",
+      "mode": "hybrid",
+      "query": "星期日",
+      "mustContainAny": ["星期日"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-042",
+      "mode": "hybrid",
+      "query": "翡翠",
+      "mustContainAny": ["翡翠"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-043",
+      "mode": "keyword",
+      "query": "星核",
+      "mustContainAny": ["星核"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-044",
+      "mode": "keyword",
+      "query": "命途",
+      "mustContainAny": ["命途"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-045",
+      "mode": "keyword",
+      "query": "星穹列车",
+      "mustContainAny": ["星穹列车"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-046",
+      "mode": "keyword",
+      "query": "匹诺康尼",
+      "mustContainAny": ["匹诺康尼"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-047",
+      "mode": "keyword",
+      "query": "仙舟罗浮",
+      "mustContainAny": ["仙舟", "罗浮"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-048",
+      "mode": "keyword",
+      "query": "雅利洛",
+      "mustContainAny": ["雅利洛"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-049",
+      "mode": "keyword",
+      "query": "贝洛伯格",
+      "mustContainAny": ["贝洛伯格"],
+      "minHits": 1
+    },
+    {
+      "id": "starrail-050",
+      "mode": "keyword",
+      "query": "开拓者",
+      "mustContainAny": ["开拓者"],
+      "minHits": 1
+    }
+  ]
+}

@@ -19,12 +19,31 @@ export interface IstarothMcpClientConfig {
   url: string;
   connectTimeoutMs: number;
   requestTimeoutMs: number;
+  clientFactory?: () => IstarothSdkClientLike;
+  transportFactory?: (url: URL) => IstarothTransportLike;
+}
+
+export interface IstarothTransportLike {
+  close(): Promise<void>;
+}
+
+export interface IstarothSdkClientLike {
+  connect(transport: IstarothTransportLike): Promise<void>;
+  listTools(
+    request?: unknown,
+    options?: { timeout?: number },
+  ): Promise<{ tools: Array<{ name: string }> }>;
+  callTool(
+    request: { name: string; arguments: Record<string, unknown> },
+    resultSchema?: unknown,
+    options?: { timeout?: number },
+  ): Promise<McpToolResult>;
 }
 
 export class IstarothMcpClient implements IstarothMcpClientLike {
-  private client: Client | null = null;
-  private transport: StreamableHTTPClientTransport | null = null;
-  private connecting: Promise<Client> | null = null;
+  private client: IstarothSdkClientLike | null = null;
+  private transport: IstarothTransportLike | null = null;
+  private connecting: Promise<IstarothSdkClientLike> | null = null;
 
   constructor(private readonly config: IstarothMcpClientConfig) {
     if (!config.url) throw new GameProviderError("provider_disabled");
@@ -36,10 +55,10 @@ export class IstarothMcpClient implements IstarothMcpClientLike {
   }
 
   async listTools(): Promise<string[]> {
-    const client = await this.ensureClient();
-    const result = await this.withRetry(() =>
-      client.listTools(undefined, { timeout: this.config.requestTimeoutMs }),
-    );
+    const result = await this.withRetry(async () => {
+      const client = await this.ensureClient();
+      return await client.listTools(undefined, { timeout: this.config.requestTimeoutMs });
+    });
     return result.tools.map((tool) => tool.name);
   }
 
@@ -48,10 +67,10 @@ export class IstarothMcpClient implements IstarothMcpClientLike {
     args: Record<string, unknown>,
     timeoutMs = this.config.requestTimeoutMs,
   ): Promise<McpToolResult> {
-    const client = await this.ensureClient();
-    const result = await this.withRetry(() =>
-      client.callTool({ name, arguments: args }, undefined, { timeout: timeoutMs }),
-    );
+    const result = await this.withRetry(async () => {
+      const client = await this.ensureClient();
+      return await client.callTool({ name, arguments: args }, undefined, { timeout: timeoutMs });
+    });
     if (result.isError)
       throw new GameProviderError("provider_protocol_error", `Istaroth tool failed: ${name}`);
     return result as McpToolResult;
@@ -65,7 +84,7 @@ export class IstarothMcpClient implements IstarothMcpClientLike {
     await transport?.close();
   }
 
-  private async ensureClient(): Promise<Client> {
+  private async ensureClient(): Promise<IstarothSdkClientLike> {
     if (this.client) return this.client;
     this.connecting ??= this.connect();
     try {
@@ -76,19 +95,23 @@ export class IstarothMcpClient implements IstarothMcpClientLike {
     }
   }
 
-  private async connect(): Promise<Client> {
-    const client = new Client(
-      { name: "gamesmcp-istaroth-provider", version: "0.1.0" },
-      { capabilities: {} },
-    );
-    const transport = new StreamableHTTPClientTransport(new URL(this.config.url), {
-      reconnectionOptions: {
-        initialReconnectionDelay: 500,
-        maxReconnectionDelay: 3_000,
-        reconnectionDelayGrowFactor: 1.5,
-        maxRetries: 1,
-      },
-    });
+  private async connect(): Promise<IstarothSdkClientLike> {
+    const client =
+      this.config.clientFactory?.() ??
+      (new Client(
+        { name: "gamesmcp-istaroth-provider", version: "0.1.0" },
+        { capabilities: {} },
+      ) as unknown as IstarothSdkClientLike);
+    const transport =
+      this.config.transportFactory?.(new URL(this.config.url)) ??
+      (new StreamableHTTPClientTransport(new URL(this.config.url), {
+        reconnectionOptions: {
+          initialReconnectionDelay: 500,
+          maxReconnectionDelay: 3_000,
+          reconnectionDelayGrowFactor: 1.5,
+          maxRetries: 1,
+        },
+      }) as unknown as IstarothTransportLike);
     try {
       await withTimeout(
         client.connect(transport),

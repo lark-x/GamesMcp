@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "provider": "istaroth",
+  "game": "genshin",
+  "cases": [
+    {
+      "id": "genshin-001",
+      "mode": "hybrid",
+      "query": "钟离为何假死",
+      "mustContainAny": ["假死", "神位"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-002",
+      "mode": "hybrid",
+      "query": "芙宁娜与枫丹预言",
+      "mustContainAny": ["芙宁娜", "预言"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-003",
+      "mode": "hybrid",
+      "query": "纳西妲和世界树",
+      "mustContainAny": ["纳西妲", "世界树"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-004",
+      "mode": "hybrid",
+      "query": "坎瑞亚灾变",
+      "mustContainAny": ["坎瑞亚"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-005",
+      "mode": "hybrid",
+      "query": "深渊教团",
+      "mustContainAny": ["深渊教团", "深渊"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-006",
+      "mode": "hybrid",
+      "query": "戴因斯雷布",
+      "mustContainAny": ["戴因斯雷布"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-007",
+      "mode": "hybrid",
+      "query": "博士切片",
+      "mustContainAny": ["博士", "切片"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-008",
+      "mode": "hybrid",
+      "query": "若陀龙王",
+      "mustContainAny": ["若陀"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-009",
+      "mode": "hybrid",
+      "query": "魔神战争",
+      "mustContainAny": ["魔神战争"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-010",
+      "mode": "hybrid",
+      "query": "赤王与花神",
+      "mustContainAny": ["赤王", "花神"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-011",
+      "mode": "hybrid",
+      "query": "黄金莱茵多特",
+      "mustContainAny": ["莱茵多特", "黄金"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-012",
+      "mode": "hybrid",
+      "query": "散兵与世界树",
+      "mustContainAny": ["散兵", "世界树"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-013",
+      "mode": "hybrid",
+      "query": "雷电将军与永恒",
+      "mustContainAny": ["雷电将军", "永恒"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-014",
+      "mode": "hybrid",
+      "query": "璃月七星",
+      "mustContainAny": ["璃月七星", "璃月"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-015",
+      "mode": "hybrid",
+      "query": "天理的维系者",
+      "mustContainAny": ["天理", "维系者"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-016",
+      "mode": "keyword",
+      "query": "摩拉克斯",
+      "mustContainAny": ["摩拉克斯"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-017",
+      "mode": "keyword",
+      "query": "枫丹预言",
+      "mustContainAny": ["枫丹", "预言"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-018",
+      "mode": "keyword",
+      "query": "世界树",
+      "mustContainAny": ["世界树"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-019",
+      "mode": "keyword",
+      "query": "深渊教团",
+      "mustContainAny": ["深渊教团", "深渊"],
+      "minHits": 1
+    },
+    {
+      "id": "genshin-020",
+      "mode": "keyword",
+      "query": "戴因斯雷布",
+      "mustContainAny": ["戴因斯雷布"],
+      "minHits": 1
+    }
+  ]
+}

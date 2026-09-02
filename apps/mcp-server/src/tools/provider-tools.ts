@@ -42,17 +42,18 @@ export function registerGameProviderTools(
           ...DEFAULT_MCP_RESPONSE_BUDGET,
           maxItems: limit,
         });
+        const normalizedGame = normalizeGameSlug(game);
         return textResult({
-          game: normalizeGameSlug(game),
+          game: normalizedGame,
           provider: response.provider,
           mode: response.mode,
-          hits: shaped.items,
+          hits: shaped.items.map((hit) => ({ ...hit, game: normalizedGame })),
           returnedCount: shaped.items.length,
           truncated: response.truncated || shaped.truncated,
           estimatedBytes: shaped.estimatedBytes,
         });
       } catch (error) {
-        return providerErrorResult(error, "Genshin knowledge provider is currently unavailable.");
+        return providerErrorResult(error, "Game knowledge provider is currently unavailable.");
       }
     },
   );

@@ -1,64 +1,70 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { cpus, freemem, platform, release, totalmem } from "node:os";
 import { performance } from "node:perf_hooks";
 import {
-  GameProviderRegistry,
   GenshinIstarothProvider,
   IstarothMcpClient,
+  StarRailLocalProvider,
+  type GameKnowledgeProvider,
 } from "../packages/providers/src/index.js";
 
-const url = process.env.ISTAROTH_INTEGRATION_URL ?? process.env.GAMESMCP_ISTAROTH_URL;
-const output = resolve(process.env.PROVIDER_BASELINE_OUTPUT ?? "artifacts/provider-baseline.json");
-if (!url) {
-  console.log(
-    JSON.stringify({
-      skipped: true,
-      reason: "ISTAROTH_INTEGRATION_URL or GAMESMCP_ISTAROTH_URL is not set",
-      output,
-    }),
-  );
+const game = normalizeGame(process.env.PROVIDER_BENCHMARK_GAME ?? process.argv[2] ?? "genshin");
+const provider = createProvider(game);
+const output = resolve(
+  process.env.PROVIDER_BASELINE_OUTPUT ??
+    `artifacts/provider-baseline/${game === "starrail" ? "starrail-local" : "genshin-istaroth"}.json`,
+);
+if (!provider) {
+  console.log(JSON.stringify({ skipped: true, reason: skipReason(game), output }));
   process.exit(0);
 }
 
-const game = process.env.GAMESMCP_ISTAROTH_GAME_SLUG ?? "genshin";
 const runs = Math.max(Number(process.env.PROVIDER_BENCHMARK_RUNS ?? 20), 5);
 const concurrency = readConcurrency(process.env.PROVIDER_BENCHMARK_CONCURRENCY ?? "1,4,16");
-const provider = new GenshinIstarothProvider({
-  gameSlug: game,
-  client: new IstarothMcpClient({
-    url,
-    connectTimeoutMs: Number(process.env.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS ?? 3_000),
-    requestTimeoutMs: Number(process.env.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS ?? 15_000),
-  }),
-  requestTimeoutMs: Number(process.env.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS ?? 15_000),
-});
-const registry = new GameProviderRegistry();
-registry.register(provider);
 
 try {
-  const search = await provider.search({
+  const seedSearch = await provider.search({
     game,
-    query: "芙宁娜与枫丹预言",
+    query: game === "starrail" ? "星核" : "芙宁娜与枫丹预言",
     mode: "hybrid",
     limit: 5,
   });
-  const documentId = search.hits.find((hit) => hit.documentId)?.documentId;
+  const documentId = seedSearch.hits.find((hit) => hit.documentId)?.documentId;
   if (!documentId) throw new Error("No document id returned from provider search");
 
-  const operations = [
+  const operations: Array<{ name: string; run: () => Promise<unknown> }> = [
     {
       name: "search_hybrid",
-      run: () => provider.search({ game, query: "芙宁娜与枫丹预言", mode: "hybrid", limit: 5 }),
+      run: () =>
+        provider.search({
+          game,
+          query: game === "starrail" ? "星核 开拓" : "芙宁娜与枫丹预言",
+          mode: "hybrid",
+          limit: 5,
+        }),
     },
     {
       name: "search_keyword",
-      run: () => provider.search({ game, query: "戴因斯雷布", mode: "keyword", limit: 5 }),
+      run: () =>
+        provider.search({
+          game,
+          query: game === "starrail" ? "雅利洛" : "戴因斯雷布",
+          mode: "keyword",
+          limit: 5,
+        }),
     },
     {
       name: "get_document",
       run: () => provider.getDocument({ game, documentId, cursor: 0, limit: 20 }),
     },
   ];
+  if (provider.getHierarchy && provider.capabilities.includes("document_hierarchy"))
+    operations.push({
+      name: "get_hierarchy",
+      run: () => provider.getHierarchy?.({ game, documentId }),
+    });
 
   const results = [];
   for (const operation of operations) {
@@ -72,23 +78,48 @@ try {
 
   const payload = {
     schemaVersion: 1,
-    provider: "istaroth",
+    provider: provider.id,
     game,
     generatedAt: new Date().toISOString(),
     documentId,
+    metadata: environmentMetadata(),
     results,
   };
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, JSON.stringify(payload, null, 2), "utf8");
   console.log(JSON.stringify({ ok: true, output }));
 } finally {
-  await registry.close();
+  await provider.close?.();
+}
+
+function createProvider(selectedGame: string): GameKnowledgeProvider | null {
+  if (selectedGame === "starrail") {
+    const dataDir = process.env.GAMESMCP_STARRAIL_DATA_DIR;
+    if (!dataDir) return null;
+    return new StarRailLocalProvider({
+      dataDir,
+      inventoryOutput: "artifacts/starrail-source-inventory.json",
+    });
+  }
+  const url = process.env.ISTAROTH_INTEGRATION_URL ?? process.env.GAMESMCP_ISTAROTH_URL;
+  if (!url) return null;
+  return new GenshinIstarothProvider({
+    gameSlug: "genshin",
+    client: new IstarothMcpClient({
+      url,
+      connectTimeoutMs: Number(process.env.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS ?? 3_000),
+      requestTimeoutMs: Number(process.env.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS ?? 15_000),
+    }),
+    requestTimeoutMs: Number(process.env.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS ?? 15_000),
+  });
 }
 
 async function measure(operation: () => Promise<unknown>, count: number) {
   const samples: number[] = [];
   let errors = 0;
   let bytes = 0;
+  const cpuBefore = process.cpuUsage();
+  const rssBefore = process.memoryUsage().rss;
   for (let index = 0; index < count; index += 1) {
     const startedAt = performance.now();
     try {
@@ -99,7 +130,15 @@ async function measure(operation: () => Promise<unknown>, count: number) {
       errors += 1;
     }
   }
-  return summarize(samples, errors, bytes);
+  const cpuAfter = process.cpuUsage(cpuBefore);
+  const rssAfter = process.memoryUsage().rss;
+  return {
+    ...summarize(samples, errors, bytes),
+    rssBytes: rssAfter,
+    rssDeltaBytes: rssAfter - rssBefore,
+    cpuUserMicros: cpuAfter.user,
+    cpuSystemMicros: cpuAfter.system,
+  };
 }
 
 async function measureConcurrent(operation: () => Promise<unknown>, level: number) {
@@ -107,6 +146,8 @@ async function measureConcurrent(operation: () => Promise<unknown>, level: numbe
   let errors = 0;
   let bytes = 0;
   const startedAt = performance.now();
+  const cpuBefore = process.cpuUsage();
+  const rssBefore = process.memoryUsage().rss;
   const settled = await Promise.allSettled(
     Array.from({ length: level }, async () => {
       const requestStartedAt = performance.now();
@@ -125,12 +166,18 @@ async function measureConcurrent(operation: () => Promise<unknown>, level: numbe
       errors += 1;
     }
   }
+  const cpuAfter = process.cpuUsage(cpuBefore);
+  const rssAfter = process.memoryUsage().rss;
   return {
     level,
     ...summarize(samples, errors, bytes),
     throughputPerSecond: round(
       samples.length / Math.max((performance.now() - startedAt) / 1000, 0.001),
     ),
+    rssBytes: rssAfter,
+    rssDeltaBytes: rssAfter - rssBefore,
+    cpuUserMicros: cpuAfter.user,
+    cpuSystemMicros: cpuAfter.system,
   };
 }
 
@@ -161,4 +208,44 @@ function readConcurrency(value: string): number[] {
     .split(",")
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isInteger(item) && item > 0);
+}
+
+function normalizeGame(value: string): "genshin" | "starrail" {
+  return ["starrail", "star-rail", "honkai-star-rail", "hsr"].includes(value)
+    ? "starrail"
+    : "genshin";
+}
+
+function skipReason(selectedGame: string): string {
+  return selectedGame === "starrail"
+    ? "GAMESMCP_STARRAIL_DATA_DIR is not set"
+    : "ISTAROTH_INTEGRATION_URL or GAMESMCP_ISTAROTH_URL is not set";
+}
+
+function environmentMetadata() {
+  return {
+    gamesMcpCommit: command("git", ["rev-parse", "HEAD"]),
+    istarothImage: process.env.ISTAROTH_IMAGE,
+    starRailDataDir: process.env.GAMESMCP_STARRAIL_DATA_DIR,
+    checkpointIdentity: process.env.ISTAROTH_CHECKPOINT_IDENTITY,
+    node: process.version,
+    docker: command("docker", ["--version"]),
+    os: `${platform()} ${release()}`,
+    cpu: cpus()[0]?.model,
+    cpuCount: cpus().length,
+    ramBytes: totalmem(),
+    freeRamBytes: freemem(),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function command(binary: string, args: string[]): string | undefined {
+  try {
+    return execFileSync(binary, args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
 }

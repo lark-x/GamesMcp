@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
@@ -9,17 +11,25 @@ import { createMcpServer } from "../apps/mcp-server/src/server.js";
 import type { KnowledgeRepository } from "../packages/domain/src/index.js";
 
 const url = process.env.ISTAROTH_INTEGRATION_URL ?? process.env.GAMESMCP_ISTAROTH_URL;
+const output = resolve(
+  process.env.ISTAROTH_E2E_OUTPUT ?? "artifacts/evaluation/genshin-istaroth-e2e.json",
+);
 if (!url) {
-  console.log(
-    JSON.stringify({
-      skipped: true,
-      reason: "ISTAROTH_INTEGRATION_URL or GAMESMCP_ISTAROTH_URL is not set",
-    }),
-  );
+  await writeReport({
+    provider: "istaroth",
+    game: "genshin",
+    skipped: true,
+    reason: "ISTAROTH_INTEGRATION_URL or GAMESMCP_ISTAROTH_URL is not set",
+    generatedAt: new Date().toISOString(),
+  });
+  console.log(JSON.stringify({ skipped: true, reason: "Istaroth URL is not set", output }));
   process.exit(0);
 }
 
-const game = process.env.GAMESMCP_ISTAROTH_GAME_SLUG ?? "genshin";
+const golden = JSON.parse(
+  await readFile("data/evaluation/providers/genshin-istaroth-golden.json", "utf8"),
+) as GoldenFile;
+const game = process.env.GAMESMCP_ISTAROTH_GAME_SLUG ?? golden.game;
 const registry = new GameProviderRegistry();
 registry.register(
   new GenshinIstarothProvider({
@@ -42,69 +52,137 @@ const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 await server.connect(serverTransport);
 await client.connect(clientTransport);
 
-try {
-  const queries = [
-    "芙宁娜与枫丹预言",
-    "坎瑞亚发生了什么",
-    "钟离与摩拉克斯身份",
-    "纳西妲与世界树",
-    "天理的维系者",
-    "戴因斯雷布",
-    "古名",
-    "深渊教团",
-    "雷电将军与永恒",
-    "温迪和风神",
-    "璃月七星",
-    "博士切片",
-    "散兵与世界树",
-    "赤王与花神",
-    "若陀龙王",
-    "魔神战争",
-    "黄金莱茵多特",
-    "空月祝福",
-    "水神审判",
-    "枫丹预言如何解除",
-  ];
+const caseResults: CaseReport[] = [];
+const documentChain: DocumentChainReport[] = [];
+let failureIsolationPassed: boolean | "skipped" = "skipped";
+let recoveryPassed: boolean | "skipped" = "skipped";
 
-  const failures: string[] = [];
-  let documentId: string | undefined;
-  for (const query of queries) {
+try {
+  for (const item of golden.cases) {
     const result = await client.callTool({
       name: "search_game_knowledge",
-      arguments: { game, query, mode: "hybrid", intent: "balanced", limit: 5 },
+      arguments: { game, query: item.query, mode: item.mode, intent: "balanced", limit: 5 },
     });
-    const body = parseToolJson(result) as { hits?: Array<{ documentId?: string }> };
-    if (result.isError || !body.hits?.length) failures.push(query);
-    documentId ??= body.hits?.find((hit) => hit.documentId)?.documentId;
+    const body = parseToolJson(result) as { hits?: SearchHit[] };
+    const joined = JSON.stringify(body.hits ?? []);
+    const passed =
+      !result.isError &&
+      (body.hits?.length ?? 0) >= item.minHits &&
+      item.mustContainAny.some((needle) => joined.includes(needle));
+    caseResults.push({
+      id: item.id,
+      query: item.query,
+      mode: item.mode,
+      passed,
+      hitCount: body.hits?.length ?? 0,
+      documentId: body.hits?.find((hit) => hit.documentId)?.documentId,
+    });
   }
 
-  const keyword = await client.callTool({
-    name: "search_game_knowledge",
-    arguments: { game, query: "戴因斯雷布", mode: "keyword", limit: 5 },
-  });
-  if (keyword.isError || !(parseToolJson(keyword) as { hits?: unknown[] }).hits?.length)
-    failures.push("keyword:戴因斯雷布");
+  for (const item of caseResults.filter((caseResult) => caseResult.documentId).slice(0, 5)) {
+    const first = await client.callTool({
+      name: "get_game_document",
+      arguments: { game, document_id: item.documentId, cursor: 0, limit: 5 },
+    });
+    const firstBody = parseToolJson(first) as {
+      documentId?: string;
+      content?: string;
+      hasMore?: boolean;
+      nextCursor?: number | null;
+    };
+    const second =
+      typeof firstBody.nextCursor === "number"
+        ? await client.callTool({
+            name: "get_game_document",
+            arguments: {
+              game,
+              document_id: item.documentId,
+              cursor: firstBody.nextCursor,
+              limit: 5,
+            },
+          })
+        : undefined;
+    const hierarchy = await client.callTool({
+      name: "get_game_document_hierarchy",
+      arguments: { game, document_id: item.documentId },
+    });
+    documentChain.push({
+      caseId: item.id,
+      documentId: item.documentId ?? "",
+      passed:
+        !first.isError &&
+        Boolean(firstBody.content) &&
+        firstBody.documentId === item.documentId &&
+        (!firstBody.hasMore || Boolean(second && !second.isError)) &&
+        !hierarchy.isError,
+    });
+  }
 
-  if (!documentId) throw new Error(`No document id found; failed queries: ${failures.join(", ")}`);
+  if (process.env.ISTAROTH_E2E_EXPECT_DOWN_URL) {
+    const downRegistry = new GameProviderRegistry();
+    downRegistry.register(
+      new GenshinIstarothProvider({
+        gameSlug: game,
+        client: new IstarothMcpClient({
+          url: process.env.ISTAROTH_E2E_EXPECT_DOWN_URL,
+          connectTimeoutMs: 200,
+          requestTimeoutMs: 500,
+        }),
+        requestTimeoutMs: 500,
+      }),
+    );
+    const downServer = createMcpServer(fakeRepository(), { providers: downRegistry });
+    const downClient = new Client(
+      { name: "istaroth-down-e2e", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [downClientTransport, downServerTransport] = InMemoryTransport.createLinkedPair();
+    await downServer.connect(downServerTransport);
+    await downClient.connect(downClientTransport);
+    const failed = await downClient.callTool({
+      name: "search_game_knowledge",
+      arguments: { game, query: "钟离", mode: "hybrid", limit: 1 },
+    });
+    failureIsolationPassed = Boolean(failed.isError);
+    await downClient.close();
+    await downServer.close();
+    await downRegistry.close();
+  }
+  recoveryPassed = process.env.ISTAROTH_E2E_RECOVERY_VERIFIED === "true" ? true : "skipped";
 
-  const document = await client.callTool({
-    name: "get_game_document",
-    arguments: { game, document_id: documentId, cursor: 0, limit: 20 },
-  });
-  if (document.isError) failures.push(`document:${documentId}`);
-
-  const hierarchy = await client.callTool({
-    name: "get_game_document_hierarchy",
-    arguments: { game, document_id: documentId },
-  });
-  if (hierarchy.isError) failures.push(`hierarchy:${documentId}`);
-
-  if (failures.length) throw new Error(`Istaroth provider E2E failures: ${failures.join(", ")}`);
-  console.log(JSON.stringify({ ok: true, queryCount: queries.length, documentId }));
+  const passed = caseResults.filter((item) => item.passed).length;
+  const failed = caseResults.length - passed;
+  const payload = {
+    provider: "istaroth",
+    game,
+    total: caseResults.length,
+    passed,
+    failed,
+    documentChainPassed: documentChain.length >= 5 && documentChain.every((item) => item.passed),
+    failureIsolationPassed,
+    recoveryPassed,
+    generatedAt: new Date().toISOString(),
+    cases: caseResults,
+    documentChain,
+  };
+  await writeReport(payload);
+  if (
+    failed ||
+    !payload.documentChainPassed ||
+    failureIsolationPassed === false ||
+    recoveryPassed === false
+  )
+    throw new Error(`Istaroth provider E2E failed; see ${output}`);
+  console.log(JSON.stringify({ ok: true, output, passed, failed }));
 } finally {
   await client.close();
   await server.close();
   await registry.close();
+}
+
+async function writeReport(payload: unknown) {
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, JSON.stringify(payload, null, 2), "utf8");
 }
 
 function parseToolJson(result: unknown): unknown {
@@ -129,4 +207,34 @@ function fakeRepository(): KnowledgeRepository {
       },
     ],
   } as unknown as KnowledgeRepository;
+}
+
+interface GoldenFile {
+  game: string;
+  cases: Array<{
+    id: string;
+    mode: "hybrid" | "keyword";
+    query: string;
+    mustContainAny: string[];
+    minHits: number;
+  }>;
+}
+
+interface SearchHit {
+  documentId?: string;
+}
+
+interface CaseReport {
+  id: string;
+  query: string;
+  mode: "hybrid" | "keyword";
+  passed: boolean;
+  hitCount: number;
+  documentId?: string;
+}
+
+interface DocumentChainReport {
+  caseId: string;
+  documentId: string;
+  passed: boolean;
 }

@@ -5,6 +5,7 @@ export type GameProviderErrorCode =
   | "provider_protocol_error"
   | "provider_bad_response"
   | "provider_not_supported"
+  | "provider_document_not_found"
   | "game_provider_not_found";
 
 const defaultMessages: Record<GameProviderErrorCode, string> = {
@@ -14,6 +15,7 @@ const defaultMessages: Record<GameProviderErrorCode, string> = {
   provider_protocol_error: "Game knowledge provider returned a protocol error.",
   provider_bad_response: "Game knowledge provider returned an unsupported response.",
   provider_not_supported: "Game knowledge provider does not support this capability.",
+  provider_document_not_found: "Game knowledge provider document was not found.",
   game_provider_not_found: "No game knowledge provider is registered for this game.",
 };
 

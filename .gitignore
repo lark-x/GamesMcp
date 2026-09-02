@@ -16,9 +16,12 @@ data/snapshots/**
 data/imports/_raw/**
 data/postgres/**
 data/upstream/**
+data/istaroth/**
+data/games/**
 data/verification/**
 data/backups/**
 backups/**
 data/*.db
+artifacts/**
 *.log
 .DS_Store

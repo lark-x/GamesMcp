@@ -52,8 +52,10 @@ describe("GenshinIstarothProvider", () => {
       limit: 5,
     });
 
-    expect(client.calls[0]?.name).toBe("retrieve");
-    expect(client.calls[0]?.args).toMatchObject({ query: "芙宁娜 枫丹预言", intent: "balanced" });
+    expect(client.calls[0]).toEqual({
+      name: "retrieve",
+      args: { query: "芙宁娜 枫丹预言", budget: 20, intent: "balanced" },
+    });
     expect(response.hits[0]).toMatchObject({
       game: "genshin",
       provider: "istaroth",
@@ -70,7 +72,10 @@ describe("GenshinIstarothProvider", () => {
       mode: "keyword",
       limit: 3,
     });
-    expect(client.calls[0]?.name).toBe("retrieve_bm25");
+    expect(client.calls[0]).toEqual({
+      name: "retrieve_bm25",
+      args: { query: "戴因斯雷布", budget: 12, intent: "balanced" },
+    });
   });
 
   it("paginates get_file_content by lines", async () => {
@@ -82,7 +87,10 @@ describe("GenshinIstarothProvider", () => {
       cursor: 1,
       limit: 2,
     });
-    expect(client.calls[0]?.name).toBe("get_file_content");
+    expect(client.calls[0]).toEqual({
+      name: "get_file_content",
+      args: { file_id: "doc-1", start_index: 1, max_chunks: 2 },
+    });
     expect(response.content).toBe("b\nc");
     expect(response.hasMore).toBe(true);
     expect(response.nextCursor).toBe(3);
@@ -95,7 +103,10 @@ describe("GenshinIstarothProvider", () => {
       game: "genshin",
       documentId: "doc-1",
     });
-    expect(client.calls[0]?.name).toBe("get_document_hierarchy");
+    expect(client.calls[0]).toEqual({
+      name: "get_document_hierarchy",
+      args: { file_id: "doc-1" },
+    });
     expect(response?.hierarchy).toEqual({ sections: [{ title: "序章" }] });
   });
 

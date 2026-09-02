@@ -1,4 +1,5 @@
 import { GameProviderError } from "./errors.js";
+import { normalizeGameSlug } from "./game-slugs.js";
 import type {
   GameKnowledgeProvider,
   GameProviderCapability,
@@ -69,10 +70,4 @@ export class GameProviderRegistry {
 
 function registryKey(gameSlug: string, kind: GameProviderKind): string {
   return `${normalizeGameSlug(gameSlug)}:${kind}`;
-}
-
-export function normalizeGameSlug(gameSlug: string): string {
-  const normalized = gameSlug.trim().toLowerCase();
-  if (["genshin", "genshin-impact", "genshin_impact"].includes(normalized)) return "genshin";
-  return normalized;
 }

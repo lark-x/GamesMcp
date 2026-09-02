@@ -1,0 +1,81 @@
+name: provider-integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 19 * * *"
+
+jobs:
+  provider-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm vitest run packages/providers/src/registry.test.ts packages/providers/src/istaroth/provider.test.ts packages/providers/src/istaroth/client.test.ts packages/providers/src/starrail/provider.test.ts apps/mcp-server/src/server.test.ts
+
+  real-istaroth:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ISTAROTH_INTEGRATION_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check:istaroth-health
+        env:
+          ISTAROTH_INTEGRATION_URL: ${{ vars.ISTAROTH_INTEGRATION_URL }}
+      - run: pnpm test:istaroth-provider
+        env:
+          ISTAROTH_INTEGRATION_URL: ${{ vars.ISTAROTH_INTEGRATION_URL }}
+      - run: pnpm benchmark:provider
+        env:
+          ISTAROTH_INTEGRATION_URL: ${{ vars.ISTAROTH_INTEGRATION_URL }}
+          ISTAROTH_IMAGE: ${{ vars.ISTAROTH_IMAGE }}
+          ISTAROTH_CHECKPOINT_IDENTITY: ${{ vars.ISTAROTH_CHECKPOINT_IDENTITY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: genshin-istaroth-provider-artifacts
+          path: artifacts/
+
+  real-starrail:
+    runs-on: self-hosted
+    if: ${{ vars.GAMESMCP_STARRAIL_DATA_DIR != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm data:starrail:inventory
+        env:
+          GAMESMCP_STARRAIL_DATA_DIR: ${{ vars.GAMESMCP_STARRAIL_DATA_DIR }}
+      - run: pnpm test:starrail-provider
+        env:
+          GAMESMCP_STARRAIL_DATA_DIR: ${{ vars.GAMESMCP_STARRAIL_DATA_DIR }}
+      - run: pnpm benchmark:provider
+        env:
+          PROVIDER_BENCHMARK_GAME: starrail
+          GAMESMCP_STARRAIL_DATA_DIR: ${{ vars.GAMESMCP_STARRAIL_DATA_DIR }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starrail-local-provider-artifacts
+          path: artifacts/

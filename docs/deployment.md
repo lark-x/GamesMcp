@@ -37,6 +37,70 @@ docker compose stop
 docker compose start
 ```
 
+## Optional Istaroth provider
+
+Istaroth is optional. GamesMcp must still start and serve local tools when Istaroth is disabled or down.
+
+Set a pinned image before starting it:
+
+```env
+ISTAROTH_IMAGE=isundaylee/istaroth:<tag-or-digest>
+ISTAROTH_MCP_LANGUAGE=CHS
+ISTAROTH_DOCUMENT_STORE_SET=CHS:/data/checkpoint/chs
+ISTAROTH_TRAINING_DEVICE=cpu
+GAMESMCP_ISTAROTH_ENABLED=true
+GAMESMCP_ISTAROTH_URL=http://istaroth:8000/mcp
+```
+
+Persistent layout:
+
+```text
+${DATA_DIR}/istaroth/
+├── checkpoint/chs
+├── models/hf
+└── cache
+```
+
+The compose service runs the MCP server explicitly with Streamable HTTP:
+
+```bash
+docker compose up -d istaroth
+docker compose ps
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm check:istaroth-health
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm test:istaroth-provider
+```
+
+Initialize checkpoints once:
+
+```bash
+ISTAROTH_IMAGE=isundaylee/istaroth:<tag-or-digest> DATA_DIR=/persistent/gamesmcp pnpm bootstrap:istaroth
+```
+
+Do not use `latest` for long-running LAN/production deployments; upgrade by changing the pinned tag or digest, restarting `istaroth`, and rerunning health, E2E, and benchmark gates.
+
+## Optional StarRail local provider
+
+Clone TurnBasedGameData outside this repository and pin by commit:
+
+```text
+${DATA_DIR}/games/starrail/turn-based-game-data/<commit>
+```
+
+Then configure:
+
+```env
+GAMESMCP_STARRAIL_ENABLED=true
+GAMESMCP_STARRAIL_DATA_DIR=${DATA_DIR}/games/starrail/turn-based-game-data/<commit>
+```
+
+Verify:
+
+```bash
+pnpm data:starrail:inventory
+pnpm test:starrail-provider
+PROVIDER_BENCHMARK_GAME=starrail pnpm benchmark:provider
+```
+
 生产环境设置随机 `ADMIN_TOKEN`，并将 `NODE_ENV=production`。所有 `/api/admin/*` 请求必须带：
 
 ```text

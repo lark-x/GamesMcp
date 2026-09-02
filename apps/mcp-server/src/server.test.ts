@@ -3,7 +3,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "./server.js";
 import type { KnowledgeRepository } from "@gip/domain";
-import { GameProviderRegistry, type GameKnowledgeProvider } from "@gip/providers";
+import {
+  GameProviderError,
+  GameProviderRegistry,
+  type GameKnowledgeProvider,
+} from "@gip/providers";
 
 const gameId = "00000000-0000-0000-0000-000000000001";
 const entityId = "00000000-0000-0000-0000-000000000002";
@@ -888,6 +892,67 @@ describe("MCP server", () => {
     await client.close();
     await server.close();
   });
+
+  it("routes multiple games through the same provider contract without data leakage", async () => {
+    const registry = new GameProviderRegistry();
+    registry.register(fakeKnowledgeProvider());
+    registry.register(fakeStarRailProvider());
+    const server = createMcpServer(repository, { providers: registry });
+    const client = new Client(
+      { name: "multi-game-provider-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const genshin = await client.callTool({
+      name: "search_game_knowledge",
+      arguments: { game: "genshin-impact", query: "摩拉克斯", limit: 1 },
+    });
+    expect(resultJson(genshin)).toMatchObject({
+      game: "genshin",
+      provider: "istaroth",
+      hits: [{ game: "genshin", provider: "istaroth" }],
+    });
+
+    const starrail = await client.callTool({
+      name: "search_game_knowledge",
+      arguments: { game: "hsr", query: "摩拉克斯", limit: 5 },
+    });
+    const starrailJson = resultJson(starrail) as {
+      game?: string;
+      provider?: string;
+      hits?: Array<{ game?: string; provider?: string; excerpt?: string }>;
+    };
+    expect(starrailJson.game).toBe("starrail");
+    expect(starrailJson.provider).toBe("starrail-local");
+    expect(starrailJson.hits?.every((hit) => hit.game === "starrail")).toBe(true);
+    expect(starrailJson.hits?.some((hit) => hit.excerpt?.includes("摩拉克斯"))).toBe(false);
+
+    const wrongDocument = await client.callTool({
+      name: "get_game_document",
+      arguments: { game: "starrail", document_id: "doc-1", cursor: 0, limit: 2 },
+    });
+    expect(wrongDocument.isError).toBe(true);
+    expect((resultJson(wrongDocument) as { error?: { code?: string } }).error?.code).toBe(
+      "provider_document_not_found",
+    );
+
+    const status = await client.callTool({
+      name: "get_game_provider_status",
+      arguments: {},
+    });
+    expect(resultJson(status)).toMatchObject({
+      providers: [
+        { id: "istaroth", game: "genshin", status: "available" },
+        { id: "starrail-local", game: "starrail", status: "available" },
+      ],
+    });
+
+    await client.close();
+    await server.close();
+  });
 });
 
 function fakeKnowledgeProvider(): GameKnowledgeProvider {
@@ -958,5 +1023,53 @@ function fakeKnowledgeProvider(): GameKnowledgeProvider {
       hierarchy: { sections: [{ title: "第一章" }] },
       truncated: false,
     }),
+  };
+}
+
+function fakeStarRailProvider(): GameKnowledgeProvider {
+  return {
+    id: "starrail-local",
+    gameSlug: "starrail",
+    kind: "knowledge",
+    capabilities: ["knowledge_search", "keyword_search", "document_read"],
+    health: async () => ({
+      id: "starrail-local",
+      game: "starrail",
+      kind: "knowledge",
+      status: "available",
+      capabilities: ["knowledge_search", "keyword_search", "document_read"],
+      latencyMs: 1,
+      checkedAt: new Date(0).toISOString(),
+    }),
+    search: async () => ({
+      game: "starrail",
+      provider: "starrail-local",
+      mode: "hybrid",
+      hits: [
+        {
+          game: "starrail",
+          provider: "starrail-local",
+          documentId: "starrail/story/belobog/1",
+          title: "雅利洛-VI",
+          excerpt: "开拓者调查雅利洛-VI 的星核危机。",
+        },
+      ],
+      truncated: false,
+    }),
+    getDocument: async (request) => {
+      if (!request.documentId.startsWith("starrail/"))
+        throw new GameProviderError("provider_document_not_found");
+      return {
+        game: "starrail",
+        provider: "starrail-local",
+        documentId: request.documentId,
+        content: "星铁文档",
+        cursor: 0,
+        returnedLines: 1,
+        hasMore: false,
+        nextCursor: null,
+        truncated: false,
+      };
+    },
   };
 }

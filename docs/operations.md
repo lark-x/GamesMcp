@@ -103,6 +103,54 @@ pnpm db:seed
 
 Worker 只在心跳正常时被 `/api/ready/worker` 视为可用。Embedding 服务不可用时，语义任务失败不会使词法索引失效；LLM 不可用时检索和文档阅读继续工作。
 
+## Provider operations
+
+Provider tools are intentionally separate from local tools:
+
+```text
+search_game_knowledge
+get_game_document
+get_game_document_hierarchy
+get_game_provider_status
+```
+
+Status:
+
+```bash
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm check:istaroth-health
+```
+
+Real E2E:
+
+```bash
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm test:istaroth-provider
+GAMESMCP_STARRAIL_DATA_DIR=/data/games/starrail/turn-based-game-data/<commit> pnpm test:starrail-provider
+```
+
+Benchmark:
+
+```bash
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm benchmark:provider
+PROVIDER_BENCHMARK_GAME=starrail GAMESMCP_STARRAIL_DATA_DIR=/data/games/starrail/turn-based-game-data/<commit> pnpm benchmark:provider
+```
+
+Failure behavior:
+
+- Istaroth down returns `provider_timeout` or `provider_unavailable`.
+- StarRail data path missing returns `provider_unavailable`.
+- GamesMcp local tools and other providers continue to run.
+- There is no silent fallback between games or providers.
+
+Recovery:
+
+```bash
+docker compose restart istaroth
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm check:istaroth-health
+GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm test:istaroth-provider
+```
+
+The Istaroth client closes broken transports and retries once with a fresh MCP connection for timeout, unavailable, and protocol failures.
+
 ## 停止与升级
 
 ```bash

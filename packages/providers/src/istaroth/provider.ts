@@ -1,4 +1,4 @@
-import { GameProviderError, providerErrorFrom } from "../errors.js";
+import { providerErrorFrom } from "../errors.js";
 import type {
   GameDocumentHierarchyRequest,
   GameDocumentHierarchyResponse,
@@ -97,7 +97,6 @@ export class GenshinIstarothProvider implements GameKnowledgeProvider {
           query: request.query,
           intent: request.intent ?? "balanced",
           budget: searchBudgetFromLimit(limit),
-          limit,
         },
         this.config.requestTimeoutMs,
       );
@@ -146,10 +145,9 @@ export class GenshinIstarothProvider implements GameKnowledgeProvider {
       const result = await this.config.client.callTool(
         "get_file_content",
         {
-          document_id: request.documentId,
           file_id: request.documentId,
-          cursor,
-          limit,
+          start_index: cursor,
+          max_chunks: limit,
         },
         this.config.requestTimeoutMs,
       );
@@ -191,7 +189,7 @@ export class GenshinIstarothProvider implements GameKnowledgeProvider {
     try {
       const result = await this.config.client.callTool(
         "get_document_hierarchy",
-        { document_id: request.documentId, file_id: request.documentId },
+        { file_id: request.documentId },
         this.config.requestTimeoutMs,
       );
       const adapted = adaptHierarchyResult({

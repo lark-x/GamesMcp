@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 
@@ -48,7 +49,32 @@ const environmentSchema = z.object({
   GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
   GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   GAMESMCP_PROVIDER_HEALTH_CACHE_MS: z.coerce.number().int().positive().default(15_000),
+  GAMESMCP_STARRAIL_ENABLED: z
+    .enum(["true", "false", "1", "0"])
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  GAMESMCP_STARRAIL_DATA_DIR: optionalString,
 });
+
+export type GameProviderRuntimeEntry =
+  | {
+      id: "istaroth";
+      game: "genshin";
+      kind: "external_mcp";
+      enabled: boolean;
+      url?: string;
+      connectTimeoutMs: number;
+      requestTimeoutMs: number;
+      healthCacheMs: number;
+    }
+  | {
+      id: "starrail-local";
+      game: "starrail";
+      kind: "local_dataset";
+      enabled: boolean;
+      dataDir?: string;
+      inventoryOutput: string;
+    };
 
 export type RuntimeConfig = {
   nodeEnv: "development" | "test" | "production";
@@ -75,6 +101,7 @@ export type RuntimeConfig = {
   };
   localRateLimitPerMinute: number;
   providers: {
+    entries: GameProviderRuntimeEntry[];
     istaroth?: {
       enabled: boolean;
       url?: string;
@@ -82,6 +109,11 @@ export type RuntimeConfig = {
       connectTimeoutMs: number;
       requestTimeoutMs: number;
       healthCacheMs: number;
+    };
+    starrail?: {
+      enabled: boolean;
+      dataDir?: string;
+      inventoryOutput: string;
     };
   };
 };
@@ -98,6 +130,33 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       throw new Error("GAMESMCP_ISTAROTH_URL must be a valid URL");
     }
   }
+  const starRailDataDir = parsed.GAMESMCP_STARRAIL_DATA_DIR
+    ? resolve(parsed.GAMESMCP_STARRAIL_DATA_DIR)
+    : undefined;
+  if (parsed.GAMESMCP_STARRAIL_ENABLED) {
+    if (!starRailDataDir)
+      throw new Error("GAMESMCP_STARRAIL_DATA_DIR is required when StarRail provider is enabled");
+    if (!existsSync(starRailDataDir))
+      throw new Error(`GAMESMCP_STARRAIL_DATA_DIR does not exist: ${starRailDataDir}`);
+  }
+  const istarothProvider: Extract<GameProviderRuntimeEntry, { id: "istaroth" }> = {
+    id: "istaroth",
+    game: "genshin",
+    kind: "external_mcp",
+    enabled: parsed.GAMESMCP_ISTAROTH_ENABLED,
+    url: parsed.GAMESMCP_ISTAROTH_URL,
+    connectTimeoutMs: parsed.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS,
+    requestTimeoutMs: parsed.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS,
+    healthCacheMs: parsed.GAMESMCP_PROVIDER_HEALTH_CACHE_MS,
+  };
+  const starrailProvider: Extract<GameProviderRuntimeEntry, { id: "starrail-local" }> = {
+    id: "starrail-local",
+    game: "starrail",
+    kind: "local_dataset",
+    enabled: parsed.GAMESMCP_STARRAIL_ENABLED,
+    dataDir: starRailDataDir,
+    inventoryOutput: resolve(parsed.DATA_DIR, "artifacts/starrail-source-inventory.json"),
+  };
   return {
     nodeEnv: parsed.NODE_ENV,
     host: parsed.HOST,
@@ -126,13 +185,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     localRateLimitPerMinute: parsed.LOCAL_RATE_LIMIT_PER_MINUTE,
     providers: {
+      entries: [istarothProvider, starrailProvider],
       istaroth: {
-        enabled: parsed.GAMESMCP_ISTAROTH_ENABLED,
-        url: parsed.GAMESMCP_ISTAROTH_URL,
+        enabled: istarothProvider.enabled,
+        url: istarothProvider.url,
         gameSlug: parsed.GAMESMCP_ISTAROTH_GAME_SLUG,
-        connectTimeoutMs: parsed.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS,
-        requestTimeoutMs: parsed.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS,
-        healthCacheMs: parsed.GAMESMCP_PROVIDER_HEALTH_CACHE_MS,
+        connectTimeoutMs: istarothProvider.connectTimeoutMs,
+        requestTimeoutMs: istarothProvider.requestTimeoutMs,
+        healthCacheMs: istarothProvider.healthCacheMs,
+      },
+      starrail: {
+        enabled: starrailProvider.enabled,
+        dataDir: starrailProvider.dataDir,
+        inventoryOutput: starrailProvider.inventoryOutput,
       },
     },
   };
