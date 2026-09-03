@@ -1,0 +1,13 @@
+[
+  {
+    "StoryID": 6001001,
+    "TitleTextMapHash": 100001,
+    "Dialogues": [
+      {
+        "TalkSentenceID": 920001,
+        "SpeakerTextMapHash": 100012,
+        "TextMapHash": 100014
+      }
+    ]
+  }
+]

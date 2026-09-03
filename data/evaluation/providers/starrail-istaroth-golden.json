@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 1,
+  "provider": "istaroth",
+  "game": "starrail",
+  "cases": [
+    {
+      "id": "sr-ist-001",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "卡芙卡",
+      "mustContainAny": ["卡芙卡"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-002",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "黄泉",
+      "mustContainAny": ["黄泉"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-003",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "砂金",
+      "mustContainAny": ["砂金"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-004",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "黑塔",
+      "mustContainAny": ["黑塔"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-005",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "星核猎手",
+      "mustContainAny": ["星核猎手", "星核"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-006",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "匹诺康尼",
+      "mustContainAny": ["匹诺康尼"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-007",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "仙舟罗浮",
+      "mustContainAny": ["仙舟", "罗浮"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-008",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "贝洛伯格",
+      "mustContainAny": ["贝洛伯格"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-009",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "星穹列车",
+      "mustContainAny": ["星穹列车"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-010",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "命途",
+      "mustContainAny": ["命途"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-011",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "虚无",
+      "mustContainAny": ["虚无"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-012",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "同谐",
+      "mustContainAny": ["同谐"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-013",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "巡猎",
+      "mustContainAny": ["巡猎"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-014",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "丰饶",
+      "mustContainAny": ["丰饶"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-015",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "开拓者",
+      "mustContainAny": ["开拓者"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-016",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "三月七",
+      "mustContainAny": ["三月七"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-017",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "丹恒",
+      "mustContainAny": ["丹恒"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-018",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "姬子",
+      "mustContainAny": ["姬子"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-019",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "瓦尔特",
+      "mustContainAny": ["瓦尔特"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-020",
+      "category": "exact",
+      "mode": "hybrid",
+      "query": "星期日",
+      "mustContainAny": ["星期日"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-021",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "砂金在匹诺康尼经历了什么",
+      "mustContainAny": ["砂金", "匹诺康尼"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-022",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "黄泉和虚无是什么关系",
+      "mustContainAny": ["黄泉", "虚无"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-023",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "星核猎手为什么来到仙舟",
+      "mustContainAny": ["星核猎手", "仙舟"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-024",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "黑塔空间站发生了什么",
+      "mustContainAny": ["黑塔", "空间站"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-025",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "贝洛伯格上下层区的冲突",
+      "mustContainAny": ["贝洛伯格", "下层区"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-026",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "匹诺康尼梦境和现实",
+      "mustContainAny": ["匹诺康尼", "梦"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-027",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "开拓者加入星穹列车",
+      "mustContainAny": ["开拓者", "星穹列车"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-028",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "仙舟联盟追猎丰饶",
+      "mustContainAny": ["仙舟", "丰饶"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-029",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "公司和砂金的任务",
+      "mustContainAny": ["公司", "砂金"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-030",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "知更鸟与匹诺康尼舞台",
+      "mustContainAny": ["知更鸟", "匹诺康尼"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-031",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "流萤和星核猎手",
+      "mustContainAny": ["流萤", "星核猎手"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-032",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "阮梅与生命实验",
+      "mustContainAny": ["阮梅", "生命"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-033",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "镜流和云上五骁",
+      "mustContainAny": ["镜流", "云上五骁"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-034",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "符玄和太卜司",
+      "mustContainAny": ["符玄", "太卜司"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-035",
+      "category": "semantic",
+      "mode": "hybrid",
+      "query": "停云在仙舟剧情中的遭遇",
+      "mustContainAny": ["停云", "仙舟"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-036",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "听我说",
+      "mustContainAny": ["听我说"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-037",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "规则就是用来打破的",
+      "mustContainAny": ["规则", "打破"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-038",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "人有五名 代价有三个",
+      "mustContainAny": ["人有五名", "代价"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-039",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "愿此行 终抵群星",
+      "mustContainAny": ["群星"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-040",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "如果能重来",
+      "mustContainAny": ["重来"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-041",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "这就是开拓",
+      "mustContainAny": ["开拓"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-042",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "欢迎来到匹诺康尼",
+      "mustContainAny": ["匹诺康尼"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-043",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "模拟宇宙",
+      "mustContainAny": ["模拟宇宙"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-044",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "无名客",
+      "mustContainAny": ["无名客"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-045",
+      "category": "quote",
+      "mode": "keyword",
+      "query": "忆泡",
+      "mustContainAny": ["忆泡"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-046",
+      "category": "cross_document",
+      "mode": "hybrid",
+      "query": "星核猎手 卡芙卡 银狼 刃",
+      "mustContainAny": ["卡芙卡", "银狼", "刃"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-047",
+      "category": "cross_document",
+      "mode": "hybrid",
+      "query": "星穹列车 姬子 瓦尔特 三月七 丹恒",
+      "mustContainAny": ["姬子", "瓦尔特", "三月七", "丹恒"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-048",
+      "category": "cross_document",
+      "mode": "hybrid",
+      "query": "仙舟 罗浮 景元 符玄 彦卿",
+      "mustContainAny": ["罗浮", "景元", "符玄", "彦卿"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-049",
+      "category": "cross_document",
+      "mode": "hybrid",
+      "query": "匹诺康尼 砂金 知更鸟 星期日 花火",
+      "mustContainAny": ["匹诺康尼", "砂金", "知更鸟", "星期日", "花火"],
+      "minHits": 1
+    },
+    {
+      "id": "sr-ist-050",
+      "category": "cross_document",
+      "mode": "hybrid",
+      "query": "命途 星神 虚无 同谐 巡猎 丰饶",
+      "mustContainAny": ["命途", "星神", "虚无", "同谐", "巡猎", "丰饶"],
+      "minHits": 1
+    }
+  ]
+}

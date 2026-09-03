@@ -101,6 +101,36 @@ pnpm test:starrail-provider
 PROVIDER_BENCHMARK_GAME=starrail pnpm benchmark:provider
 ```
 
+This mode is the migration baseline and rollback path. It is not the long-term StarRail RAG architecture.
+
+## Optional StarRail Istaroth provider
+
+StarRail target deployment uses a second Istaroth MCP instance with a StarRail checkpoint. GamesMcp runtime should not mount or scan the raw TurnBasedGameData checkout in this mode.
+
+Build the corpus and checkpoint offline:
+
+```bash
+pnpm data:starrail:corpus --source ${DATA_DIR}/games/starrail/turn-based-game-data/<commit> --output ${DATA_DIR}/generated/starrail/istaroth/chs
+pnpm data:starrail:validate --corpus ${DATA_DIR}/generated/starrail/istaroth/chs
+ISTAROTH_DIR=/path/to/lark-x/istaroth STARRAIL_CORPUS_DIR=${DATA_DIR}/generated/starrail/istaroth/chs STARRAIL_CHECKPOINT_DIR=${DATA_DIR}/checkpoints/starrail/chs/<version> pnpm checkpoint:starrail:build
+```
+
+Configure GamesMcp:
+
+```env
+GAMESMCP_STARRAIL_ENABLED=true
+GAMESMCP_STARRAIL_PROVIDER=istaroth
+GAMESMCP_STARRAIL_ISTAROTH_URL=http://istaroth-starrail:8000/mcp
+```
+
+Verify the live MCP path:
+
+```bash
+STARRAIL_ISTAROTH_INTEGRATION_URL=http://127.0.0.1:8001/mcp pnpm test:starrail-istaroth
+```
+
+Keep `GAMESMCP_STARRAIL_PROVIDER=local` available until StarRail Istaroth passes retrieval quality, document read, hierarchy/degraded, and production health gates.
+
 生产环境设置随机 `ADMIN_TOKEN`，并将 `NODE_ENV=production`。所有 `/api/admin/*` 请求必须带：
 
 ```text

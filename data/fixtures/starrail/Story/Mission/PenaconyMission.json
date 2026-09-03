@@ -1,0 +1,20 @@
+[
+  {
+    "MissionID": 1001001,
+    "MainMissionID": 1001,
+    "TitleTextMapHash": 100001,
+    "Talks": [
+      {
+        "TalkSentenceID": 900001,
+        "SpeakerTextMapHash": 100003,
+        "TextMapHash": 100004
+      },
+      {
+        "TalkSentenceID": 900002,
+        "Speaker": "{NICKNAME}",
+        "TextMapHash": 100002,
+        "Options": [{ "TextMapHash": 100015 }]
+      }
+    ]
+  }
+]

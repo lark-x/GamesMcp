@@ -1,0 +1,66 @@
+name: build-starrail-checkpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      turn_based_game_data_ref:
+        description: "Pinned DimbreathBot/TurnBasedGameData ref"
+        required: true
+      istaroth_ref:
+        description: "Pinned lark-x/istaroth ref"
+        required: true
+        default: main
+  schedule:
+    - cron: "0 20 * * *"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GamesMcp
+        uses: actions/checkout@v4
+        with:
+          path: GamesMcp
+      - name: Checkout TurnBasedGameData
+        uses: actions/checkout@v4
+        with:
+          repository: DimbreathBot/TurnBasedGameData
+          ref: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF }}
+          path: TurnBasedGameData
+      - name: Checkout Istaroth fork
+        uses: actions/checkout@v4
+        with:
+          repository: lark-x/istaroth
+          ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'main' }}
+          path: istaroth
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: GamesMcp/pnpm-lock.yaml
+      - name: Install GamesMcp dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: GamesMcp
+      - name: Build StarRail corpus
+        run: pnpm data:starrail:corpus --source ../TurnBasedGameData --output ../starrail-corpus
+        working-directory: GamesMcp
+      - name: Validate StarRail corpus
+        run: pnpm data:starrail:validate --corpus ../starrail-corpus
+        working-directory: GamesMcp
+      - name: Build StarRail checkpoint
+        run: pnpm checkpoint:starrail:build
+        working-directory: GamesMcp
+        env:
+          ISTAROTH_DIR: ${{ github.workspace }}/istaroth
+          STARRAIL_CORPUS_DIR: ${{ github.workspace }}/starrail-corpus
+          STARRAIL_CHECKPOINT_DIR: ${{ github.workspace }}/starrail-checkpoint
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starrail-istaroth-checkpoint
+          path: |
+            starrail-corpus/metadata/starrail/*.json
+            starrail-corpus/manifest/*.json
+            starrail-checkpoint/

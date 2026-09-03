@@ -29,7 +29,7 @@ describe("configuration", () => {
 
   it("requires a valid Istaroth URL when the provider is enabled", () => {
     expect(() => loadConfig({ GAMESMCP_ISTAROTH_ENABLED: "true" })).toThrow(
-      /GAMESMCP_ISTAROTH_URL is required/u,
+      /GAMESMCP_GENSHIN_ISTAROTH_URL or GAMESMCP_ISTAROTH_URL is required/u,
     );
     expect(() =>
       loadConfig({ GAMESMCP_ISTAROTH_ENABLED: "true", GAMESMCP_ISTAROTH_URL: "not-a-url" }),
@@ -38,8 +38,8 @@ describe("configuration", () => {
 
   it("supports Genshin only provider config", () => {
     const config = loadConfig({
-      GAMESMCP_ISTAROTH_ENABLED: "true",
-      GAMESMCP_ISTAROTH_URL: "http://127.0.0.1:8000/mcp",
+      GAMESMCP_GENSHIN_ISTAROTH_ENABLED: "true",
+      GAMESMCP_GENSHIN_ISTAROTH_URL: "http://127.0.0.1:8000/mcp",
     });
     expect(config.providers.entries).toMatchObject([
       { id: "istaroth", game: "genshin", enabled: true },
@@ -68,6 +68,38 @@ describe("configuration", () => {
       GAMESMCP_STARRAIL_DATA_DIR: dataDir,
     });
     expect(config.providers.entries.filter((provider) => provider.enabled)).toHaveLength(2);
+  });
+
+  it("supports StarRail Istaroth provider mode without requiring a raw data path", () => {
+    const config = loadConfig({
+      GAMESMCP_STARRAIL_ENABLED: "true",
+      GAMESMCP_STARRAIL_PROVIDER: "istaroth",
+      GAMESMCP_STARRAIL_ISTAROTH_URL: "http://127.0.0.1:8001/mcp",
+    });
+    expect(config.providers.entries).toMatchObject([
+      { id: "istaroth", game: "genshin", enabled: false },
+      {
+        id: "istaroth",
+        game: "starrail",
+        kind: "external_mcp",
+        enabled: true,
+        url: "http://127.0.0.1:8001/mcp",
+      },
+    ]);
+    expect(config.providers.starrail).toMatchObject({
+      enabled: true,
+      provider: "istaroth",
+      istarothUrl: "http://127.0.0.1:8001/mcp",
+    });
+  });
+
+  it("requires StarRail Istaroth URL when StarRail Istaroth mode is enabled", () => {
+    expect(() =>
+      loadConfig({
+        GAMESMCP_STARRAIL_ENABLED: "true",
+        GAMESMCP_STARRAIL_PROVIDER: "istaroth",
+      }),
+    ).toThrow(/GAMESMCP_STARRAIL_ISTAROTH_URL is required/u);
   });
 
   it("rejects invalid StarRail data path when enabled", () => {

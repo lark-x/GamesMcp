@@ -1,0 +1,18 @@
+[
+  {
+    "MessageSectionID": 2001001,
+    "MessageID": 2001,
+    "ContactTextMapHash": 100005,
+    "FactionTextMapHash": 100006,
+    "Messages": [
+      {
+        "SenderTextMapHash": 100005,
+        "MainTextMapHash": 100007
+      },
+      {
+        "Sender": "{NICKNAME}",
+        "Options": [{ "TextMapHash": 100015 }]
+      }
+    ]
+  }
+]

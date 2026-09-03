@@ -1,12 +1,12 @@
 import { GameProviderRegistry } from "./registry.js";
 import { IstarothMcpClient } from "./istaroth/client.js";
-import { GenshinIstarothProvider } from "./istaroth/provider.js";
+import { IstarothKnowledgeProvider } from "./istaroth/provider.js";
 import { StarRailLocalProvider } from "./starrail/provider.js";
 
 export type GameProviderRuntimeEntry =
   | {
       id: "istaroth";
-      game: "genshin";
+      game: "genshin" | "starrail";
       kind: "external_mcp";
       enabled: boolean;
       url?: string;
@@ -35,8 +35,10 @@ export interface ProviderRuntimeConfig {
   };
   starrail?: {
     enabled: boolean;
+    provider?: "local" | "istaroth";
     dataDir?: string;
     inventoryOutput?: string;
+    istarothUrl?: string;
   };
 }
 
@@ -47,7 +49,7 @@ export function createProviderRegistry(config: ProviderRuntimeConfig): GameProvi
     if (!entry.enabled) continue;
     if (entry.id === "istaroth")
       registry.register(
-        new GenshinIstarothProvider({
+        new IstarothKnowledgeProvider({
           gameSlug: entry.game,
           client: new IstarothMcpClient({
             url: entry.url ?? "",
@@ -85,12 +87,21 @@ function legacyEntries(config: ProviderRuntimeConfig): GameProviderRuntimeEntry[
     });
   if (config.starrail)
     entries.push({
-      id: "starrail-local",
+      id: config.starrail.provider === "istaroth" ? "istaroth" : "starrail-local",
       game: "starrail",
-      kind: "local_dataset",
+      kind: config.starrail.provider === "istaroth" ? "external_mcp" : "local_dataset",
       enabled: config.starrail.enabled,
-      dataDir: config.starrail.dataDir,
-      inventoryOutput: config.starrail.inventoryOutput,
-    });
+      ...(config.starrail.provider === "istaroth"
+        ? {
+            url: config.starrail.istarothUrl,
+            connectTimeoutMs: config.istaroth?.connectTimeoutMs ?? 3_000,
+            requestTimeoutMs: config.istaroth?.requestTimeoutMs ?? 15_000,
+            healthCacheMs: config.istaroth?.healthCacheMs,
+          }
+        : {
+            dataDir: config.starrail.dataDir,
+            inventoryOutput: config.starrail.inventoryOutput,
+          }),
+    } as GameProviderRuntimeEntry);
   return entries;
 }

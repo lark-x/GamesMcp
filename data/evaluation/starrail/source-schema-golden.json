@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "source": "DimbreathBot/TurnBasedGameData",
+  "fixtures": {
+    "Story/Mission/PenaconyMission.json": {
+      "topLevel": "array",
+      "recordKeys": ["MissionID", "MainMissionID", "TitleTextMapHash", "Talks"],
+      "nestedKeys": ["TalkSentenceID", "SpeakerTextMapHash", "TextMapHash", "Options"]
+    },
+    "Config/Message/HertaMessage.json": {
+      "topLevel": "array",
+      "recordKeys": ["MessageSectionID", "MessageID", "ContactTextMapHash", "Messages"],
+      "nestedKeys": ["SenderTextMapHash", "MainTextMapHash", "Options"]
+    },
+    "ExcelOutput/BookConfig.json": {
+      "topLevel": "array",
+      "recordKeys": ["BookID", "BookSeriesID", "BookNameTextMapHash", "ContentTextMapHash"]
+    },
+    "ExcelOutput/AvatarStoryConfig.json": {
+      "topLevel": "array",
+      "recordKeys": [
+        "AvatarID",
+        "AvatarNameTextMapHash",
+        "StoryTitleTextMapHash",
+        "StoryTextMapHash"
+      ]
+    }
+  }
+}

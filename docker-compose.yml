@@ -46,6 +46,37 @@ services:
       timeout: 10s
       retries: 20
 
+  istaroth-starrail:
+    image: "${ISTAROTH_IMAGE:?ISTAROTH_IMAGE must be pinned to a tag or digest}"
+    environment:
+      ISTAROTH_GAME_PROFILE: starrail
+      ISTAROTH_MCP_LANGUAGE: "${ISTAROTH_MCP_LANGUAGE:-CHS}"
+      ISTAROTH_DOCUMENT_STORE_SET: "${ISTAROTH_STARRAIL_DOCUMENT_STORE_SET:-CHS:/data/checkpoint/chs}"
+      ISTAROTH_TRAINING_DEVICE: "${ISTAROTH_TRAINING_DEVICE:-cpu}"
+      HF_HOME: /data/models/hf
+    command:
+      - sh
+      - -c
+      - >
+        fastmcp run scripts/mcp_server.py
+        --transport=streamable-http
+        --host=0.0.0.0
+        --port=8000
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - "${DATA_DIR:?DATA_DIR must point to a persistent external data directory}/istaroth-starrail:/data"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import json,urllib.request,sys; req=urllib.request.Request(''http://127.0.0.1:8000/mcp'', data=json.dumps({''jsonrpc'':''2.0'',''id'':1,''method'':''initialize'',''params'':{''protocolVersion'':''2024-11-05'',''capabilities'':{},''clientInfo'':{''name'':''gamesmcp-starrail-health'',''version'':''0.1.0''}}}).encode(), headers={''content-type'':''application/json'',''accept'':''application/json, text/event-stream''}); urllib.request.urlopen(req, timeout=5).read(); sys.exit(0)"',
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
   api:
     build:
       context: .
@@ -56,6 +87,8 @@ services:
       DATABASE_URL: postgres://gip:gip@postgres:5432/gip
       DATA_DIR: /app/data
       GAMESMCP_ISTAROTH_URL: http://istaroth:8000/mcp
+      GAMESMCP_GENSHIN_ISTAROTH_URL: http://istaroth:8000/mcp
+      GAMESMCP_STARRAIL_ISTAROTH_URL: http://istaroth-starrail:8000/mcp
       GAMESMCP_STARRAIL_DATA_DIR: /app/data/games/starrail/turn-based-game-data
     depends_on:
       postgres:

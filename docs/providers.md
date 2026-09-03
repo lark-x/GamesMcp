@@ -1,6 +1,6 @@
 # Game Provider Gateway
 
-GamesMcp exposes one MCP server to AI clients and can route selected calls to game knowledge providers. The first two provider modes are Istaroth for Genshin Impact and a local TurnBasedGameData-backed provider for Honkai: Star Rail.
+GamesMcp exposes one MCP server to AI clients and can route selected calls to game knowledge providers. Genshin uses Istaroth. StarRail currently has a local baseline provider and a migration path to a StarRail Istaroth checkpoint.
 
 The gateway keeps the existing PostgreSQL/revision/evidence/search stack intact. Existing tools such as `search_lore`, `search_dialogue`, `get_character`, `get_weapon`, and `resolve_entity` continue to use the local GamesMcp implementation. New provider calls use separate tools:
 
@@ -9,7 +9,7 @@ The gateway keeps the existing PostgreSQL/revision/evidence/search stack intact.
 - `get_game_document_hierarchy`
 - `get_game_provider_status`
 
-Provider code lives in `packages/providers`. Core code only depends on `GameKnowledgeProvider`, `GameProviderRegistry`, and normalized GamesMcp response types. Istaroth-specific MCP output parsing is isolated under `packages/providers/src/istaroth`; Star Rail local dataset reading is isolated under `packages/providers/src/starrail`.
+Provider code lives in `packages/providers`. Core code only depends on `GameKnowledgeProvider`, `GameProviderRegistry`, and normalized GamesMcp response types. Istaroth MCP output parsing is isolated under `packages/providers/src/istaroth`; StarRail source/corpus tooling is isolated under `packages/providers/src/starrail`.
 
 ## Configuration
 
@@ -19,12 +19,16 @@ Provider registration is explicit; there is no dynamic plugin scan.
 GAMESMCP_ISTAROTH_ENABLED=true
 GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp
 GAMESMCP_ISTAROTH_GAME_SLUG=genshin
+GAMESMCP_GENSHIN_ISTAROTH_ENABLED=true
+GAMESMCP_GENSHIN_ISTAROTH_URL=http://127.0.0.1:8000/mcp
 GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS=3000
 GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS=15000
 GAMESMCP_PROVIDER_HEALTH_CACHE_MS=15000
 
 GAMESMCP_STARRAIL_ENABLED=false
+GAMESMCP_STARRAIL_PROVIDER=local
 GAMESMCP_STARRAIL_DATA_DIR=/data/games/starrail/turn-based-game-data/<commit>
+GAMESMCP_STARRAIL_ISTAROTH_URL=http://127.0.0.1:8001/mcp
 ```
 
 If a provider is disabled or unavailable, GamesMcp starts normally and the provider tools return a standard provider error. Existing local tools are unaffected.
@@ -69,6 +73,14 @@ Star Rail local dataset gate, skipped unless a TurnBasedGameData checkout is con
 ```bash
 GAMESMCP_STARRAIL_DATA_DIR=/data/games/starrail/turn-based-game-data/<commit> pnpm data:starrail:inventory
 GAMESMCP_STARRAIL_DATA_DIR=/data/games/starrail/turn-based-game-data/<commit> pnpm test:starrail-provider
+```
+
+StarRail corpus/checkpoint migration gates:
+
+```bash
+pnpm data:starrail:corpus --source data/fixtures/starrail --output data/generated/starrail/istaroth/fixture-chs
+pnpm data:starrail:validate --corpus data/generated/starrail/istaroth/fixture-chs
+STARRAIL_ISTAROTH_INTEGRATION_URL=http://127.0.0.1:8001/mcp pnpm test:starrail-istaroth
 ```
 
 Provider baseline benchmark:

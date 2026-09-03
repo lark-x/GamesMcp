@@ -18,6 +18,7 @@ data/postgres/**
 data/upstream/**
 data/istaroth/**
 data/games/**
+data/generated/**
 data/verification/**
 data/backups/**
 backups/**

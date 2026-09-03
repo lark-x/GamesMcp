@@ -1,0 +1,20 @@
+[
+  {
+    "VisitorID": 3001001,
+    "AvatarID": 1001,
+    "TitleTextMapHash": 100008,
+    "Talks": [
+      {
+        "TalkSentenceID": 910001,
+        "Speaker": "三月七",
+        "TextMapHash": 100009,
+        "NextTalkSentenceID": 910002
+      },
+      {
+        "TalkSentenceID": 910002,
+        "Speaker": "{NICKNAME}",
+        "Text": "{NICKNAME}：下一站继续开拓。"
+      }
+    ]
+  }
+]

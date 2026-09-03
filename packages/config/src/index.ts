@@ -46,20 +46,27 @@ const environmentSchema = z.object({
     .transform((value) => value === "true" || value === "1"),
   GAMESMCP_ISTAROTH_URL: optionalString,
   GAMESMCP_ISTAROTH_GAME_SLUG: z.string().trim().min(1).max(64).default("genshin"),
+  GAMESMCP_GENSHIN_ISTAROTH_ENABLED: z
+    .enum(["true", "false", "1", "0"])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === "true" || value === "1")),
+  GAMESMCP_GENSHIN_ISTAROTH_URL: optionalString,
   GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
   GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   GAMESMCP_PROVIDER_HEALTH_CACHE_MS: z.coerce.number().int().positive().default(15_000),
+  GAMESMCP_STARRAIL_PROVIDER: z.enum(["local", "istaroth"]).default("local"),
   GAMESMCP_STARRAIL_ENABLED: z
     .enum(["true", "false", "1", "0"])
     .default("false")
     .transform((value) => value === "true" || value === "1"),
   GAMESMCP_STARRAIL_DATA_DIR: optionalString,
+  GAMESMCP_STARRAIL_ISTAROTH_URL: optionalString,
 });
 
 export type GameProviderRuntimeEntry =
   | {
       id: "istaroth";
-      game: "genshin";
+      game: "genshin" | "starrail";
       kind: "external_mcp";
       enabled: boolean;
       url?: string;
@@ -112,8 +119,10 @@ export type RuntimeConfig = {
     };
     starrail?: {
       enabled: boolean;
+      provider: "local" | "istaroth";
       dataDir?: string;
       inventoryOutput: string;
+      istarothUrl?: string;
     };
   };
 };
@@ -121,19 +130,35 @@ export type RuntimeConfig = {
 export function loadConfig(env: Record<string, string | undefined> = process.env): RuntimeConfig {
   if (env === process.env) loadLocalEnvironment();
   const parsed = environmentSchema.parse(env);
-  if (parsed.GAMESMCP_ISTAROTH_ENABLED) {
-    if (!parsed.GAMESMCP_ISTAROTH_URL)
-      throw new Error("GAMESMCP_ISTAROTH_URL is required when Istaroth provider is enabled");
+  const genshinIstarothEnabled =
+    parsed.GAMESMCP_GENSHIN_ISTAROTH_ENABLED ?? parsed.GAMESMCP_ISTAROTH_ENABLED;
+  const genshinIstarothUrl = parsed.GAMESMCP_GENSHIN_ISTAROTH_URL ?? parsed.GAMESMCP_ISTAROTH_URL;
+  if (genshinIstarothEnabled) {
+    if (!genshinIstarothUrl)
+      throw new Error(
+        "GAMESMCP_GENSHIN_ISTAROTH_URL or GAMESMCP_ISTAROTH_URL is required when Genshin Istaroth provider is enabled",
+      );
     try {
-      new URL(parsed.GAMESMCP_ISTAROTH_URL);
+      new URL(genshinIstarothUrl);
     } catch {
-      throw new Error("GAMESMCP_ISTAROTH_URL must be a valid URL");
+      throw new Error("GAMESMCP_GENSHIN_ISTAROTH_URL must be a valid URL");
+    }
+  }
+  if (parsed.GAMESMCP_STARRAIL_PROVIDER === "istaroth" && parsed.GAMESMCP_STARRAIL_ENABLED) {
+    if (!parsed.GAMESMCP_STARRAIL_ISTAROTH_URL)
+      throw new Error(
+        "GAMESMCP_STARRAIL_ISTAROTH_URL is required when GAMESMCP_STARRAIL_PROVIDER=istaroth",
+      );
+    try {
+      new URL(parsed.GAMESMCP_STARRAIL_ISTAROTH_URL);
+    } catch {
+      throw new Error("GAMESMCP_STARRAIL_ISTAROTH_URL must be a valid URL");
     }
   }
   const starRailDataDir = parsed.GAMESMCP_STARRAIL_DATA_DIR
     ? resolve(parsed.GAMESMCP_STARRAIL_DATA_DIR)
     : undefined;
-  if (parsed.GAMESMCP_STARRAIL_ENABLED) {
+  if (parsed.GAMESMCP_STARRAIL_ENABLED && parsed.GAMESMCP_STARRAIL_PROVIDER === "local") {
     if (!starRailDataDir)
       throw new Error("GAMESMCP_STARRAIL_DATA_DIR is required when StarRail provider is enabled");
     if (!existsSync(starRailDataDir))
@@ -143,20 +168,32 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     id: "istaroth",
     game: "genshin",
     kind: "external_mcp",
-    enabled: parsed.GAMESMCP_ISTAROTH_ENABLED,
-    url: parsed.GAMESMCP_ISTAROTH_URL,
+    enabled: genshinIstarothEnabled,
+    url: genshinIstarothUrl,
     connectTimeoutMs: parsed.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS,
     requestTimeoutMs: parsed.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS,
     healthCacheMs: parsed.GAMESMCP_PROVIDER_HEALTH_CACHE_MS,
   };
-  const starrailProvider: Extract<GameProviderRuntimeEntry, { id: "starrail-local" }> = {
-    id: "starrail-local",
-    game: "starrail",
-    kind: "local_dataset",
-    enabled: parsed.GAMESMCP_STARRAIL_ENABLED,
-    dataDir: starRailDataDir,
-    inventoryOutput: resolve(parsed.DATA_DIR, "artifacts/starrail-source-inventory.json"),
-  };
+  const starrailProvider: GameProviderRuntimeEntry =
+    parsed.GAMESMCP_STARRAIL_PROVIDER === "istaroth"
+      ? {
+          id: "istaroth",
+          game: "starrail",
+          kind: "external_mcp",
+          enabled: parsed.GAMESMCP_STARRAIL_ENABLED,
+          url: parsed.GAMESMCP_STARRAIL_ISTAROTH_URL,
+          connectTimeoutMs: parsed.GAMESMCP_PROVIDER_CONNECT_TIMEOUT_MS,
+          requestTimeoutMs: parsed.GAMESMCP_PROVIDER_REQUEST_TIMEOUT_MS,
+          healthCacheMs: parsed.GAMESMCP_PROVIDER_HEALTH_CACHE_MS,
+        }
+      : {
+          id: "starrail-local",
+          game: "starrail",
+          kind: "local_dataset",
+          enabled: parsed.GAMESMCP_STARRAIL_ENABLED,
+          dataDir: starRailDataDir,
+          inventoryOutput: resolve(parsed.DATA_DIR, "artifacts/starrail-source-inventory.json"),
+        };
   return {
     nodeEnv: parsed.NODE_ENV,
     host: parsed.HOST,
@@ -196,8 +233,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       },
       starrail: {
         enabled: starrailProvider.enabled,
-        dataDir: starrailProvider.dataDir,
-        inventoryOutput: starrailProvider.inventoryOutput,
+        provider: parsed.GAMESMCP_STARRAIL_PROVIDER,
+        dataDir: starrailProvider.id === "starrail-local" ? starrailProvider.dataDir : undefined,
+        inventoryOutput:
+          starrailProvider.id === "starrail-local"
+            ? starrailProvider.inventoryOutput
+            : resolve(parsed.DATA_DIR, "artifacts/starrail-source-inventory.json"),
+        istarothUrl: starrailProvider.id === "istaroth" ? starrailProvider.url : undefined,
       },
     },
   };

@@ -19,7 +19,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm vitest run packages/providers/src/registry.test.ts packages/providers/src/istaroth/provider.test.ts packages/providers/src/istaroth/client.test.ts packages/providers/src/starrail/provider.test.ts apps/mcp-server/src/server.test.ts
+      - run: pnpm vitest run packages/providers/src/registry.test.ts packages/providers/src/istaroth/provider.test.ts packages/providers/src/istaroth/client.test.ts packages/providers/src/starrail/provider.test.ts packages/providers/src/starrail/corpus/build.test.ts packages/providers/src/starrail/corpus/normalizer.test.ts apps/mcp-server/src/server.test.ts
+      - run: pnpm data:starrail:corpus --source data/fixtures/starrail --output data/generated/starrail/istaroth/fixture-chs
+      - run: pnpm data:starrail:validate --corpus data/generated/starrail/istaroth/fixture-chs
 
   real-istaroth:
     runs-on: ubuntu-latest
@@ -78,4 +80,26 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: starrail-local-provider-artifacts
+          path: artifacts/
+
+  real-starrail-istaroth:
+    runs-on: ubuntu-latest
+    if: ${{ vars.STARRAIL_ISTAROTH_INTEGRATION_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:starrail-istaroth
+        env:
+          STARRAIL_ISTAROTH_INTEGRATION_URL: ${{ vars.STARRAIL_ISTAROTH_INTEGRATION_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starrail-istaroth-provider-artifacts
           path: artifacts/

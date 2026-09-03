@@ -18,8 +18,9 @@ import {
   searchBudgetFromLimit,
 } from "./adapter.js";
 
-export interface GenshinIstarothProviderConfig {
+export interface IstarothKnowledgeProviderConfig {
   gameSlug: string;
+  providerId?: string;
   client: IstarothMcpClientLike;
   requestTimeoutMs: number;
   healthCacheMs?: number;
@@ -27,8 +28,8 @@ export interface GenshinIstarothProviderConfig {
 
 const REQUIRED_TOOLS = ["retrieve", "retrieve_bm25", "get_file_content", "get_document_hierarchy"];
 
-export class GenshinIstarothProvider implements GameKnowledgeProvider {
-  readonly id = "istaroth";
+export class IstarothKnowledgeProvider implements GameKnowledgeProvider {
+  readonly id: string;
   readonly kind = "knowledge" as const;
   readonly capabilities: GameProviderCapability[] = [
     "knowledge_search",
@@ -39,7 +40,9 @@ export class GenshinIstarothProvider implements GameKnowledgeProvider {
 
   private cachedHealth: { expiresAt: number; value: GameProviderHealth } | null = null;
 
-  constructor(private readonly config: GenshinIstarothProviderConfig) {}
+  constructor(private readonly config: IstarothKnowledgeProviderConfig) {
+    this.id = config.providerId ?? "istaroth";
+  }
 
   get gameSlug(): string {
     return this.config.gameSlug;
@@ -225,6 +228,9 @@ export class GenshinIstarothProvider implements GameKnowledgeProvider {
     await this.config.client.close();
   }
 }
+
+export { IstarothKnowledgeProvider as GenshinIstarothProvider };
+export type { IstarothKnowledgeProviderConfig as GenshinIstarothProviderConfig };
 
 function capabilitySupportedByTools(capability: GameProviderCapability, tools: string[]): boolean {
   switch (capability) {

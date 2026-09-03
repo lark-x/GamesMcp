@@ -125,6 +125,9 @@ Real E2E:
 ```bash
 GAMESMCP_ISTAROTH_URL=http://127.0.0.1:8000/mcp pnpm test:istaroth-provider
 GAMESMCP_STARRAIL_DATA_DIR=/data/games/starrail/turn-based-game-data/<commit> pnpm test:starrail-provider
+pnpm data:starrail:corpus --source data/fixtures/starrail --output data/generated/starrail/istaroth/fixture-chs
+pnpm data:starrail:validate --corpus data/generated/starrail/istaroth/fixture-chs
+STARRAIL_ISTAROTH_INTEGRATION_URL=http://127.0.0.1:8001/mcp pnpm test:starrail-istaroth
 ```
 
 Benchmark:
@@ -138,6 +141,7 @@ Failure behavior:
 
 - Istaroth down returns `provider_timeout` or `provider_unavailable`.
 - StarRail data path missing returns `provider_unavailable`.
+- StarRail Istaroth mode requires `GAMESMCP_STARRAIL_ISTAROTH_URL`; it must not scan raw TurnBasedGameData at runtime.
 - GamesMcp local tools and other providers continue to run.
 - There is no silent fallback between games or providers.
 

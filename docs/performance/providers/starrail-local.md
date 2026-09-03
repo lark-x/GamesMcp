@@ -12,4 +12,4 @@ Output:
 artifacts/provider-baseline/starrail-local.json
 ```
 
-The baseline uses the same measurement format as the Istaroth provider. StarRail is local dataset-backed while Genshin/Istaroth is an external MCP service, so the numbers should be compared as service-model facts rather than a blanket architecture verdict.
+The baseline uses the same measurement format as the Istaroth provider. It is retained as a migration comparison point and rollback path, not as the long-term RAG implementation.
