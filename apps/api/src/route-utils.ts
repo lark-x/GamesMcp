@@ -70,3 +70,20 @@ export function parsePositive(value: unknown, fallback: number, maximum: number)
   const number = Number(value ?? fallback);
   return Number.isInteger(number) && number > 0 ? Math.min(number, maximum) : fallback;
 }
+
+export const listQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  revisionId: revisionIdSchema.optional(),
+});
+
+export const stableIdParams = z.object({
+  gameId: z.string().uuid(),
+  stableId: z.string().min(1).max(200),
+});
+
+/** Fastify keeps %2F encoded in params; stableIds use slashes. */
+export function decodeStableId(value: string): string {
+  return decodeURIComponent(value);
+}

@@ -402,6 +402,38 @@ export const genshinMaterialSchema = structuredBaseSchema.extend({
 });
 export type GenshinMaterial = z.infer<typeof genshinMaterialSchema>;
 
+export const codexMaterialSchema = z.object({
+  id: z.string(),
+  gameId: gameIdSchema,
+  revisionId: revisionIdSchema,
+  stableId: z.string().min(1),
+  sourceKey: z.string().min(1).optional(),
+  name: z.string().min(1),
+  category: z.string().min(1),
+  categoryLabel: z.string().optional(),
+  rarity: z.number().int().min(1).max(5).nullable().optional(),
+  description: z.string().nullable().optional(),
+  sources: z.array(z.string()).default([]),
+  usedBy: z.array(z.string()).default([]),
+  gameVersion: z.string().nullable().optional(),
+  locale: z.string().nullable().optional(),
+  sourceId: z.string().nullable().optional(),
+  sourceSnapshotId: z.string().nullable().optional(),
+  provenance: z.record(z.string(), z.unknown()).optional(),
+});
+export type CodexMaterial = z.infer<typeof codexMaterialSchema>;
+
+export const codexMaterialListResponseSchema = z.object({
+  gameId: gameIdSchema,
+  revisionId: revisionIdSchema.nullable(),
+  materials: z.array(codexMaterialSchema),
+  total: z.number().int().optional(),
+  limit: z.number().int().optional(),
+  offset: z.number().int().optional(),
+  nextOffset: z.number().int().nullable().optional(),
+});
+export type CodexMaterialListResponse = z.infer<typeof codexMaterialListResponseSchema>;
+
 export const genshinAchievementSchema = structuredBaseSchema.extend({
   category: genshinAchievementCategorySchema,
   requirement: z.string().nullable().optional(),

@@ -1,4 +1,5 @@
-import type { ArchiveRoute } from "./archive.types.js";
+import type { ArchiveRoute, ArchiveSection } from "./archive.types.js";
+export type { ArchiveSection };
 
 /** Parse a hash route into a typed archive route object. */
 export function parseArchiveRoute(hash = window.location.hash): ArchiveRoute {

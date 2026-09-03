@@ -6,7 +6,7 @@ import { completenessLabel, questTypeLabel } from "../../shared.js";
 import { ArchiveEmpty, ArchiveError } from "../ArchiveStates.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
-import { StoryCatalog } from "./StoryCatalog.js";
+import { StoryCatalog, buildStoryTree, flattenStoryTreeQuests } from "./StoryCatalog.js";
 import { StoryInspector } from "./StoryInspector.js";
 import { StoryTextBlock } from "./StoryTextBlock.js";
 import type { StoryCatalogFilters, StoryEntry } from "./story.types.js";
@@ -47,7 +47,7 @@ export function StoryBrowser({
   onHome: () => void;
   onOpenMaterials: () => void;
   onOpenText: () => void;
-  onQuestKeyChange?: (questKey: string | undefined) => void;
+  onQuestKeyChange?: (questKey: string | undefined, mode?: "push" | "replace") => void;
 }) {
   const [filters, setFilters] = useState<StoryCatalogFilters>({
     query: "",
@@ -63,10 +63,15 @@ export function StoryBrowser({
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [activeSubquestKey, setActiveSubquestKey] = useState<string | undefined>();
   const [highlightNodeKey, setHighlightNodeKey] = useState<string | undefined>();
+  const abortRef = useRef<AbortController | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
 
   const loadCatalog = useCallback(
     async (nextFilters: StoryCatalogFilters) => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setCatalogLoading(true);
       setCatalogError("");
       try {
@@ -76,12 +81,21 @@ export function StoryBrowser({
         if (selectedRevision) params.set("revisionId", selectedRevision);
         const result = await apiFetch<{ quests: QuestSearchHit[] }>(
           `/api/games/${gameId}/quests?${params.toString()}`,
+          { signal: controller.signal },
         );
         setEntries(result.quests.map(toEntry));
       } catch (reason) {
+        if (
+          controller.signal.aborted ||
+          (reason instanceof Error && reason.name === "AbortError")
+        ) {
+          return;
+        }
         setCatalogError(reason instanceof Error ? reason.message : "任务目录加载失败");
       } finally {
-        setCatalogLoading(false);
+        if (!controller.signal.aborted) {
+          setCatalogLoading(false);
+        }
       }
     },
     [gameId, selectedRevision],
@@ -89,6 +103,9 @@ export function StoryBrowser({
 
   useEffect(() => {
     void loadCatalog(filters);
+    return () => {
+      abortRef.current?.abort();
+    };
   }, [filters, loadCatalog]);
 
   const openQuest = useCallback(
@@ -115,18 +132,27 @@ export function StoryBrowser({
     [filters.locale, gameId, selectedRevision],
   );
 
+  // Synchronize when initialQuestKey changes (Deep link or browser back/forward)
   useEffect(() => {
     if (!initialQuestKey) {
       setQuest(null);
       return;
     }
+    if (quest?.questKey === initialQuestKey) return;
     setActiveSubquestKey(undefined);
+    setCursor(undefined);
+    setHighlightNodeKey(undefined);
     void openQuest(initialQuestKey);
-  }, [initialQuestKey]);
+  }, [initialQuestKey, openQuest]);
 
+  // Synchronize locale / revision changes for open quest
   useEffect(() => {
-    onQuestKeyChange?.(quest?.questKey);
-  }, [quest?.questKey]);
+    if (!quest?.questKey) return;
+    setCursor(undefined);
+    setActiveSubquestKey(undefined);
+    setHighlightNodeKey(undefined);
+    void openQuest(quest.questKey);
+  }, [filters.locale, selectedRevision]);
 
   useEffect(() => {
     if (!highlightNodeKey) return;
@@ -134,13 +160,35 @@ export function StoryBrowser({
     return () => window.clearTimeout(timer);
   }, [highlightNodeKey]);
 
+  // Derive flat quest order from story tree for Previous / Next navigation
+  const flattenedQuests = useMemo(() => {
+    const tree = buildStoryTree(entries);
+    return flattenStoryTreeQuests(tree);
+  }, [entries]);
+
+  const currentQuestIndex = flattenedQuests.findIndex((q) => q.questKey === quest?.questKey);
+  const prevQuest = currentQuestIndex > 0 ? flattenedQuests[currentQuestIndex - 1] : undefined;
+  const nextQuest =
+    currentQuestIndex >= 0 && currentQuestIndex < flattenedQuests.length - 1
+      ? flattenedQuests[currentQuestIndex + 1]
+      : undefined;
+
   const sections: GlobalNavSection[] = useMemo(
     () => [
       {
         label: "浏览",
         items: [
           { key: "home", label: "首页", onSelect: onHome },
-          { key: "story", label: "剧情档案", active: true, onSelect: onHome },
+          {
+            key: "story",
+            label: "剧情档案",
+            active: true,
+            onSelect: () => {
+              if (window.location.hash !== "#story") {
+                window.location.hash = "story";
+              }
+            },
+          },
           { key: "materials", label: "材料", onSelect: onOpenMaterials },
           { key: "text", label: "文本", onSelect: onOpenText },
         ],
@@ -151,8 +199,26 @@ export function StoryBrowser({
 
   function selectEntry(entry: StoryEntry) {
     setActiveSubquestKey(undefined);
-    onQuestKeyChange?.(entry.questKey);
+    setCursor(undefined);
+    setHighlightNodeKey(undefined);
+    onQuestKeyChange?.(entry.questKey, "push");
     void openQuest(entry.questKey);
+  }
+
+  function navigateToQuest(targetQuestKey: string) {
+    setActiveSubquestKey(undefined);
+    setCursor(undefined);
+    setHighlightNodeKey(undefined);
+    onQuestKeyChange?.(targetQuestKey, "push");
+    void openQuest(targetQuestKey);
+  }
+
+  function handleSelectCitation(nodeKey: string) {
+    setHighlightNodeKey(nodeKey);
+    const elem = document.getElementById(`story-node-${nodeKey}`);
+    if (elem) {
+      elem.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 
   const dialogueNodes = quest?.dialogueNodes.filter((node) => node.body.trim()) ?? [];
@@ -169,7 +235,6 @@ export function StoryBrowser({
           loading={catalogLoading}
           activeQuestKey={quest?.questKey}
           onFilters={(next) => setFilters((current) => ({ ...current, ...next }))}
-          onSearch={() => void loadCatalog(filters)}
           onSelect={selectEntry}
         />
       }
@@ -246,23 +311,41 @@ export function StoryBrowser({
               </div>
               <div className="story-loader" ref={loaderRef} aria-hidden="true" />
               <footer className="story-reader-footer">
-                <span role="status">
-                  已加载 {quest.loadedDialogueNodes ?? dialogueNodes.length} /{" "}
-                  {quest.totalDialogueNodes ?? dialogueNodes.length} 条
-                </span>
-                <button
-                  type="button"
-                  disabled={!cursor || detailLoading}
-                  onClick={() => quest && void openQuest(quest.questKey, { cursor })}
-                >
-                  {cursor ? "读取下一页" : "已到末尾"}
-                </button>
+                <div className="story-cursor-pagination">
+                  <span role="status">
+                    已加载 {quest.loadedDialogueNodes ?? dialogueNodes.length} /{" "}
+                    {quest.totalDialogueNodes ?? dialogueNodes.length} 条
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!cursor || detailLoading}
+                    onClick={() => quest && void openQuest(quest.questKey, { cursor })}
+                  >
+                    {cursor ? "加载更多正文" : "已到正文末尾"}
+                  </button>
+                </div>
+                <nav className="story-quest-navigation" aria-label="任务导航">
+                  <button
+                    type="button"
+                    disabled={!prevQuest}
+                    onClick={() => prevQuest && navigateToQuest(prevQuest.questKey)}
+                  >
+                    ← 上一任务
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!nextQuest}
+                    onClick={() => nextQuest && navigateToQuest(nextQuest.questKey)}
+                  >
+                    下一任务 →
+                  </button>
+                </nav>
               </footer>
             </>
           ) : null}
         </article>
       }
-      inspector={<StoryInspector quest={quest} />}
+      inspector={<StoryInspector quest={quest} onSelectCitation={handleSelectCitation} />}
     />
   );
 }

@@ -1,3 +1,5 @@
+export type ArchiveSection = "home" | "story" | "materials" | "text";
+
 export type ArchiveRoute =
   | { kind: "home" }
   | { kind: "quests" }
@@ -7,14 +9,14 @@ export type ArchiveRoute =
   | { kind: "text"; textKind: string; bookId?: string; chapterId?: string }
   | { kind: "unknown" };
 
-export type StoryTreeNode = {
+export interface StoryTreeNode {
   id: string;
-  type: string;
+  type: "region" | "series" | "chapter" | "quest";
   title: string;
-  parentId?: string;
   order?: number;
+  questKey?: string;
   children?: StoryTreeNode[];
-};
+}
 
 /** flattened single story entry, regardless of quest API grouping. */
 export type StoryEntry = {

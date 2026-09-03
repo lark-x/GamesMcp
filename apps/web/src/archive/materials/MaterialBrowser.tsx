@@ -1,37 +1,40 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api.js";
 import { ArchiveAvatar } from "../ArchiveAvatar.js";
 import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js";
+import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveInspector.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
-import { InspectorField, InspectorSection, ArchiveInspector } from "../ArchiveInspector.js";
+import { ArchivePagination } from "../ArchivePagination.js";
 import type { ArchiveMaterial } from "./material.types.js";
 
 const CATEGORY_LABELS: Record<string, string> = {
-  character_development: "角色培养",
-  character_ascension: "角色晋阶",
-  weapon_development: "武器培养",
-  weapon_ascension: "武器晋阶",
+  character_development: "角色培养素材",
+  weapon_development: "武器强化素材",
   local_specialty: "区域特产",
   currency: "货币",
   consumable: "消耗品",
   quest_item: "任务道具",
-  forging: "锻造",
-  cooking: "料理",
-  furnishing: "摆设",
+  forging: "锻造材料",
+  cooking: "食材烹饪",
+  furnishing: "摆设素材",
+  character_ascension: "角色突破素材",
+  trace_material: "行迹材料",
+  light_cone_ascension: "光锥突破素材",
   other: "其他",
 };
 
-function categoryLabel(category: string) {
-  return CATEGORY_LABELS[category] ?? category;
+function categoryLabel(key: string): string {
+  return CATEGORY_LABELS[key] ?? key;
 }
 
-function stars(rarity?: number | null) {
-  return rarity ? "★".repeat(rarity) : "";
+function stars(rarity?: number | null): string {
+  if (!rarity) return "";
+  return "★".repeat(Math.min(rarity, 5));
 }
 
 /**
- * Material browser: category -> list -> detail, backed by the unified
+ * Material browser for characters, weapons, ascension materials using the
  * /codex/materials API. Images fall back to the shared initial avatar.
  */
 export function MaterialBrowser({
@@ -53,7 +56,7 @@ export function MaterialBrowser({
   onHome: () => void;
   onOpenStory: () => void;
   onOpenText: () => void;
-  onMaterialIdChange?: (id: string | undefined) => void;
+  onMaterialIdChange?: (id: string | undefined, mode?: "push" | "replace") => void;
 }) {
   const [materials, setMaterials] = useState<ArchiveMaterial[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,29 +65,30 @@ export function MaterialBrowser({
   const [activeCategory, setActiveCategory] = useState("");
   const [selected, setSelected] = useState<ArchiveMaterial | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const limit = 100;
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadMaterials = useCallback(async () => {
     setLoading(true);
     setError("");
-    const params = new URLSearchParams({ limit: "100" });
-    if (selectedRevision) params.set("revisionId", selectedRevision);
-    apiFetch<{ materials: ArchiveMaterial[] }>(
-      `/api/games/${gameId}/codex/materials?${params.toString()}`,
-    )
-      .then((result) => {
-        if (!cancelled) setMaterials(result.materials ?? []);
-      })
-      .catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "材料列表加载失败");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [gameId, selectedRevision]);
+    try {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (selectedRevision) params.set("revisionId", selectedRevision);
+      if (query.trim()) params.set("q", query.trim());
+      const result = await apiFetch<{ materials: ArchiveMaterial[] }>(
+        `/api/games/${gameId}/codex/materials?${params.toString()}`,
+      );
+      setMaterials(result.materials ?? []);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "材料列表加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [gameId, selectedRevision, limit, offset, query]);
+
+  useEffect(() => {
+    void loadMaterials();
+  }, [loadMaterials]);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -94,43 +98,46 @@ export function MaterialBrowser({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [materials]);
 
+  // Full-field search: name, description, sources, usedBy
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return materials.filter((material) => {
       if (activeCategory && material.category !== activeCategory) return false;
       if (!keyword) return true;
-      return (
-        material.name.toLowerCase().includes(keyword) ||
-        (material.description ?? "").toLowerCase().includes(keyword)
-      );
+      const matchName = material.name.toLowerCase().includes(keyword);
+      const matchDesc = (material.description ?? "").toLowerCase().includes(keyword);
+      const matchSources = (material.sources ?? []).some((s) => s.toLowerCase().includes(keyword));
+      const matchUsedBy = (material.usedBy ?? []).some((u) => u.toLowerCase().includes(keyword));
+      return matchName || matchDesc || matchSources || matchUsedBy;
     });
   }, [materials, query, activeCategory]);
+
+  const loadMaterialDetail = useCallback(
+    async (id: string) => {
+      setDetailLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (selectedRevision) params.set("revisionId", selectedRevision);
+        const result = await apiFetch<{ material: ArchiveMaterial }>(
+          `/api/games/${gameId}/codex/materials/${encodeURIComponent(id)}?${params.toString()}`,
+        );
+        setSelected(result.material);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "材料详情加载失败");
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [gameId, selectedRevision],
+  );
 
   useEffect(() => {
     if (!initialMaterialId) {
       setSelected(null);
       return;
     }
-    let cancelled = false;
-    setDetailLoading(true);
-    const params = new URLSearchParams();
-    if (selectedRevision) params.set("revisionId", selectedRevision);
-    apiFetch<{ material: ArchiveMaterial }>(
-      `/api/games/${gameId}/codex/materials/${encodeURIComponent(initialMaterialId)}?${params.toString()}`,
-    )
-      .then((result) => {
-        if (!cancelled) setSelected(result.material);
-      })
-      .catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "材料详情加载失败");
-      })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [initialMaterialId, gameId, selectedRevision]);
+    void loadMaterialDetail(initialMaterialId);
+  }, [initialMaterialId, loadMaterialDetail]);
 
   const sections: GlobalNavSection[] = useMemo(
     () => [
@@ -139,7 +146,16 @@ export function MaterialBrowser({
         items: [
           { key: "home", label: "首页", onSelect: onHome },
           { key: "story", label: "剧情档案", onSelect: onOpenStory },
-          { key: "materials", label: "材料", active: true, onSelect: onHome },
+          {
+            key: "materials",
+            label: "材料",
+            active: true,
+            onSelect: () => {
+              if (window.location.hash !== "#archive/materials") {
+                window.location.hash = "archive/materials";
+              }
+            },
+          },
           { key: "text", label: "文本", onSelect: onOpenText },
         ],
       },
@@ -159,13 +175,19 @@ export function MaterialBrowser({
             aria-label="搜索材料"
             placeholder="搜索材料名称、用途、来源…"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setOffset(0);
+            }}
           />
           <nav aria-label="材料分类">
             <button
               type="button"
               className={!activeCategory ? "is-active" : ""}
-              onClick={() => setActiveCategory("")}
+              onClick={() => {
+                setActiveCategory("");
+                setOffset(0);
+              }}
             >
               全部材料
             </button>
@@ -174,7 +196,10 @@ export function MaterialBrowser({
                 type="button"
                 key={category}
                 className={activeCategory === category ? "is-active" : ""}
-                onClick={() => setActiveCategory(category)}
+                onClick={() => {
+                  setActiveCategory(category);
+                  setOffset(0);
+                }}
               >
                 {categoryLabel(category)}
                 <small> {count}</small>
@@ -186,41 +211,59 @@ export function MaterialBrowser({
       main={
         <section className="material-list-panel" aria-busy={loading || detailLoading}>
           {error ? (
-            <ArchiveError message="资料加载失败" detail={error} onRetry={() => setError("")} />
+            <ArchiveError
+              message="资料加载失败"
+              detail={error}
+              onRetry={() => {
+                void loadMaterials();
+                if (selected) void loadMaterialDetail(selected.stableId);
+              }}
+            />
           ) : null}
           {loading ? (
             <ArchiveLoading label="材料加载中" />
           ) : filtered.length ? (
-            <div className="material-list" role="list">
-              {filtered.map((material) => (
-                <button
-                  type="button"
-                  role="listitem"
-                  key={material.stableId}
-                  className={
-                    "material-row " + (selected?.stableId === material.stableId ? "is-active" : "")
-                  }
-                  onClick={() => {
-                    onMaterialIdChange?.(material.stableId);
-                    setSelected(material);
-                  }}
-                >
-                  <ArchiveAvatar
-                    fallbackText={material.name.slice(0, 1)}
-                    seed={material.stableId}
-                    label={material.name}
-                    size={32}
-                  />
-                  <span className="material-row-body">
-                    <strong>{material.name}</strong>
-                    <small>{categoryLabel(material.category)}</small>
-                  </span>
-                  <span className="material-rarity" aria-label={`星级 ${material.rarity ?? 0}`}>
-                    {stars(material.rarity)}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="material-list" role="list">
+                {filtered.map((material) => (
+                  <button
+                    type="button"
+                    role="listitem"
+                    key={material.stableId}
+                    className={
+                      "material-row " +
+                      (selected?.stableId === material.stableId ? "is-active" : "")
+                    }
+                    onClick={() => {
+                      onMaterialIdChange?.(material.stableId, "push");
+                      setSelected(material);
+                    }}
+                  >
+                    <ArchiveAvatar
+                      fallbackText={material.name.slice(0, 1)}
+                      seed={material.stableId}
+                      label={material.name}
+                      size={32}
+                    />
+                    <span className="material-row-body">
+                      <strong>{material.name}</strong>
+                      <small>{categoryLabel(material.category)}</small>
+                    </span>
+                    <span className="material-rarity" aria-label={`星级 ${material.rarity ?? 0}`}>
+                      {stars(material.rarity)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <ArchivePagination
+                current={Math.floor(offset / limit) + 1}
+                limit={limit}
+                hasMore={materials.length === limit}
+                disabled={loading}
+                onPrev={() => setOffset((prev) => Math.max(0, prev - limit))}
+                onNext={() => setOffset((prev) => prev + limit)}
+              />
+            </>
           ) : (
             <ArchiveEmpty title="当前版本没有可浏览的材料" detail="尝试清除筛选或切换关键词。" />
           )}

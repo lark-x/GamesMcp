@@ -11,6 +11,7 @@ import { registerAppLifecycle } from "./app-lifecycle.js";
 import { registerPublicRoutes } from "./public-routes.js";
 import { registerGenshinRoutes } from "./genshin-routes.js";
 import { registerTextRoutes } from "./text-routes.js";
+import { registerCodexRoutes } from "./codex-routes.js";
 import { GameDomainService } from "@gip/domain";
 
 export type AppDependencies = {
@@ -41,6 +42,7 @@ export function createApp({ repository, config = loadConfig() }: AppDependencies
   registerAppLifecycle(app, config);
   registerPublicRoutes(app, { repository, config, domain, retrieval, qa });
   registerGenshinRoutes(app, { gameDomain });
+  registerCodexRoutes(app, { gameDomain });
   registerTextRoutes(app, { gameDomain, repository });
   registerAdminIngestionRoutes(app, { repository, config, domain });
   registerAdminReviewRoutes(app, { repository, config });

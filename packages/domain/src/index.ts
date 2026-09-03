@@ -676,10 +676,10 @@ export interface GenshinStructuredRepository {
   getMaterial(
     revisionId: Id,
     stableId: string,
-  ): Promise<import("@gip/contracts").GenshinMaterial | null>;
+  ): Promise<import("@gip/contracts").CodexMaterial | null>;
   listMaterials(
     options: GenshinStructuredListOptions,
-  ): Promise<import("@gip/contracts").GenshinMaterial[]>;
+  ): Promise<import("@gip/contracts").CodexMaterial[]>;
   upsertAchievement(
     input: Omit<import("@gip/contracts").GenshinAchievement, "id">,
   ): Promise<import("@gip/contracts").GenshinAchievement>;
@@ -1781,18 +1781,22 @@ export class GameDomainService {
     gameId: Id,
     revisionId?: Id,
     options: { query?: string; limit?: number; offset?: number } = {},
-  ) {
+  ): Promise<import("@gip/contracts").CodexMaterial[]> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listMaterials({
       revisionId: revision,
       query: options.query,
-      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 200),
       offset: options.offset ?? 0,
     });
   }
 
-  async getMaterial(gameId: Id, stableId: string, revisionId?: Id) {
+  async getMaterial(
+    gameId: Id,
+    stableId: string,
+    revisionId?: Id,
+  ): Promise<import("@gip/contracts").CodexMaterial> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     const material = await this.repository.genshin.getMaterial(revision, stableId);

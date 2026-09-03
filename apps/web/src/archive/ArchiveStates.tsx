@@ -35,8 +35,8 @@ export function ArchiveError({
       <strong>{message}</strong>
       {detail ? <p>{detail}</p> : null}
       {onRetry ? (
-        <button type="button" onClick={onRetry}>
-          重新加载
+        <button type="button" onClick={onRetry} aria-label="重试">
+          重试
         </button>
       ) : null}
     </div>

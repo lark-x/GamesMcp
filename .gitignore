@@ -32,4 +32,7 @@ artifacts/**
 !artifacts/starrail-full-corpus/
 !artifacts/starrail-full-corpus/**
 *.log
+*.cpuprofile
+.perfprof*
+.questprof
 .DS_Store

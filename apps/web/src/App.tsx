@@ -302,9 +302,19 @@ export function App() {
 
   if (archiveRoute && gameId) {
     const archiveGameName = currentGame?.name ?? "Game";
-    if (archiveRoute.kind === "quests" || archiveRoute.kind === "story" || archiveRoute.kind === "story-catalog") {
+    if (
+      archiveRoute.kind === "quests" ||
+      archiveRoute.kind === "story" ||
+      archiveRoute.kind === "story-catalog"
+    ) {
       return (
-        <Suspense fallback={<div className="archive-page-fallback"><ArchiveLoading /></div>}>
+        <Suspense
+          fallback={
+            <div className="archive-page-fallback">
+              <ArchiveLoading />
+            </div>
+          }
+        >
           <StoryBrowser
             gameId={gameId}
             gameName={archiveGameName}
@@ -321,10 +331,14 @@ export function App() {
             onOpenText={() => {
               window.location.hash = "text/books";
             }}
-            onQuestKeyChange={(questKey) => {
+            onQuestKeyChange={(questKey, mode = "replace") => {
               const nextHash = questKey ? `story/${encodeURIComponent(questKey)}` : "story";
               if (window.location.hash !== `#${nextHash}`) {
-                window.history.replaceState(null, "", `#${nextHash}`);
+                if (mode === "push") {
+                  window.location.hash = nextHash;
+                } else {
+                  window.history.replaceState(null, "", `#${nextHash}`);
+                }
               }
             }}
           />
@@ -333,7 +347,13 @@ export function App() {
     }
     if (archiveRoute.kind === "materials") {
       return (
-        <Suspense fallback={<div className="archive-page-fallback"><ArchiveLoading /></div>}>
+        <Suspense
+          fallback={
+            <div className="archive-page-fallback">
+              <ArchiveLoading />
+            </div>
+          }
+        >
           <MaterialBrowser
             gameId={gameId}
             gameName={archiveGameName}
@@ -350,12 +370,16 @@ export function App() {
             onOpenText={() => {
               window.location.hash = "text/books";
             }}
-            onMaterialIdChange={(materialId) => {
+            onMaterialIdChange={(materialId, mode = "replace") => {
               const nextHash = materialId
                 ? `archive/materials/${encodeURIComponent(materialId)}`
                 : "archive/materials";
               if (window.location.hash !== `#${nextHash}`) {
-                window.history.replaceState(null, "", `#${nextHash}`);
+                if (mode === "push") {
+                  window.location.hash = nextHash;
+                } else {
+                  window.history.replaceState(null, "", `#${nextHash}`);
+                }
               }
             }}
           />
@@ -364,7 +388,13 @@ export function App() {
     }
     if (archiveRoute.kind === "text") {
       return (
-        <Suspense fallback={<div className="archive-page-fallback"><ArchiveLoading /></div>}>
+        <Suspense
+          fallback={
+            <div className="archive-page-fallback">
+              <ArchiveLoading />
+            </div>
+          }
+        >
           <TextBrowser
             gameId={gameId}
             gameName={archiveGameName}
@@ -382,13 +412,17 @@ export function App() {
             onOpenMaterials={() => {
               window.location.hash = "archive/materials";
             }}
-            onRouteChange={(bookStableId, volumeStableId) => {
+            onRouteChange={(bookStableId, volumeStableId, mode = "replace") => {
               const parts = ["text", "books"];
               if (bookStableId) parts.push(encodeURIComponent(bookStableId));
               if (bookStableId && volumeStableId) parts.push(encodeURIComponent(volumeStableId));
               const nextHash = parts.join("/");
               if (window.location.hash !== `#${nextHash}`) {
-                window.history.replaceState(null, "", `#${nextHash}`);
+                if (mode === "push") {
+                  window.location.hash = nextHash;
+                } else {
+                  window.history.replaceState(null, "", `#${nextHash}`);
+                }
               }
             }}
           />
@@ -525,18 +559,18 @@ export function App() {
           setEntity(null);
           setDocument(null);
         }}
-          onQuests={() => {
-            window.location.hash = "quests";
-          }}
-          onMaterials={() => {
-            window.location.hash = "archive/materials";
-          }}
-          onText={() => {
-            window.location.hash = "text/books";
-          }}
-          onAdminPreview={() => {
-            window.location.hash = "admin/preview";
-          }}
+        onQuests={() => {
+          window.location.hash = "quests";
+        }}
+        onMaterials={() => {
+          window.location.hash = "archive/materials";
+        }}
+        onText={() => {
+          window.location.hash = "text/books";
+        }}
+        onAdminPreview={() => {
+          window.location.hash = "admin/preview";
+        }}
       />
       <main className="library-page">
         {error && (
