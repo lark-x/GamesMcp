@@ -43,6 +43,40 @@ export function registerGenshinRoutes(
   app: FastifyInstance,
   { gameDomain }: GenshinRoutesDependencies,
 ): void {
+  // Unified codex alias so new archive frontends avoid game-specific paths.
+  // The old /genshin/* routes stay available during the transition.
+  app.get("/api/games/:gameId/codex/materials", async (request) => {
+    const { gameId } = parseIdParams(request);
+    const query = listQuerySchema.parse(parseQuery(request));
+    const materials = await gameDomain.listMaterials(gameId, query.revisionId, {
+      query: query.q,
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+    });
+    return {
+      gameId,
+      revisionId: query.revisionId ?? null,
+      materials: materials.map((material) => genshinMaterialSchema.parse(material)),
+    };
+  });
+
+  app.get("/api/games/:gameId/codex/materials/:stableId", async (request, reply) => {
+    const params = stableIdParams.parse(request.params);
+    const query = listQuerySchema.parse(parseQuery(request));
+    try {
+      const material = await gameDomain.getMaterial(
+        params.gameId,
+        decodeStableId(params.stableId),
+        query.revisionId,
+      );
+      return { material: genshinMaterialSchema.parse(material) };
+    } catch (error) {
+      if ((error as { code?: string }).code === "material_not_found")
+        return reply.code(404).send({ error: { code: "material_not_found" } });
+      throw error;
+    }
+  });
+
   app.get("/api/games/:gameId/genshin/characters", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   Citation,
@@ -35,8 +35,27 @@ import { ArchiveSidebar, type Overview, type ResultType } from "./components/Arc
 import { AdminEntry, ArchiveFeed, DetailPanel, QaPanel } from "./components/LibraryPanels.js";
 import { LibraryHeader } from "./components/LibraryHeader.js";
 import { ArchiveToolbar, SearchCard } from "./components/LibrarySearch.js";
-import { QuestReader } from "./components/PublicViews.js";
 import { PreviewBrowser } from "./preview/PreviewBrowser.js";
+import { parseArchiveRoute, type ArchiveRoute } from "./archive/archive.routes.js";
+import { ArchiveLoading } from "./archive/ArchiveStates.js";
+
+// Archive browsers are route-level code splits: the landing page never pays
+// for story/material/text reader code.
+const StoryBrowser = lazy(() =>
+  import("./archive/story/StoryBrowser.js").then((module) => ({
+    default: module.StoryBrowser,
+  })),
+);
+const MaterialBrowser = lazy(() =>
+  import("./archive/materials/MaterialBrowser.js").then((module) => ({
+    default: module.MaterialBrowser,
+  })),
+);
+const TextBrowser = lazy(() =>
+  import("./archive/text/TextBrowser.js").then((module) => ({
+    default: module.TextBrowser,
+  })),
+);
 
 type GameResponse = { games: GameSummary[] };
 export function App() {
@@ -47,9 +66,10 @@ export function App() {
     const match = /^#codex\/([a-z-]+)$/.exec(window.location.hash);
     return match?.[1] ?? null;
   });
-  const [isQuestRoute, setIsQuestRoute] = useState(() =>
-    window.location.hash.startsWith("#quests"),
-  );
+  const [archiveRoute, setArchiveRoute] = useState<ArchiveRoute | null>(() => {
+    const route = parseArchiveRoute();
+    return route.kind === "unknown" ? null : route;
+  });
   const [previewRoute, setPreviewRoute] = useState<PreviewRoute | null>(() => parsePreviewRoute());
   const [games, setGames] = useState<GameSummary[]>([]);
   const [gameId, setGameId] = useState("");
@@ -137,7 +157,8 @@ export function App() {
       setIsAdminRoute(window.location.hash.startsWith("#admin/"));
       const codexMatch = /^#codex\/([a-z-]+)$/.exec(window.location.hash);
       setCodexKind(codexMatch?.[1] ?? null);
-      setIsQuestRoute(window.location.hash.startsWith("#quests"));
+      const route = parseArchiveRoute();
+      setArchiveRoute(route.kind === "unknown" ? null : route);
       setPreviewRoute(parsePreviewRoute());
     };
     window.addEventListener("hashchange", onHashChange);
@@ -256,7 +277,6 @@ export function App() {
   function selectArchiveCategory(category: ArchiveCategory) {
     if (category.route) {
       window.location.hash = category.route;
-      setIsQuestRoute(category.route === "quests");
       setCodexKind(category.route.startsWith("codex/") ? category.route.slice(6) : null);
       return;
     }
@@ -280,19 +300,101 @@ export function App() {
     );
   }
 
-  if (isQuestRoute && gameId) {
-    return (
-      <QuestReader
-        gameId={gameId}
-        gameName={currentGame?.name ?? "Game"}
-        revisionLabel={visibleRevisionLabel}
-        selectedRevision={selectedRevision}
-        onBack={() => {
-          window.location.hash = "";
-          setIsQuestRoute(false);
-        }}
-      />
-    );
+  if (archiveRoute && gameId) {
+    const archiveGameName = currentGame?.name ?? "Game";
+    if (archiveRoute.kind === "quests" || archiveRoute.kind === "story" || archiveRoute.kind === "story-catalog") {
+      return (
+        <Suspense fallback={<div className="archive-page-fallback"><ArchiveLoading /></div>}>
+          <StoryBrowser
+            gameId={gameId}
+            gameName={archiveGameName}
+            revisionLabel={visibleRevisionLabel}
+            selectedRevision={selectedRevision}
+            initialQuestKey={archiveRoute.kind === "story" ? archiveRoute.questKey : undefined}
+            onHome={() => {
+              window.location.hash = "";
+              setArchiveRoute(null);
+            }}
+            onOpenMaterials={() => {
+              window.location.hash = "archive/materials";
+            }}
+            onOpenText={() => {
+              window.location.hash = "text/books";
+            }}
+            onQuestKeyChange={(questKey) => {
+              const nextHash = questKey ? `story/${encodeURIComponent(questKey)}` : "story";
+              if (window.location.hash !== `#${nextHash}`) {
+                window.history.replaceState(null, "", `#${nextHash}`);
+              }
+            }}
+          />
+        </Suspense>
+      );
+    }
+    if (archiveRoute.kind === "materials") {
+      return (
+        <Suspense fallback={<div className="archive-page-fallback"><ArchiveLoading /></div>}>
+          <MaterialBrowser
+            gameId={gameId}
+            gameName={archiveGameName}
+            revisionLabel={visibleRevisionLabel}
+            selectedRevision={selectedRevision}
+            initialMaterialId={archiveRoute.materialId}
+            onHome={() => {
+              window.location.hash = "";
+              setArchiveRoute(null);
+            }}
+            onOpenStory={() => {
+              window.location.hash = "story";
+            }}
+            onOpenText={() => {
+              window.location.hash = "text/books";
+            }}
+            onMaterialIdChange={(materialId) => {
+              const nextHash = materialId
+                ? `archive/materials/${encodeURIComponent(materialId)}`
+                : "archive/materials";
+              if (window.location.hash !== `#${nextHash}`) {
+                window.history.replaceState(null, "", `#${nextHash}`);
+              }
+            }}
+          />
+        </Suspense>
+      );
+    }
+    if (archiveRoute.kind === "text") {
+      return (
+        <Suspense fallback={<div className="archive-page-fallback"><ArchiveLoading /></div>}>
+          <TextBrowser
+            gameId={gameId}
+            gameName={archiveGameName}
+            revisionLabel={visibleRevisionLabel}
+            selectedRevision={selectedRevision}
+            initialBookId={archiveRoute.bookId}
+            initialChapterId={archiveRoute.chapterId}
+            onHome={() => {
+              window.location.hash = "";
+              setArchiveRoute(null);
+            }}
+            onOpenStory={() => {
+              window.location.hash = "story";
+            }}
+            onOpenMaterials={() => {
+              window.location.hash = "archive/materials";
+            }}
+            onRouteChange={(bookStableId, volumeStableId) => {
+              const parts = ["text", "books"];
+              if (bookStableId) parts.push(encodeURIComponent(bookStableId));
+              if (bookStableId && volumeStableId) parts.push(encodeURIComponent(volumeStableId));
+              const nextHash = parts.join("/");
+              if (window.location.hash !== `#${nextHash}`) {
+                window.history.replaceState(null, "", `#${nextHash}`);
+              }
+            }}
+          />
+        </Suspense>
+      );
+    }
   }
 
   if (isAdminRoute) return <AdminRoutes initialRoute={window.location.hash.slice(1)} />;
@@ -321,6 +423,7 @@ export function App() {
     return (
       <div className="app-shell library-shell">
         <LibraryHeader
+          gameName={currentGame?.name}
           games={games}
           gameId={gameId}
           overview={overview}
@@ -342,7 +445,12 @@ export function App() {
           }}
           onQuests={() => {
             window.location.hash = "quests";
-            setIsQuestRoute(true);
+          }}
+          onMaterials={() => {
+            window.location.hash = "archive/materials";
+          }}
+          onText={() => {
+            window.location.hash = "text/books";
           }}
           onAdminPreview={() => {
             window.location.hash = "admin/preview";
@@ -391,6 +499,7 @@ export function App() {
   return (
     <div className="app-shell library-shell">
       <LibraryHeader
+        gameName={currentGame?.name}
         games={games}
         gameId={gameId}
         overview={overview}
@@ -416,13 +525,18 @@ export function App() {
           setEntity(null);
           setDocument(null);
         }}
-        onQuests={() => {
-          window.location.hash = "quests";
-          setIsQuestRoute(true);
-        }}
-        onAdminPreview={() => {
-          window.location.hash = "admin/preview";
-        }}
+          onQuests={() => {
+            window.location.hash = "quests";
+          }}
+          onMaterials={() => {
+            window.location.hash = "archive/materials";
+          }}
+          onText={() => {
+            window.location.hash = "text/books";
+          }}
+          onAdminPreview={() => {
+            window.location.hash = "admin/preview";
+          }}
       />
       <main className="library-page">
         {error && (

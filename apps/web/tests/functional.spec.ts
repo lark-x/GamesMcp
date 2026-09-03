@@ -380,11 +380,11 @@ test("历史页回滚提交原因", async ({ page }) => {
 test("剧情阅读器可搜索任务并分页读取对话", async ({ page }) => {
   await mockApi(page);
   await page.goto("/#quests");
-  await expect(page.getByRole("heading", { name: "剧情任务阅读器" })).toBeVisible();
+  await expect(page.getByLabel("搜索任务")).toBeVisible();
   await page.getByLabel("搜索任务").fill("岩神");
-  await page.getByRole("button", { name: "搜索任务" }).click();
-  await page.getByRole("button", { name: /浮世浮生千岩间/ }).click();
+  await page.getByLabel("搜索任务").press("Enter");
+  await page.getByRole("listitem").filter({ hasText: "浮世浮生千岩间" }).click();
   await expect(page.getByText("要寻找岩神的话，一年里只有这一次机会。")).toBeVisible();
-  await page.getByRole("button", { name: "读取下一页对话" }).click();
+  await page.getByRole("button", { name: "读取下一页" }).click();
   await expect(page.getByText("下一页台词")).toBeVisible();
 });

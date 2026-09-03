@@ -18,6 +18,7 @@ function ThemeToggle() {
 }
 
 export function LibraryHeader({
+  gameName,
   games,
   gameId,
   overview,
@@ -26,8 +27,11 @@ export function LibraryHeader({
   onRevision,
   onCurrent,
   onQuests,
+  onMaterials,
+  onText,
   onAdminPreview,
 }: {
+  gameName?: string;
   games: GameSummary[];
   gameId: string;
   overview: Overview;
@@ -36,6 +40,8 @@ export function LibraryHeader({
   onRevision: Parameters<typeof VersionSwitcher>[0]["onRevision"];
   onCurrent: () => void;
   onQuests: () => void;
+  onMaterials: () => void;
+  onText: () => void;
   onAdminPreview: () => void;
 }) {
   return (
@@ -45,8 +51,8 @@ export function LibraryHeader({
           GI
         </span>
         <div>
-          <span className="eyebrow">TEYVAT ARCHIVE</span>
-          <h1>原神叙事知识库</h1>
+          <span className="eyebrow">GAMESMCP ARCHIVE</span>
+          <h1>{gameName ? `${gameName}资料库` : "GamesMcp 资料库"}</h1>
         </div>
       </div>
       <div className="library-top-actions">
@@ -68,7 +74,9 @@ export function LibraryHeader({
           />
         </div>
         <VersionSwitcher onPreview={onPreview} onRevision={onRevision} onCurrent={onCurrent} />
-        <Button onClick={onQuests}>剧情阅读器</Button>
+        <Button onClick={onQuests}>剧情档案</Button>
+        <Button onClick={onMaterials}>材料</Button>
+        <Button onClick={onText}>文本</Button>
         <Button onClick={onAdminPreview}>管理预发布</Button>
         <ThemeToggle />
       </div>

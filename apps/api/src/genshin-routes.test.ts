@@ -218,6 +218,31 @@ describe("Genshin API contracts", () => {
     await instance.close();
   });
 
+  it("exposes the unified codex materials alias", async () => {
+    const instance = app();
+    const response = await instance.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/codex/materials`,
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(Array.isArray(body.materials)).toBe(true);
+    expect(() => genshinMaterialSchema.parse(body.materials[0])).not.toThrow();
+    const detail = await instance.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/codex/materials/material%2Fnichang`,
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().material.stableId).toBe("material/nichang");
+    const missing = await instance.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/codex/materials/material%2Fmissing`,
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("material_not_found");
+    await instance.close();
+  });
+
   it("exposes weapons, artifacts, achievements, and enemies list contracts", async () => {
     const instance = app();
     for (const [url, schema] of [
