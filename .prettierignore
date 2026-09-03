@@ -8,4 +8,5 @@ data/generated/
 data/games/
 data/istaroth/
 data/istaroth-starrail/
+artifacts/**
 pnpm-lock.yaml

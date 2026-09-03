@@ -27,7 +27,9 @@ data/*.db
 artifacts/**
 !artifacts/P0-REPAIR-REPORT.md
 !artifacts/p0-baseline.json
+!artifacts/evaluation/
 !artifacts/evaluation/**
+!artifacts/starrail-full-corpus/
 !artifacts/starrail-full-corpus/**
 *.log
 .DS_Store

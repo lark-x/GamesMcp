@@ -6,10 +6,11 @@ on:
       turn_based_game_data_ref:
         description: "Pinned DimbreathBot/TurnBasedGameData ref"
         required: true
+        default: "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091"
       istaroth_ref:
         description: "Pinned lark-x/istaroth ref"
         required: true
-        default: main
+        default: "f22ea938704f414cfa6bfe03bc65b71142c781b7"
   schedule:
     - cron: "0 20 * * *"
 
@@ -17,6 +18,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Log provenance revisions
+        run: |
+          echo "=== StarRail Checkpoint Build Provenance ==="
+          echo "GamesMcp commit: ${{ github.sha }}"
+          echo "TurnBasedGameData ref: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}"
+          echo "Istaroth ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}"
       - name: Checkout GamesMcp
         uses: actions/checkout@v4
         with:
@@ -25,13 +32,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DimbreathBot/TurnBasedGameData
-          ref: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF }}
+          ref: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}
           path: TurnBasedGameData
       - name: Checkout Istaroth fork
         uses: actions/checkout@v4
         with:
           repository: lark-x/istaroth
-          ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'main' }}
+          ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}
           path: istaroth
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -72,13 +79,21 @@ jobs:
           ISTAROTH_EMBEDDING_BACKEND: sentence-transformers
           ISTAROTH_EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
           ISTAROTH_DEVICE: cpu
-      - name: Verify checkpoint integrity
-        run: |
-          test -f ../starrail-checkpoint/checkpoint-metadata.json
+      - name: Verify checkpoint integrity and provenance
+        run: pnpm checkpoint:starrail:verify --checkpoint ../starrail-checkpoint
+        working-directory: GamesMcp
+        env:
+          TURN_BASED_GAME_DATA_REF: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}
+          ISTAROTH_REF: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}
+          GITHUB_SHA: ${{ github.sha }}
+          ISTAROTH_EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
+      - name: Compute short SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         working-directory: GamesMcp
       - uses: actions/upload-artifact@v4
         with:
-          name: starrail-istaroth-checkpoint
+          name: starrail-istaroth-checkpoint-${{ steps.vars.outputs.sha_short }}
           path: |
             starrail-corpus/metadata/starrail/*.json
             starrail-corpus/manifest/*.json
