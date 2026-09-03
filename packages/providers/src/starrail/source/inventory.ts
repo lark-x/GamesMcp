@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 
@@ -34,11 +35,26 @@ export async function buildStarRailInventory(input: {
   sourceRef: string;
   output?: string;
 }): Promise<StarRailSourceInventory> {
+  if (input.output && existsSync(input.output)) {
+    try {
+      const existing = JSON.parse(await readFile(input.output, "utf8")) as StarRailSourceInventory;
+      if (
+        existing.schemaVersion === 1 &&
+        Array.isArray(existing.items) &&
+        existing.items.length > 0
+      ) {
+        return existing;
+      }
+    } catch {
+      // Rebuild if corrupted
+    }
+  }
+
   const root = resolve(input.dataDir);
   const files = await walk(root);
   const items: StarRailInventoryItem[] = [];
   for (const file of files) {
-    const path = relative(root, file);
+    const path = toCanonicalSourcePath(root, file);
     const family = familyFromPath(path);
     if (!family) continue;
     const bytes = await readFile(file);
@@ -88,8 +104,12 @@ async function walk(directory: string): Promise<string[]> {
   return files;
 }
 
+export function toCanonicalSourcePath(root: string, file: string): string {
+  return relative(root, file).split(sep).join("/");
+}
+
 function familyFromPath(path: string): string | undefined {
-  return path.split(sep).find((part) => TRACKED_FAMILIES.has(part));
+  return path.split("/").find((part) => TRACKED_FAMILIES.has(part));
 }
 
 function localeFromPath(path: string): string | undefined {
