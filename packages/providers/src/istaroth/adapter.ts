@@ -145,6 +145,33 @@ function structuredHits(value: unknown): Record<string, unknown>[] {
 
 function parseTextHits(text: string, limit: number): Record<string, unknown>[] {
   if (!text) return [];
+
+  if (text.includes("#######")) {
+    const sections = text
+      .split(/(?:^|\n)#{10,}\s*\n/u)
+      .map((s) => s.trim())
+      .filter(
+        (s) => s && !s.startsWith("查询 '") && !s.startsWith('查询"') && !s.startsWith("查询"),
+      );
+    if (sections.length > 0) {
+      return sections.slice(0, Math.max(limit, 1)).map((section, index) => {
+        const fileId =
+          /(?:文件ID|file[_ -]?id|id)[:：]\s*([a-f0-9]+)/iu.exec(section)?.[1] ??
+          /(?:document[_ -]?id)[:：]\s*([^\s,，]+)/iu.exec(section)?.[1];
+        const score = /(?:相关性分数|score|rank)[:：]\s*([0-9.]+)/iu.exec(section)?.[1];
+        const title =
+          /(?:^|\n)#\s+(?!文件\s+\d+|【注意)([^\n]+)/u.exec(section)?.[1]?.trim() ??
+          /(?:title|标题)[:：]\s*([^\n]+)/iu.exec(section)?.[1]?.trim();
+        return {
+          documentId: fileId ?? `text-block-${index + 1}`,
+          title,
+          excerpt: section,
+          score: score ? Number(score) : undefined,
+        };
+      });
+    }
+  }
+
   const blocks = text
     .split(/\n{2,}/u)
     .map((block) => block.trim())

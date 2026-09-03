@@ -20,6 +20,28 @@ export function deterministicCorpusId(input: {
   return hash.readUIntBE(0, 6) % MAX_SAFE_POSITIVE_INT;
 }
 
+export function buildStableContentIdentity(input: {
+  game?: string;
+  category: StarRailCorpusCategory;
+  canonicalSourcePath: string;
+  semanticKeys?: Array<string | number>;
+  normalizedTitle?: string;
+}): string {
+  const hash = createHash("sha256")
+    .update(
+      [
+        input.game ?? "starrail",
+        input.category,
+        input.canonicalSourcePath,
+        ...(input.semanticKeys?.map(String) ?? []),
+        input.normalizedTitle ?? "",
+      ].join("\n"),
+    )
+    .digest("hex")
+    .slice(0, 16);
+  return `hash:${hash}`;
+}
+
 export function assertUniqueCorpusIds(
   documents: Array<{ category: StarRailCorpusCategory; id: number; relativePath: string }>,
 ): void {

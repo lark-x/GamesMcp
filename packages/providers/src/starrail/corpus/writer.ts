@@ -31,6 +31,7 @@ export async function writeStarRailIstarothCorpus(input: {
   }
   await mkdir(resolve(input.outputDir, "manifest"), { recursive: true });
   await mkdir(resolve(input.outputDir, "metadata", "starrail"), { recursive: true });
+  await mkdir(resolve(input.outputDir, "stats", "agd"), { recursive: true });
   const manifest = buildIstarothManifest(documents);
   const categories = countBy(documents.map((document) => document.category));
   const metadata: StarRailCorpusBuildResult["metadata"] = {
@@ -70,6 +71,12 @@ export async function writeStarRailIstarothCorpus(input: {
     resolve(input.outputDir, "metadata", "starrail", "hierarchy.json"),
     metadata.hierarchy,
   );
+  await writeJson(resolve(input.outputDir, "stats", "agd", "metadata.json"), {
+    game: "starrail",
+    language: input.locale,
+    generator: "gamesmcp-starrail-corpus",
+    generatedAt,
+  });
   return {
     schemaVersion: 1,
     game: "starrail",
