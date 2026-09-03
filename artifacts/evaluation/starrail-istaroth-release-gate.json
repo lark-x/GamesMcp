@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "testedRevision": {
-    "gamesMcp": "38f3603c4b7626c5c139f36d493dd731441db27c",
+    "gamesMcp": "ce140e791514c64cb392438fe365194d8180875d",
     "istaroth": "f22ea938704f414cfa6bfe03bc65b71142c781b7",
     "turnBasedGameData": "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091"
   },
   "checkpoint": {
-    "corpusHash": "3db9b97779f4c3dca018a38c2bb6f9038fc9d01242c16fa55e884fbf34800762",
+    "corpusHash": "377bff3b25c384dd748de61bb2b024bc2d8da65eeb1675fc87ab865c1fe9d259",
     "documentCount": 15907,
     "embeddingModel": "BAAI/bge-small-zh-v1.5"
   },
@@ -30,29 +30,29 @@
   },
   "latencyMs": {
     "hybrid": {
-      "p50": 40.2,
-      "p95": 55.86,
-      "p99": 64.93
+      "p50": 192.77,
+      "p95": 271.62,
+      "p99": 755.45
     },
     "keyword": {
-      "p50": 17.55,
-      "p95": 26.49,
-      "p99": 26.49
+      "p50": 35.93,
+      "p95": 47.87,
+      "p99": 47.87
     },
     "document": {
-      "p50": 3.75,
-      "p95": 3.75,
-      "p99": 3.75
+      "p50": 7.04,
+      "p95": 7.04,
+      "p99": 7.04
     },
     "hierarchy": {
-      "p50": 3.14,
-      "p95": 3.14,
-      "p99": 3.14
+      "p50": 29.16,
+      "p95": 29.16,
+      "p99": 29.16
     },
     "overall": {
-      "p50": 37.84,
-      "p95": 55.86,
-      "p99": 64.93,
+      "p50": 179.5,
+      "p95": 271.62,
+      "p99": 755.45,
       "sampleCount": 52
     }
   },
@@ -65,7 +65,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 64.93
+      "latencyMs": 755.45
     },
     {
       "id": "sr-ist-002",
@@ -75,7 +75,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 36.46
+      "latencyMs": 174.96
     },
     {
       "id": "sr-ist-003",
@@ -85,7 +85,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 48.89
+      "latencyMs": 175.27
     },
     {
       "id": "sr-ist-004",
@@ -95,7 +95,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 20.37
+      "latencyMs": 175.16
     },
     {
       "id": "sr-ist-005",
@@ -105,7 +105,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 41.29
+      "latencyMs": 183.27
     },
     {
       "id": "sr-ist-006",
@@ -115,7 +115,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 28.81
+      "latencyMs": 176.91
     },
     {
       "id": "sr-ist-007",
@@ -125,7 +125,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 44.72
+      "latencyMs": 181.05
     },
     {
       "id": "sr-ist-008",
@@ -135,7 +135,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 31.93
+      "latencyMs": 181.11
     },
     {
       "id": "sr-ist-009",
@@ -145,7 +145,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 37.84
+      "latencyMs": 184.36
     },
     {
       "id": "sr-ist-010",
@@ -155,7 +155,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 30.09
+      "latencyMs": 173.34
     },
     {
       "id": "sr-ist-011",
@@ -165,7 +165,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 21.2
+      "latencyMs": 174.52
     },
     {
       "id": "sr-ist-012",
@@ -175,7 +175,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 29.26
+      "latencyMs": 177.34
     },
     {
       "id": "sr-ist-013",
@@ -185,7 +185,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 29.46
+      "latencyMs": 179.5
     },
     {
       "id": "sr-ist-014",
@@ -195,7 +195,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 22.32
+      "latencyMs": 173.88
     },
     {
       "id": "sr-ist-015",
@@ -205,7 +205,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 30.22
+      "latencyMs": 173.34
     },
     {
       "id": "sr-ist-016",
@@ -215,7 +215,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 21.49
+      "latencyMs": 179.22
     },
     {
       "id": "sr-ist-017",
@@ -225,7 +225,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 30.38
+      "latencyMs": 173.68
     },
     {
       "id": "sr-ist-018",
@@ -235,7 +235,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 38.62
+      "latencyMs": 174.31
     },
     {
       "id": "sr-ist-019",
@@ -245,7 +245,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 40.07
+      "latencyMs": 184.28
     },
     {
       "id": "sr-ist-020",
@@ -255,7 +255,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 36.67
+      "latencyMs": 171.12
     },
     {
       "id": "sr-ist-021",
@@ -265,7 +265,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 48.71
+      "latencyMs": 233.24
     },
     {
       "id": "sr-ist-022",
@@ -275,7 +275,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 38.98
+      "latencyMs": 233.54
     },
     {
       "id": "sr-ist-023",
@@ -285,7 +285,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 47.69
+      "latencyMs": 223.37
     },
     {
       "id": "sr-ist-024",
@@ -295,7 +295,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 48.59
+      "latencyMs": 228.84
     },
     {
       "id": "sr-ist-025",
@@ -303,9 +303,9 @@
       "query": "贝洛伯格上下层区的冲突",
       "mode": "hybrid",
       "passed": true,
-      "hitCount": 10,
+      "hitCount": 9,
       "relevantRank": 1,
-      "latencyMs": 48.06
+      "latencyMs": 234.37
     },
     {
       "id": "sr-ist-026",
@@ -315,7 +315,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 49.91
+      "latencyMs": 221.83
     },
     {
       "id": "sr-ist-027",
@@ -325,7 +325,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 45.57
+      "latencyMs": 218.71
     },
     {
       "id": "sr-ist-028",
@@ -335,7 +335,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 38.78
+      "latencyMs": 218.38
     },
     {
       "id": "sr-ist-029",
@@ -345,7 +345,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 43.81
+      "latencyMs": 205.9
     },
     {
       "id": "sr-ist-030",
@@ -355,7 +355,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 40.31
+      "latencyMs": 217.94
     },
     {
       "id": "sr-ist-031",
@@ -365,7 +365,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 39.41
+      "latencyMs": 220.19
     },
     {
       "id": "sr-ist-032",
@@ -375,7 +375,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 40.2
+      "latencyMs": 192.77
     },
     {
       "id": "sr-ist-033",
@@ -385,7 +385,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 50.55
+      "latencyMs": 220.33
     },
     {
       "id": "sr-ist-034",
@@ -395,7 +395,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 46.28
+      "latencyMs": 215.2
     },
     {
       "id": "sr-ist-035",
@@ -405,7 +405,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 51.21
+      "latencyMs": 244.82
     },
     {
       "id": "sr-ist-036",
@@ -415,7 +415,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 2,
-      "latencyMs": 19.07
+      "latencyMs": 40.34
     },
     {
       "id": "sr-ist-037",
@@ -425,7 +425,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 25.31
+      "latencyMs": 47.87
     },
     {
       "id": "sr-ist-038",
@@ -435,7 +435,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 26.49
+      "latencyMs": 46.89
     },
     {
       "id": "sr-ist-039",
@@ -445,7 +445,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 23.52
+      "latencyMs": 43.78
     },
     {
       "id": "sr-ist-040",
@@ -455,7 +455,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 17.55
+      "latencyMs": 33.22
     },
     {
       "id": "sr-ist-041",
@@ -465,7 +465,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 18.45
+      "latencyMs": 35.93
     },
     {
       "id": "sr-ist-042",
@@ -475,7 +475,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 16.98
+      "latencyMs": 39.29
     },
     {
       "id": "sr-ist-043",
@@ -485,7 +485,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 13.93
+      "latencyMs": 26.8
     },
     {
       "id": "sr-ist-044",
@@ -495,7 +495,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 13.47
+      "latencyMs": 23.82
     },
     {
       "id": "sr-ist-045",
@@ -505,7 +505,7 @@
       "passed": true,
       "hitCount": 9,
       "relevantRank": 1,
-      "latencyMs": 10.77
+      "latencyMs": 22.03
     },
     {
       "id": "sr-ist-046",
@@ -515,7 +515,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 47.91
+      "latencyMs": 251.18
     },
     {
       "id": "sr-ist-047",
@@ -525,7 +525,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 55.86
+      "latencyMs": 279.38
     },
     {
       "id": "sr-ist-048",
@@ -535,7 +535,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 54.7
+      "latencyMs": 263.19
     },
     {
       "id": "sr-ist-049",
@@ -545,7 +545,7 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 48.81
+      "latencyMs": 270.46
     },
     {
       "id": "sr-ist-050",
@@ -555,8 +555,8 @@
       "passed": true,
       "hitCount": 10,
       "relevantRank": 1,
-      "latencyMs": 58.69
+      "latencyMs": 271.62
     }
   ],
-  "generatedAt": "2026-09-03T03:11:14.012Z"
+  "generatedAt": "2026-09-03T08:33:09.990Z"
 }

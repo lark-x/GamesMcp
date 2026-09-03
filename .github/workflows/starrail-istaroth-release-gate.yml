@@ -178,6 +178,7 @@ jobs:
 
   final-gate:
     needs: [build-checkpoint, e2e]
+    if: ${{ always() && (needs.build-checkpoint.result == 'success' || needs.build-checkpoint.result == 'skipped') && needs.e2e.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout GamesMcp
