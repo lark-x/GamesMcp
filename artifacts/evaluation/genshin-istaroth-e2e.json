@@ -1,0 +1,200 @@
+{
+  "provider": "istaroth",
+  "game": "genshin",
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "documentChainPassed": true,
+  "failureIsolationPassed": true,
+  "recoveryPassed": true,
+  "generatedAt": "2026-09-02T16:04:00.216Z",
+  "cases": [
+    {
+      "id": "genshin-001",
+      "query": "钟离为何假死",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-002",
+      "query": "芙宁娜与枫丹预言",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-003",
+      "query": "纳西妲和世界树",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-004",
+      "query": "坎瑞亚灾变",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-005",
+      "query": "深渊教团",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-006",
+      "query": "戴因斯雷布",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-007",
+      "query": "博士切片",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-008",
+      "query": "若陀龙王",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-009",
+      "query": "魔神战争",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-010",
+      "query": "赤王与花神",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-011",
+      "query": "黄金莱茵多特",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-012",
+      "query": "散兵与世界树",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-013",
+      "query": "雷电将军与永恒",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-014",
+      "query": "璃月七星",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-015",
+      "query": "天理的维系者",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-016",
+      "query": "摩拉克斯",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-017",
+      "query": "枫丹预言",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-018",
+      "query": "世界树",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-019",
+      "query": "深渊教团",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    },
+    {
+      "id": "genshin-020",
+      "query": "戴因斯雷布",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "text-block-1"
+    }
+  ],
+  "documentChain": [
+    {
+      "caseId": "genshin-001",
+      "documentId": "text-block-1",
+      "passed": true
+    },
+    {
+      "caseId": "genshin-002",
+      "documentId": "text-block-1",
+      "passed": true
+    },
+    {
+      "caseId": "genshin-003",
+      "documentId": "text-block-1",
+      "passed": true
+    },
+    {
+      "caseId": "genshin-004",
+      "documentId": "text-block-1",
+      "passed": true
+    },
+    {
+      "caseId": "genshin-005",
+      "documentId": "text-block-1",
+      "passed": true
+    }
+  ]
+}

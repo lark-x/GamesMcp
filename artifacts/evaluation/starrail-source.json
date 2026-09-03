@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "provider": "starrail-local",
+  "game": "starrail",
+  "generatedAt": "2026-09-02T15:59:29.621Z",
+  "releaseGate": {
+    "sourceAvailable": true,
+    "commitRecorded": true,
+    "inventoryGenerated": true,
+    "textMapReadable": true,
+    "storySourceFound": true,
+    "minimumDocumentsReached": true
+  },
+  "summary": {
+    "snapshot": {
+      "source": "turn-based-game-data",
+      "ref": "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091",
+      "path": "/Volumes/Lark/lark/GamesMcp/data/games/starrail/turn-based-game-data/8cdb905dc2f8e6fffa9be4eb07af3e34435d6091",
+      "acquiredAt": "2026-09-02T15:58:52.001Z"
+    },
+    "inventory": {
+      "files": 134375,
+      "bytes": 2256613928
+    },
+    "textMap": {
+      "totalKeys": 465910,
+      "resolvedSample": 100,
+      "rssBytes": 831553536
+    },
+    "documents": 1510609,
+    "categories": {
+      "ExcelOutput": 796152,
+      "Story": 249864,
+      "TextMap": 464593
+    }
+  }
+}

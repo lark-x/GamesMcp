@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "errors": [],
+  "warnings": [
+    "possible utf8 replacement char: sr_book/190699.txt"
+  ],
+  "manifestEntries": 15907,
+  "categories": {
+    "sr_book": 1103,
+    "sr_character_story": 456,
+    "sr_item_lore": 3232,
+    "sr_message": 779,
+    "sr_mission": 2166,
+    "sr_story": 2779,
+    "sr_train_visitor": 38,
+    "sr_voiceline": 5354
+  },
+  "metrics": {
+    "unresolvedTitles": 0,
+    "unresolvedTitleRate": 0,
+    "assetPollutedDocs": 0,
+    "assetPollutionRate": 0
+  }
+}

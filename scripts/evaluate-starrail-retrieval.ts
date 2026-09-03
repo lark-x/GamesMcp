@@ -30,7 +30,10 @@ const golden = JSON.parse(
 const providers: Array<{ name: string; provider: GameKnowledgeProvider }> = [
   {
     name: "starrail-local",
-    provider: new StarRailLocalProvider({ dataDir: localDataDir }),
+    provider: new StarRailLocalProvider({
+      dataDir: localDataDir,
+      inventoryOutput: resolve("artifacts/starrail-source-inventory.json"),
+    }),
   },
   {
     name: "starrail-istaroth",

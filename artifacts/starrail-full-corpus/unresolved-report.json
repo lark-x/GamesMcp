@@ -1,0 +1,10 @@
+{
+  "totalIssues": 1976,
+  "unresolvedTitles": 0,
+  "unresolvedTitleRate": 0,
+  "assetPollutedDocs": 0,
+  "assetPollutionRate": 0,
+  "issuesSummary": {
+    "empty_or_non_narrative_document": 1976
+  }
+}

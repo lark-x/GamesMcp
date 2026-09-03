@@ -1,0 +1,10 @@
+{
+  "gamesMcpCommit": "ca58b146e330e98a40aac1d82bb3c40592ac6ebc",
+  "istarothCommit": "f22ea938704f414cfa6bfe03bc65b71142c781b7",
+  "turnBasedGameDataCommit": "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091",
+  "node": "v24.19.0",
+  "pnpm": "11.1.2",
+  "python": "3.9.6",
+  "os": "Darwin 25.5.0 arm64",
+  "frozenAt": "2026-09-03T02:09:00.000Z"
+}

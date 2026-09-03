@@ -1,0 +1,17 @@
+{
+  "documents": 15907,
+  "chars": 3165948,
+  "categories": {
+    "sr_book": 1103,
+    "sr_character_story": 456,
+    "sr_item_lore": 3232,
+    "sr_message": 779,
+    "sr_mission": 2166,
+    "sr_story": 2779,
+    "sr_train_visitor": 38,
+    "sr_voiceline": 5354
+  },
+  "unresolvedText": 0,
+  "duplicateRejected": 2,
+  "sourceFiles": 2796
+}

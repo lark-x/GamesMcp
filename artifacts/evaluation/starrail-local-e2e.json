@@ -1,0 +1,476 @@
+{
+  "provider": "starrail-local",
+  "game": "starrail",
+  "total": 50,
+  "passed": 50,
+  "failed": 0,
+  "documentReadPassed": true,
+  "documentReads": [
+    {
+      "caseId": "starrail-001",
+      "documentId": "starrail/textmap/7620827957694634497",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-002",
+      "documentId": "starrail/textmap/16599511039194141254",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-003",
+      "documentId": "starrail/textmap/17801522349554339842",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-004",
+      "documentId": "starrail/textmap/17055583487214591772",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-005",
+      "documentId": "starrail/textmap/8107416557358467102",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-006",
+      "documentId": "starrail/textmap/15590813025346472711",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-007",
+      "documentId": "starrail/textmap/15590813025346472711",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-008",
+      "documentId": "starrail/textmap/16732625563927075496",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-009",
+      "documentId": "starrail/textmap/9090805535985965224",
+      "passed": true
+    },
+    {
+      "caseId": "starrail-010",
+      "documentId": "starrail/textmap/16599511039194141254",
+      "passed": true
+    }
+  ],
+  "hierarchySupported": false,
+  "source": {
+    "source": "turn-based-game-data",
+    "ref": "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091",
+    "path": "/Volumes/Lark/lark/GamesMcp/data/games/starrail/turn-based-game-data/8cdb905dc2f8e6fffa9be4eb07af3e34435d6091",
+    "acquiredAt": "2026-09-03T02:25:55.097Z"
+  },
+  "documents": 1510609,
+  "categories": {
+    "ExcelOutput": 796152,
+    "Story": 249864,
+    "TextMap": 464593
+  },
+  "generatedAt": "2026-09-03T02:26:37.500Z",
+  "cases": [
+    {
+      "id": "starrail-001",
+      "query": "星神",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/7620827957694634497"
+    },
+    {
+      "id": "starrail-002",
+      "query": "开拓",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16599511039194141254"
+    },
+    {
+      "id": "starrail-003",
+      "query": "星核",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/17801522349554339842"
+    },
+    {
+      "id": "starrail-004",
+      "query": "雅利洛",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/17055583487214591772"
+    },
+    {
+      "id": "starrail-005",
+      "query": "贝洛伯格",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/8107416557358467102"
+    },
+    {
+      "id": "starrail-006",
+      "query": "仙舟",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/15590813025346472711"
+    },
+    {
+      "id": "starrail-007",
+      "query": "罗浮",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/15590813025346472711"
+    },
+    {
+      "id": "starrail-008",
+      "query": "匹诺康尼",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16732625563927075496"
+    },
+    {
+      "id": "starrail-009",
+      "query": "空间站",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/9090805535985965224"
+    },
+    {
+      "id": "starrail-010",
+      "query": "命途",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16599511039194141254"
+    },
+    {
+      "id": "starrail-011",
+      "query": "星穹列车",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/4898788380758295800"
+    },
+    {
+      "id": "starrail-012",
+      "query": "黑塔",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/9090805535985965224"
+    },
+    {
+      "id": "starrail-013",
+      "query": "丹恒",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/3829893462478934308"
+    },
+    {
+      "id": "starrail-014",
+      "query": "三月七",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/14397453031029693843"
+    },
+    {
+      "id": "starrail-015",
+      "query": "姬子",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16973105410797573762"
+    },
+    {
+      "id": "starrail-016",
+      "query": "瓦尔特",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/13614278849562512556"
+    },
+    {
+      "id": "starrail-017",
+      "query": "卡芙卡",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/17801522349554339842"
+    },
+    {
+      "id": "starrail-018",
+      "query": "银狼",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/9740633342704832780"
+    },
+    {
+      "id": "starrail-019",
+      "query": "刃",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/17142737009223529870"
+    },
+    {
+      "id": "starrail-020",
+      "query": "景元",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/910792195162407453"
+    },
+    {
+      "id": "starrail-021",
+      "query": "符玄",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/3444137244699828151"
+    },
+    {
+      "id": "starrail-022",
+      "query": "彦卿",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/13759196296606363682"
+    },
+    {
+      "id": "starrail-023",
+      "query": "希儿",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/9127038383038705642"
+    },
+    {
+      "id": "starrail-024",
+      "query": "布洛妮娅",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/4134946587871070912"
+    },
+    {
+      "id": "starrail-025",
+      "query": "可可利亚",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/8107416557358467102"
+    },
+    {
+      "id": "starrail-026",
+      "query": "桑博",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/5901209244803007643"
+    },
+    {
+      "id": "starrail-027",
+      "query": "娜塔莎",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/15624797044476465150"
+    },
+    {
+      "id": "starrail-028",
+      "query": "希露瓦",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/4134946587871070912"
+    },
+    {
+      "id": "starrail-029",
+      "query": "克拉拉",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/18353951039291007154"
+    },
+    {
+      "id": "starrail-030",
+      "query": "史瓦罗",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/18353951039291007154"
+    },
+    {
+      "id": "starrail-031",
+      "query": "停云",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/4811565131902742322"
+    },
+    {
+      "id": "starrail-032",
+      "query": "驭空",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/12351922264388026192"
+    },
+    {
+      "id": "starrail-033",
+      "query": "镜流",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16739197129832046243"
+    },
+    {
+      "id": "starrail-034",
+      "query": "罗刹",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/5197402204187474451"
+    },
+    {
+      "id": "starrail-035",
+      "query": "托帕",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/13721483857575202593"
+    },
+    {
+      "id": "starrail-036",
+      "query": "阮梅",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/9395287143646030288"
+    },
+    {
+      "id": "starrail-037",
+      "query": "真理医生",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/7451185523081367177"
+    },
+    {
+      "id": "starrail-038",
+      "query": "花火",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/12669542976598144092"
+    },
+    {
+      "id": "starrail-039",
+      "query": "黄泉",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/5272549892617079508"
+    },
+    {
+      "id": "starrail-040",
+      "query": "知更鸟",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/14033570362821991210"
+    },
+    {
+      "id": "starrail-041",
+      "query": "星期日",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/6510492282032314217"
+    },
+    {
+      "id": "starrail-042",
+      "query": "翡翠",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/13721483857575202593"
+    },
+    {
+      "id": "starrail-043",
+      "query": "星核",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/17801522349554339842"
+    },
+    {
+      "id": "starrail-044",
+      "query": "命途",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16599511039194141254"
+    },
+    {
+      "id": "starrail-045",
+      "query": "星穹列车",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/4898788380758295800"
+    },
+    {
+      "id": "starrail-046",
+      "query": "匹诺康尼",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16732625563927075496"
+    },
+    {
+      "id": "starrail-047",
+      "query": "仙舟罗浮",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/10703303505950049097"
+    },
+    {
+      "id": "starrail-048",
+      "query": "雅利洛",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/17055583487214591772"
+    },
+    {
+      "id": "starrail-049",
+      "query": "贝洛伯格",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/8107416557358467102"
+    },
+    {
+      "id": "starrail-050",
+      "query": "开拓者",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 5,
+      "documentId": "starrail/textmap/16599511039194141254"
+    }
+  ]
+}

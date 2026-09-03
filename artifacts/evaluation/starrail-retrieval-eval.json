@@ -1,0 +1,825 @@
+{
+  "generatedAt": "2026-09-03T02:40:47.725Z",
+  "reports": [
+    {
+      "provider": "starrail-local",
+      "total": 50,
+      "recallAt5": 1,
+      "recallAt10": 1,
+      "mrr": 0.99,
+      "emptyResultRate": 0,
+      "cases": [
+        {
+          "id": "sr-ist-001",
+          "category": "exact",
+          "query": "卡芙卡",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-002",
+          "category": "exact",
+          "query": "黄泉",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-003",
+          "category": "exact",
+          "query": "砂金",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-004",
+          "category": "exact",
+          "query": "黑塔",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-005",
+          "category": "exact",
+          "query": "星核猎手",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-006",
+          "category": "exact",
+          "query": "匹诺康尼",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-007",
+          "category": "exact",
+          "query": "仙舟罗浮",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-008",
+          "category": "exact",
+          "query": "贝洛伯格",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-009",
+          "category": "exact",
+          "query": "星穹列车",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-010",
+          "category": "exact",
+          "query": "命途",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-011",
+          "category": "exact",
+          "query": "虚无",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-012",
+          "category": "exact",
+          "query": "同谐",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-013",
+          "category": "exact",
+          "query": "巡猎",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-014",
+          "category": "exact",
+          "query": "丰饶",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-015",
+          "category": "exact",
+          "query": "开拓者",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-016",
+          "category": "exact",
+          "query": "三月七",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-017",
+          "category": "exact",
+          "query": "丹恒",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-018",
+          "category": "exact",
+          "query": "姬子",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-019",
+          "category": "exact",
+          "query": "瓦尔特",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-020",
+          "category": "exact",
+          "query": "星期日",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-021",
+          "category": "semantic",
+          "query": "砂金在匹诺康尼经历了什么",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-022",
+          "category": "semantic",
+          "query": "黄泉和虚无是什么关系",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-023",
+          "category": "semantic",
+          "query": "星核猎手为什么来到仙舟",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-024",
+          "category": "semantic",
+          "query": "黑塔空间站发生了什么",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-025",
+          "category": "semantic",
+          "query": "贝洛伯格上下层区的冲突",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-026",
+          "category": "semantic",
+          "query": "匹诺康尼梦境和现实",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-027",
+          "category": "semantic",
+          "query": "开拓者加入星穹列车",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-028",
+          "category": "semantic",
+          "query": "仙舟联盟追猎丰饶",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-029",
+          "category": "semantic",
+          "query": "公司和砂金的任务",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-030",
+          "category": "semantic",
+          "query": "知更鸟与匹诺康尼舞台",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-031",
+          "category": "semantic",
+          "query": "流萤和星核猎手",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-032",
+          "category": "semantic",
+          "query": "阮梅与生命实验",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-033",
+          "category": "semantic",
+          "query": "镜流和云上五骁",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-034",
+          "category": "semantic",
+          "query": "符玄和太卜司",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-035",
+          "category": "semantic",
+          "query": "停云在仙舟剧情中的遭遇",
+          "hitCount": 10,
+          "relevantRank": 2,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-036",
+          "category": "quote",
+          "query": "听我说",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-037",
+          "category": "quote",
+          "query": "规则就是用来打破的",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-038",
+          "category": "quote",
+          "query": "人有五名 代价有三个",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-039",
+          "category": "quote",
+          "query": "愿此行 终抵群星",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-040",
+          "category": "quote",
+          "query": "如果能重来",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-041",
+          "category": "quote",
+          "query": "这就是开拓",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-042",
+          "category": "quote",
+          "query": "欢迎来到匹诺康尼",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-043",
+          "category": "quote",
+          "query": "模拟宇宙",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-044",
+          "category": "quote",
+          "query": "无名客",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-045",
+          "category": "quote",
+          "query": "忆泡",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-046",
+          "category": "cross_document",
+          "query": "星核猎手 卡芙卡 银狼 刃",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-047",
+          "category": "cross_document",
+          "query": "星穹列车 姬子 瓦尔特 三月七 丹恒",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-048",
+          "category": "cross_document",
+          "query": "仙舟 罗浮 景元 符玄 彦卿",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-049",
+          "category": "cross_document",
+          "query": "匹诺康尼 砂金 知更鸟 星期日 花火",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-050",
+          "category": "cross_document",
+          "query": "命途 星神 虚无 同谐 巡猎 丰饶",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        }
+      ]
+    },
+    {
+      "provider": "starrail-istaroth",
+      "total": 50,
+      "recallAt5": 1,
+      "recallAt10": 1,
+      "mrr": 0.99,
+      "emptyResultRate": 0,
+      "cases": [
+        {
+          "id": "sr-ist-001",
+          "category": "exact",
+          "query": "卡芙卡",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-002",
+          "category": "exact",
+          "query": "黄泉",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-003",
+          "category": "exact",
+          "query": "砂金",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-004",
+          "category": "exact",
+          "query": "黑塔",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-005",
+          "category": "exact",
+          "query": "星核猎手",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-006",
+          "category": "exact",
+          "query": "匹诺康尼",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-007",
+          "category": "exact",
+          "query": "仙舟罗浮",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-008",
+          "category": "exact",
+          "query": "贝洛伯格",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-009",
+          "category": "exact",
+          "query": "星穹列车",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-010",
+          "category": "exact",
+          "query": "命途",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-011",
+          "category": "exact",
+          "query": "虚无",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-012",
+          "category": "exact",
+          "query": "同谐",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-013",
+          "category": "exact",
+          "query": "巡猎",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-014",
+          "category": "exact",
+          "query": "丰饶",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-015",
+          "category": "exact",
+          "query": "开拓者",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-016",
+          "category": "exact",
+          "query": "三月七",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-017",
+          "category": "exact",
+          "query": "丹恒",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-018",
+          "category": "exact",
+          "query": "姬子",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-019",
+          "category": "exact",
+          "query": "瓦尔特",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-020",
+          "category": "exact",
+          "query": "星期日",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-021",
+          "category": "semantic",
+          "query": "砂金在匹诺康尼经历了什么",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-022",
+          "category": "semantic",
+          "query": "黄泉和虚无是什么关系",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-023",
+          "category": "semantic",
+          "query": "星核猎手为什么来到仙舟",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-024",
+          "category": "semantic",
+          "query": "黑塔空间站发生了什么",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-025",
+          "category": "semantic",
+          "query": "贝洛伯格上下层区的冲突",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-026",
+          "category": "semantic",
+          "query": "匹诺康尼梦境和现实",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-027",
+          "category": "semantic",
+          "query": "开拓者加入星穹列车",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-028",
+          "category": "semantic",
+          "query": "仙舟联盟追猎丰饶",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-029",
+          "category": "semantic",
+          "query": "公司和砂金的任务",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-030",
+          "category": "semantic",
+          "query": "知更鸟与匹诺康尼舞台",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-031",
+          "category": "semantic",
+          "query": "流萤和星核猎手",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-032",
+          "category": "semantic",
+          "query": "阮梅与生命实验",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-033",
+          "category": "semantic",
+          "query": "镜流和云上五骁",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-034",
+          "category": "semantic",
+          "query": "符玄和太卜司",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-035",
+          "category": "semantic",
+          "query": "停云在仙舟剧情中的遭遇",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-036",
+          "category": "quote",
+          "query": "听我说",
+          "hitCount": 10,
+          "relevantRank": 2,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-037",
+          "category": "quote",
+          "query": "规则就是用来打破的",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-038",
+          "category": "quote",
+          "query": "人有五名 代价有三个",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-039",
+          "category": "quote",
+          "query": "愿此行 终抵群星",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-040",
+          "category": "quote",
+          "query": "如果能重来",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-041",
+          "category": "quote",
+          "query": "这就是开拓",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-042",
+          "category": "quote",
+          "query": "欢迎来到匹诺康尼",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-043",
+          "category": "quote",
+          "query": "模拟宇宙",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-044",
+          "category": "quote",
+          "query": "无名客",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-045",
+          "category": "quote",
+          "query": "忆泡",
+          "hitCount": 9,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-046",
+          "category": "cross_document",
+          "query": "星核猎手 卡芙卡 银狼 刃",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-047",
+          "category": "cross_document",
+          "query": "星穹列车 姬子 瓦尔特 三月七 丹恒",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-048",
+          "category": "cross_document",
+          "query": "仙舟 罗浮 景元 符玄 彦卿",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-049",
+          "category": "cross_document",
+          "query": "匹诺康尼 砂金 知更鸟 星期日 花火",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        },
+        {
+          "id": "sr-ist-050",
+          "category": "cross_document",
+          "query": "命途 星神 虚无 同谐 巡猎 丰饶",
+          "hitCount": 10,
+          "relevantRank": 1,
+          "matched": true
+        }
+      ]
+    }
+  ]
+}

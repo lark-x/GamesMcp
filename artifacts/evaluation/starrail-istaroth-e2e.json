@@ -1,0 +1,514 @@
+{
+  "provider": "istaroth",
+  "game": "starrail",
+  "total": 50,
+  "passed": 50,
+  "failed": 0,
+  "documentReadPassed": true,
+  "hierarchyPassed": true,
+  "generatedAt": "2026-09-03T02:39:33.891Z",
+  "cases": [
+    {
+      "id": "sr-ist-001",
+      "category": "exact",
+      "query": "卡芙卡",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "8b2f05da410290c6a78f4eaf1a7fb575"
+    },
+    {
+      "id": "sr-ist-002",
+      "category": "exact",
+      "query": "黄泉",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "7410ffb30ab3e81ed1999aae3d52f9f5"
+    },
+    {
+      "id": "sr-ist-003",
+      "category": "exact",
+      "query": "砂金",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "7c4f747d3768bd7aa532e7c32dd31cea"
+    },
+    {
+      "id": "sr-ist-004",
+      "category": "exact",
+      "query": "黑塔",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "367364be30142f9d6bf26cbe645d8eb2"
+    },
+    {
+      "id": "sr-ist-005",
+      "category": "exact",
+      "query": "星核猎手",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "bc81f852eaf68545949b69fb31331c28"
+    },
+    {
+      "id": "sr-ist-006",
+      "category": "exact",
+      "query": "匹诺康尼",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "7a2b68b9855bc67c4bcb836fba462b40"
+    },
+    {
+      "id": "sr-ist-007",
+      "category": "exact",
+      "query": "仙舟罗浮",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "8a895bc9aa2c8f27cf98ac6ecb01ad8a"
+    },
+    {
+      "id": "sr-ist-008",
+      "category": "exact",
+      "query": "贝洛伯格",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "90fad70927e1284ebc640f71e72e2b21"
+    },
+    {
+      "id": "sr-ist-009",
+      "category": "exact",
+      "query": "星穹列车",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "630a657442543dfd972e08caf062210b"
+    },
+    {
+      "id": "sr-ist-010",
+      "category": "exact",
+      "query": "命途",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "b94d5c71d5ef3b2d33d2561150adf75f"
+    },
+    {
+      "id": "sr-ist-011",
+      "category": "exact",
+      "query": "虚无",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "1f66eb44143e3491a87047dcde2733a3"
+    },
+    {
+      "id": "sr-ist-012",
+      "category": "exact",
+      "query": "同谐",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "4531a2742fd08f3429194d46190b57c9"
+    },
+    {
+      "id": "sr-ist-013",
+      "category": "exact",
+      "query": "巡猎",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "8da17565cddfb1415255ba1e6ba3e82e"
+    },
+    {
+      "id": "sr-ist-014",
+      "category": "exact",
+      "query": "丰饶",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "2cfc3b74a4898022b85e1b939cc7e764"
+    },
+    {
+      "id": "sr-ist-015",
+      "category": "exact",
+      "query": "开拓者",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "6cf6d2542d4be61acf1960c765fbf7b1"
+    },
+    {
+      "id": "sr-ist-016",
+      "category": "exact",
+      "query": "三月七",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "195aae639ee5ef6ab5996db6402cf99e"
+    },
+    {
+      "id": "sr-ist-017",
+      "category": "exact",
+      "query": "丹恒",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "f0d9999b17e53f8bc23021c58e20f40c"
+    },
+    {
+      "id": "sr-ist-018",
+      "category": "exact",
+      "query": "姬子",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "c64869f35efd8ece923c4f7cf7caff8b"
+    },
+    {
+      "id": "sr-ist-019",
+      "category": "exact",
+      "query": "瓦尔特",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "d7a2924818a7f04b42a62f6f881c0204"
+    },
+    {
+      "id": "sr-ist-020",
+      "category": "exact",
+      "query": "星期日",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "ec5b14f1a615c4dd172065b2d764232f"
+    },
+    {
+      "id": "sr-ist-021",
+      "category": "semantic",
+      "query": "砂金在匹诺康尼经历了什么",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "c24151a7d5385a6a0fc3bf4020c9b8d2"
+    },
+    {
+      "id": "sr-ist-022",
+      "category": "semantic",
+      "query": "黄泉和虚无是什么关系",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "378d5ce161e7336f44ff49a721bbf523"
+    },
+    {
+      "id": "sr-ist-023",
+      "category": "semantic",
+      "query": "星核猎手为什么来到仙舟",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "1a9d2038f47af765a9696fc70f56099e"
+    },
+    {
+      "id": "sr-ist-024",
+      "category": "semantic",
+      "query": "黑塔空间站发生了什么",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "6045cdff1fe9cd532a3f63b4403a980f"
+    },
+    {
+      "id": "sr-ist-025",
+      "category": "semantic",
+      "query": "贝洛伯格上下层区的冲突",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "7a74750e02ce7b73244e2d749e3b8214"
+    },
+    {
+      "id": "sr-ist-026",
+      "category": "semantic",
+      "query": "匹诺康尼梦境和现实",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "d5e2b3a90430a9db51db9daaad6454d1"
+    },
+    {
+      "id": "sr-ist-027",
+      "category": "semantic",
+      "query": "开拓者加入星穹列车",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "f196f04d2871b95cf1666ce67330dded"
+    },
+    {
+      "id": "sr-ist-028",
+      "category": "semantic",
+      "query": "仙舟联盟追猎丰饶",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 7,
+      "documentId": "84046b469e888e969d7813dbf3f98fb0"
+    },
+    {
+      "id": "sr-ist-029",
+      "category": "semantic",
+      "query": "公司和砂金的任务",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "b3dcfed38f80a92db4d7598d886745cf"
+    },
+    {
+      "id": "sr-ist-030",
+      "category": "semantic",
+      "query": "知更鸟与匹诺康尼舞台",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "a09707aac72948fece0caaab67fedc7d"
+    },
+    {
+      "id": "sr-ist-031",
+      "category": "semantic",
+      "query": "流萤和星核猎手",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "d1bc4d3900624e623b86b7a5e98fb1a7"
+    },
+    {
+      "id": "sr-ist-032",
+      "category": "semantic",
+      "query": "阮梅与生命实验",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "81d48219b9ebf3c26fac3ab49fff09a1"
+    },
+    {
+      "id": "sr-ist-033",
+      "category": "semantic",
+      "query": "镜流和云上五骁",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "8adec97ea69a10b50535e9906978431b"
+    },
+    {
+      "id": "sr-ist-034",
+      "category": "semantic",
+      "query": "符玄和太卜司",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "f5478cc4dff2af38d3cee974c97a8c04"
+    },
+    {
+      "id": "sr-ist-035",
+      "category": "semantic",
+      "query": "停云在仙舟剧情中的遭遇",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 9,
+      "documentId": "6d338546ad0f41033831ae70c2bceb7b"
+    },
+    {
+      "id": "sr-ist-036",
+      "category": "quote",
+      "query": "听我说",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "58e3296bf4ede1a8d745b947626d5907"
+    },
+    {
+      "id": "sr-ist-037",
+      "category": "quote",
+      "query": "规则就是用来打破的",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "9fa825d5e18ad902339862da5b6dda1f"
+    },
+    {
+      "id": "sr-ist-038",
+      "category": "quote",
+      "query": "人有五名 代价有三个",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "b0e4a8406852e959a2844e48904f1a1b"
+    },
+    {
+      "id": "sr-ist-039",
+      "category": "quote",
+      "query": "愿此行 终抵群星",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "9ae4a39bcdcfb4a12a46cf6b5336788e"
+    },
+    {
+      "id": "sr-ist-040",
+      "category": "quote",
+      "query": "如果能重来",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "fc8e24f1b9c90078a8263450bdf57ea1"
+    },
+    {
+      "id": "sr-ist-041",
+      "category": "quote",
+      "query": "这就是开拓",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "66f72e8f70277735caed26b577af315e"
+    },
+    {
+      "id": "sr-ist-042",
+      "category": "quote",
+      "query": "欢迎来到匹诺康尼",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "a62b8f5ae72a82ffeaf16d6db2e23cbe"
+    },
+    {
+      "id": "sr-ist-043",
+      "category": "quote",
+      "query": "模拟宇宙",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "513eb6b7dbfad4a43828cff6c2726512"
+    },
+    {
+      "id": "sr-ist-044",
+      "category": "quote",
+      "query": "无名客",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "be21cbf3b559fc612ec8c9138380e1c3"
+    },
+    {
+      "id": "sr-ist-045",
+      "category": "quote",
+      "query": "忆泡",
+      "mode": "keyword",
+      "passed": true,
+      "hitCount": 8,
+      "documentId": "ee2208e64c7a1238c722939525f8ea64"
+    },
+    {
+      "id": "sr-ist-046",
+      "category": "cross_document",
+      "query": "星核猎手 卡芙卡 银狼 刃",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "43e3acb7ef6461846ea4b089825056d8"
+    },
+    {
+      "id": "sr-ist-047",
+      "category": "cross_document",
+      "query": "星穹列车 姬子 瓦尔特 三月七 丹恒",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "b3701a232a88cbd1f79b77e5356c540d"
+    },
+    {
+      "id": "sr-ist-048",
+      "category": "cross_document",
+      "query": "仙舟 罗浮 景元 符玄 彦卿",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "854baf61cfcc7811bdbffcd563ec9acc"
+    },
+    {
+      "id": "sr-ist-049",
+      "category": "cross_document",
+      "query": "匹诺康尼 砂金 知更鸟 星期日 花火",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 10,
+      "documentId": "bede41a60fbdec1faf50681571a108f2"
+    },
+    {
+      "id": "sr-ist-050",
+      "category": "cross_document",
+      "query": "命途 星神 虚无 同谐 巡猎 丰饶",
+      "mode": "hybrid",
+      "passed": true,
+      "hitCount": 7,
+      "documentId": "0b000b24dedbf7b00a6f8f85c140aa88"
+    }
+  ],
+  "documentReads": [
+    {
+      "caseId": "sr-ist-001",
+      "documentId": "8b2f05da410290c6a78f4eaf1a7fb575",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-002",
+      "documentId": "7410ffb30ab3e81ed1999aae3d52f9f5",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-003",
+      "documentId": "7c4f747d3768bd7aa532e7c32dd31cea",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-004",
+      "documentId": "367364be30142f9d6bf26cbe645d8eb2",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-005",
+      "documentId": "bc81f852eaf68545949b69fb31331c28",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-006",
+      "documentId": "7a2b68b9855bc67c4bcb836fba462b40",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-007",
+      "documentId": "8a895bc9aa2c8f27cf98ac6ecb01ad8a",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-008",
+      "documentId": "90fad70927e1284ebc640f71e72e2b21",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-009",
+      "documentId": "630a657442543dfd972e08caf062210b",
+      "passed": true
+    },
+    {
+      "caseId": "sr-ist-010",
+      "documentId": "b94d5c71d5ef3b2d33d2561150adf75f",
+      "passed": true
+    }
+  ]
+}
