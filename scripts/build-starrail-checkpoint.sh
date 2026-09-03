@@ -20,5 +20,61 @@ PYTHON_CMD="python"
 if command -v uv >/dev/null 2>&1 && [ -f "${ISTAROTH_DIR}/pyproject.toml" ]; then
   PYTHON_CMD="uv run python"
 fi
-$PYTHON_CMD scripts/rag_tools.py build "${STARRAIL_CORPUS_DIR}" "${STARRAIL_CHECKPOINT_DIR}"
-node -e "const fs=require('fs'); const out=process.argv[1]; const data={schemaVersion:1,game:'starrail',istarothCommit:process.argv[2],gamesMcpCorpusGeneratorCommit:process.argv[3],turnBasedGameDataCommit:process.argv[4],corpusHash:process.argv[5],embeddingBackend:process.env.ISTAROTH_EMBEDDING_BACKEND || null,embeddingModel:process.env.ISTAROTH_EMBEDDING_MODEL || null,builtAt:new Date().toISOString()}; fs.writeFileSync(out, JSON.stringify(data,null,2)+'\n')" "${STARRAIL_CHECKPOINT_DIR}/checkpoint-metadata.json" "${istaroth_commit}" "${gamesmcp_commit}" "${source_commit}" "${corpus_hash}"
+$PYTHON_CMD scripts/rag_tools.py build "${STARRAIL_CORPUS_DIR}" "${STARRAIL_CHECKPOINT_DIR}" -f
+
+if [ ! -d "${STARRAIL_CHECKPOINT_DIR}/text" ]; then
+  echo "Copying corpus to ${STARRAIL_CHECKPOINT_DIR}/text..."
+  cp -R "${STARRAIL_CORPUS_DIR}" "${STARRAIL_CHECKPOINT_DIR}/text"
+fi
+
+node -e "
+const fs = require('fs');
+const out = process.argv[1];
+const corpusDir = process.argv[5];
+let docCount = 0;
+let validationOk = true;
+try {
+  const manifest = JSON.parse(fs.readFileSync(corpusDir + '/manifest/starrail.json', 'utf8'));
+  docCount = Array.isArray(manifest) ? manifest.length : 0;
+} catch {}
+try {
+  const issues = JSON.parse(fs.readFileSync(corpusDir + '/metadata/starrail/issues.json', 'utf8'));
+  if (Array.isArray(issues) && issues.some(i => i.severity === 'error')) validationOk = false;
+} catch {}
+
+const data = {
+  schemaVersion: 1,
+  game: 'starrail',
+  language: 'CHS',
+  gamesMcp: {
+    repository: process.env.GITHUB_REPOSITORY || 'lark-x/GamesMcp',
+    commit: process.argv[3],
+  },
+  istaroth: {
+    repository: 'lark-x/istaroth',
+    commit: process.argv[2],
+  },
+  source: {
+    repository: 'DimbreathBot/TurnBasedGameData',
+    commit: process.argv[4],
+  },
+  corpus: {
+    documentCount: docCount,
+    corpusHash: process.argv[6],
+    validationOk,
+  },
+  embedding: {
+    backend: process.env.ISTAROTH_EMBEDDING_BACKEND || 'sentence-transformers',
+    model: process.env.ISTAROTH_EMBEDDING_MODEL || 'BAAI/bge-small-zh-v1.5',
+    device: process.env.ISTAROTH_DEVICE || process.env.ISTAROTH_TRAINING_DEVICE || 'cpu',
+  },
+  build: {
+    runner: process.env.GITHUB_ACTIONS ? 'github-actions' : 'local',
+    platform: process.platform,
+    createdAt: new Date().toISOString(),
+  },
+};
+fs.writeFileSync(out, JSON.stringify(data, null, 2) + '\n');
+console.log('Wrote checkpoint metadata to ' + out);
+" "${STARRAIL_CHECKPOINT_DIR}/checkpoint-metadata.json" "${istaroth_commit}" "${gamesmcp_commit}" "${source_commit}" "${STARRAIL_CORPUS_DIR}" "${corpus_hash}"
+
