@@ -1,0 +1,218 @@
+name: starrail-istaroth-release-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      turn_based_game_data_ref:
+        description: "Pinned DimbreathBot/TurnBasedGameData ref"
+        required: true
+        default: "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091"
+      istaroth_ref:
+        description: "Pinned lark-x/istaroth ref"
+        required: true
+        default: "f22ea938704f414cfa6bfe03bc65b71142c781b7"
+
+jobs:
+  build-checkpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log provenance revisions
+        run: |
+          echo "=== StarRail Checkpoint Build Provenance ==="
+          echo "GamesMcp commit: ${{ github.sha }}"
+          echo "TurnBasedGameData ref: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}"
+          echo "Istaroth ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}"
+      - name: Checkout GamesMcp
+        uses: actions/checkout@v4
+        with:
+          path: GamesMcp
+      - name: Checkout TurnBasedGameData
+        uses: actions/checkout@v4
+        with:
+          repository: DimbreathBot/TurnBasedGameData
+          ref: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}
+          path: TurnBasedGameData
+      - name: Checkout Istaroth fork
+        uses: actions/checkout@v4
+        with:
+          repository: lark-x/istaroth
+          ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}
+          path: istaroth
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install Istaroth dependencies
+        run: uv sync
+        working-directory: istaroth
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: GamesMcp/pnpm-lock.yaml
+      - name: Install GamesMcp dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: GamesMcp
+      - name: Build StarRail corpus
+        run: pnpm data:starrail:corpus --source ../TurnBasedGameData --output ../starrail-corpus
+        working-directory: GamesMcp
+      - name: Validate StarRail corpus
+        run: pnpm data:starrail:validate --corpus ../starrail-corpus
+        working-directory: GamesMcp
+      - name: Build StarRail checkpoint
+        run: pnpm checkpoint:starrail:build
+        working-directory: GamesMcp
+        env:
+          ISTAROTH_DIR: ${{ github.workspace }}/istaroth
+          STARRAIL_CORPUS_DIR: ${{ github.workspace }}/starrail-corpus
+          STARRAIL_CHECKPOINT_DIR: ${{ github.workspace }}/starrail-checkpoint
+          ISTAROTH_EMBEDDING_BACKEND: sentence-transformers
+          ISTAROTH_EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
+          ISTAROTH_DEVICE: cpu
+      - name: Verify checkpoint integrity and provenance
+        run: pnpm checkpoint:starrail:verify --checkpoint ../starrail-checkpoint
+        working-directory: GamesMcp
+        env:
+          TURN_BASED_GAME_DATA_REF: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}
+          ISTAROTH_REF: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}
+          GITHUB_SHA: ${{ github.sha }}
+          ISTAROTH_EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
+      - name: Upload checkpoint artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: starrail-checkpoint
+          path: starrail-checkpoint/
+          retention-days: 7
+
+  e2e:
+    needs: build-checkpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GamesMcp
+        uses: actions/checkout@v4
+        with:
+          path: GamesMcp
+      - name: Checkout Istaroth fork
+        uses: actions/checkout@v4
+        with:
+          repository: lark-x/istaroth
+          ref: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}
+          path: istaroth
+      - name: Download checkpoint artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: starrail-checkpoint
+          path: starrail-checkpoint
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install Istaroth dependencies
+        run: uv sync
+        working-directory: istaroth
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: GamesMcp/pnpm-lock.yaml
+      - name: Install GamesMcp dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: GamesMcp
+      - name: Build GamesMcp packages
+        run: pnpm build
+        working-directory: GamesMcp
+      - name: Start ephemeral StarRail Istaroth
+        run: |
+          chmod +x GamesMcp/scripts/start-starrail-istaroth.sh
+          STARRAIL_CHECKPOINT_DIR="${{ github.workspace }}/starrail-checkpoint" \
+          ISTAROTH_DIR="${{ github.workspace }}/istaroth" \
+          GAMESMCP_DIR="${{ github.workspace }}/GamesMcp" \
+          STARRAIL_ISTAROTH_PORT=8001 \
+          GamesMcp/scripts/start-starrail-istaroth.sh
+      - name: Run GamesMcp StarRail Istaroth Real E2E Test Suite
+        run: pnpm test:starrail-release-gate --url http://127.0.0.1:8001/mcp --output artifacts/evaluation/starrail-istaroth-release-gate.json
+        working-directory: GamesMcp
+        env:
+          STARRAIL_CHECKPOINT_DIR: ${{ github.workspace }}/starrail-checkpoint
+          TURN_BASED_GAME_DATA_REF: ${{ inputs.turn_based_game_data_ref || vars.TURN_BASED_GAME_DATA_REF || '8cdb905dc2f8e6fffa9be4eb07af3e34435d6091' }}
+          ISTAROTH_REF: ${{ inputs.istaroth_ref || vars.ISTAROTH_REF || 'f22ea938704f414cfa6bfe03bc65b71142c781b7' }}
+          GITHUB_SHA: ${{ github.sha }}
+      - name: Stop ephemeral StarRail Istaroth
+        if: always()
+        run: |
+          if [ -f /tmp/istaroth-starrail.pid ]; then
+            kill $(cat /tmp/istaroth-starrail.pid) 2>/dev/null || true
+          fi
+      - name: Upload release gate evaluation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: starrail-release-gate-evaluation
+          path: GamesMcp/artifacts/evaluation/starrail-istaroth-release-gate.json
+
+  final-gate:
+    needs: [build-checkpoint, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GamesMcp
+        uses: actions/checkout@v4
+      - name: Download release gate evaluation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: starrail-release-gate-evaluation
+          path: artifacts/evaluation
+      - name: Enforce Release Gate
+        run: |
+          node -e '
+          const fs = require("fs");
+          const report = JSON.parse(fs.readFileSync("artifacts/evaluation/starrail-istaroth-release-gate.json", "utf8"));
+          console.log("=== Release Gate Verification Summary ===");
+          console.log("Tested commit GamesMcp:", report.testedRevision.gamesMcp);
+          console.log("Tested commit Istaroth:", report.testedRevision.istaroth);
+          console.log("Tested commit TurnBasedGameData:", report.testedRevision.turnBasedGameData);
+          console.log("Total Cases:", report.e2e.total);
+          console.log("Passed Cases:", report.e2e.passed);
+          console.log("Failed Cases:", report.e2e.failed);
+          console.log("Recall@10:", report.retrieval.recallAt10);
+          console.log("MRR:", report.retrieval.mrr);
+          console.log("Empty result rate:", report.retrieval.emptyResultRate);
+          console.log("Latency P50:", report.latencyMs.overall.p50, "ms");
+          console.log("Latency P95:", report.latencyMs.overall.p95, "ms");
+          console.log("Latency P99:", report.latencyMs.overall.p99, "ms");
+
+          const failures = [];
+          if (report.e2e.passed !== 50) failures.push("passed != 50");
+          if (report.e2e.failed !== 0) failures.push("failed != 0");
+          if (!report.e2e.healthPassed) failures.push("healthPassed != true");
+          if (!report.e2e.hybridPassed) failures.push("hybridPassed != true");
+          if (!report.e2e.keywordPassed) failures.push("keywordPassed != true");
+          if (!report.e2e.documentReadPassed) failures.push("documentReadPassed != true");
+          if (!report.e2e.hierarchyPassed) failures.push("hierarchyPassed != true");
+          if (!report.e2e.downIsolationPassed) failures.push("downIsolationPassed != true");
+          if (!report.e2e.reconnectPassed) failures.push("reconnectPassed != true");
+          if (report.retrieval.recallAt10 < 0.95) failures.push("recallAt10 < 0.95");
+          if (report.retrieval.mrr < 0.85) failures.push("mrr < 0.85");
+          if (report.retrieval.emptyResultRate !== 0) failures.push("emptyResultRate != 0");
+
+          if (failures.length > 0) {
+            console.error("Release Gate FAILED:", failures.join(", "));
+            process.exit(1);
+          }
+          console.log("==========================================");
+          console.log("P0_FIX_COMPLETE = true");
+          console.log("P0_RELEASE_VERIFIED = true");
+          console.log("==========================================");
+          '
