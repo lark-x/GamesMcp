@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { StarRailCorpusCategory, StarRailCorpusDocument } from "../corpus/types.js";
-import { deterministicCorpusId, naturalId } from "../corpus/ids.js";
+import { buildStableContentIdentity, deterministicCorpusId, naturalId } from "../corpus/ids.js";
 import { hasLikelyNarrativeText, normalizeStarRailText } from "../corpus/normalizer.js";
 import type { GameLocalizationResolver } from "../source/textmap.js";
 import type { StarRailSourceInventory, StarRailInventoryItem } from "../source/inventory.js";
@@ -31,6 +31,10 @@ export async function extractRecordDocuments(input: {
   bodyKeys: string[];
   sourceIdPrefix: string;
   relativePathFor: (id: number, record: Record<string, unknown>, path: string) => string;
+  stableIdentity?: (
+    record: Record<string, unknown>,
+    context: RecordContext,
+  ) => string | number | undefined;
   format?: (record: Record<string, unknown>, context: RecordContext) => string;
   hierarchy?: (id: number, record: Record<string, unknown>) => StarRailCorpusDocument["hierarchy"];
 }): Promise<ExtractorResult> {
@@ -47,7 +51,16 @@ export async function extractRecordDocuments(input: {
         index,
         issues: result.issues,
       };
-      const identity = identityFrom(record, input.naturalIdKeys) ?? `${item.path}:${index}`;
+      const nativeIdentity = identityFrom(record, input.naturalIdKeys);
+      const identity =
+        nativeIdentity ??
+        input.stableIdentity?.(record, context) ??
+        buildStableContentIdentity({
+          category: input.category,
+          canonicalSourcePath: item.path,
+          semanticKeys: input.naturalIdKeys.map((k) => record[k]).filter(isScalar),
+          normalizedTitle: firstResolved(record, input.titleKeys, context),
+        });
       const id =
         naturalId(identity) ??
         deterministicCorpusId({
@@ -91,7 +104,11 @@ export async function extractRecordDocuments(input: {
         title,
         content,
         sourceFiles: [item.path],
-        sourceIds: [`${input.sourceIdPrefix}:${identity}`],
+        sourceIds: [
+          String(identity).startsWith("hash:")
+            ? String(identity)
+            : `${input.sourceIdPrefix}:${identity}`,
+        ],
         metadata: {
           source: "turn-based-game-data",
           sourceCommit: input.extractor.sourceRef,
@@ -116,7 +133,8 @@ export async function readJsonRecords(
   item: StarRailInventoryItem,
 ): Promise<Record<string, unknown>[]> {
   const raw = await readFile(resolve(dataDir, item.path), "utf8");
-  const parsed = JSON.parse(raw) as unknown;
+  const safeJson = raw.replace(/:\s*(-?\d{15,})/gu, ': "$1"');
+  const parsed = JSON.parse(safeJson) as unknown;
   if (Array.isArray(parsed)) return parsed.filter(isRecord);
   if (isRecord(parsed)) {
     const values = Object.values(parsed);
@@ -124,6 +142,16 @@ export async function readJsonRecords(
     return [parsed];
   }
   return [];
+}
+
+export async function readSafeJsonFile<T = unknown>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    const safeJson = raw.replace(/:\s*(-?\d{15,})/gu, ': "$1"');
+    return JSON.parse(safeJson) as T;
+  } catch {
+    return null;
+  }
 }
 
 export function firstResolved(
@@ -246,4 +274,8 @@ function arrayFrom(value: unknown): unknown[] {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isScalar(val: unknown): val is string | number {
+  return typeof val === "string" || typeof val === "number";
 }

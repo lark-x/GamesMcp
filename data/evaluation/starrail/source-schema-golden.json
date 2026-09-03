@@ -1,22 +1,91 @@
 {
   "schemaVersion": 1,
   "source": "DimbreathBot/TurnBasedGameData",
+  "sourceRef": "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091",
+  "tables": {
+    "ExcelOutput/MainMission.json": {
+      "category": "sr_mission",
+      "topLevel": "array",
+      "primaryKeys": ["MainMissionID"],
+      "textKeys": ["Name"]
+    },
+    "ExcelOutput/SubMission.json": {
+      "category": "sr_mission",
+      "topLevel": "array",
+      "primaryKeys": ["SubMissionID"],
+      "textKeys": ["TargetText", "DescrptionText"]
+    },
+    "ExcelOutput/MessageSectionConfig.json": {
+      "category": "sr_message",
+      "topLevel": "array",
+      "primaryKeys": ["ID"],
+      "textKeys": []
+    },
+    "ExcelOutput/MessageItemConfig.json": {
+      "category": "sr_message",
+      "topLevel": "array",
+      "primaryKeys": ["ID", "SectionID"],
+      "textKeys": ["MainText"]
+    },
+    "ExcelOutput/TrainVisitorConfig.json": {
+      "category": "sr_train_visitor",
+      "topLevel": "array",
+      "primaryKeys": ["VisitorID", "AvatarID"],
+      "textKeys": ["MessageCome"]
+    },
+    "ExcelOutput/LocalbookConfig.json": {
+      "category": "sr_book",
+      "topLevel": "array",
+      "primaryKeys": ["BookID", "BookSeriesID"],
+      "textKeys": ["BookInsideName", "BookContent"]
+    },
+    "ExcelOutput/StoryAtlas.json": {
+      "category": "sr_character_story",
+      "topLevel": "array",
+      "primaryKeys": ["AvatarID", "StoryID"],
+      "textKeys": ["Story"]
+    },
+    "ExcelOutput/VoiceAtlas.json": {
+      "category": "sr_voiceline",
+      "topLevel": "array",
+      "primaryKeys": ["AvatarID", "VoiceID"],
+      "textKeys": ["VoiceTitle"]
+    },
+    "ExcelOutput/ItemConfig.json": {
+      "category": "sr_item_lore",
+      "topLevel": "array",
+      "primaryKeys": ["ID"],
+      "textKeys": ["ItemName", "ItemBGDesc"]
+    }
+  },
   "fixtures": {
     "Story/Mission/PenaconyMission.json": {
+      "category": "sr_mission",
       "topLevel": "array",
-      "recordKeys": ["MissionID", "MainMissionID", "TitleTextMapHash", "Talks"],
-      "nestedKeys": ["TalkSentenceID", "SpeakerTextMapHash", "TextMapHash", "Options"]
+      "recordKeys": ["MissionID", "MainMissionID", "TitleTextMapHash", "Talks"]
+    },
+    "Story/SideStory.json": {
+      "category": "sr_story",
+      "topLevel": "array",
+      "recordKeys": ["StoryID", "TitleTextMapHash", "Dialogues"]
     },
     "Config/Message/HertaMessage.json": {
+      "category": "sr_message",
       "topLevel": "array",
-      "recordKeys": ["MessageSectionID", "MessageID", "ContactTextMapHash", "Messages"],
-      "nestedKeys": ["SenderTextMapHash", "MainTextMapHash", "Options"]
+      "recordKeys": ["MessageSectionID", "MessageID", "ContactTextMapHash", "Messages"]
+    },
+    "Config/TrainVisitor/March7th.json": {
+      "category": "sr_train_visitor",
+      "topLevel": "array",
+      "recordKeys": ["VisitorID", "AvatarID", "TitleTextMapHash", "Talks"]
     },
     "ExcelOutput/BookConfig.json": {
+      "category": "sr_book",
       "topLevel": "array",
       "recordKeys": ["BookID", "BookSeriesID", "BookNameTextMapHash", "ContentTextMapHash"]
     },
     "ExcelOutput/AvatarStoryConfig.json": {
+      "category": "sr_character_story",
       "topLevel": "array",
       "recordKeys": [
         "AvatarID",
@@ -24,6 +93,16 @@
         "StoryTitleTextMapHash",
         "StoryTextMapHash"
       ]
+    },
+    "ExcelOutput/AvatarVoiceConfig.json": {
+      "category": "sr_voiceline",
+      "topLevel": "array",
+      "recordKeys": ["AvatarID", "AvatarName", "VoiceTitleTextMapHash", "VoiceTextMapHash"]
+    },
+    "ExcelOutput/ItemConfig.json": {
+      "category": "sr_item_lore",
+      "topLevel": "array",
+      "recordKeys": ["ItemID", "ItemNameTextMapHash", "ItemDescTextMapHash"]
     }
   }
 }
