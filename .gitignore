@@ -17,6 +17,7 @@ data/imports/_raw/**
 data/postgres/**
 data/upstream/**
 data/istaroth/**
+data/istaroth-starrail/**
 data/games/**
 data/generated/**
 data/verification/**
@@ -24,5 +25,9 @@ data/backups/**
 backups/**
 data/*.db
 artifacts/**
+!artifacts/P0-REPAIR-REPORT.md
+!artifacts/p0-baseline.json
+!artifacts/evaluation/**
+!artifacts/starrail-full-corpus/**
 *.log
 .DS_Store

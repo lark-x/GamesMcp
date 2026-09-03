@@ -4,4 +4,8 @@ coverage/
 test-results/
 data/snapshots/
 **/data/snapshots/
+data/generated/
+data/games/
+data/istaroth/
+data/istaroth-starrail/
 pnpm-lock.yaml

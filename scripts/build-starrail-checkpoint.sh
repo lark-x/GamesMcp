@@ -16,5 +16,9 @@ istaroth_commit="$(git -C "${ISTAROTH_DIR}" rev-parse HEAD 2>/dev/null || echo u
 source_commit="$(node -e "const fs=require('fs'); const p=process.argv[1]; try { console.log(JSON.parse(fs.readFileSync(p,'utf8')).sourceCommit || 'unknown') } catch { console.log('unknown') }" "${STARRAIL_CORPUS_DIR}/metadata/starrail/source.json")"
 corpus_hash="$(find "${STARRAIL_CORPUS_DIR}" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | awk '{print $1}')"
 cd "${ISTAROTH_DIR}"
-python scripts/rag_tools.py build "${STARRAIL_CORPUS_DIR}" "${STARRAIL_CHECKPOINT_DIR}"
+PYTHON_CMD="python"
+if command -v uv >/dev/null 2>&1 && [ -f "${ISTAROTH_DIR}/pyproject.toml" ]; then
+  PYTHON_CMD="uv run python"
+fi
+$PYTHON_CMD scripts/rag_tools.py build "${STARRAIL_CORPUS_DIR}" "${STARRAIL_CHECKPOINT_DIR}"
 node -e "const fs=require('fs'); const out=process.argv[1]; const data={schemaVersion:1,game:'starrail',istarothCommit:process.argv[2],gamesMcpCorpusGeneratorCommit:process.argv[3],turnBasedGameDataCommit:process.argv[4],corpusHash:process.argv[5],embeddingBackend:process.env.ISTAROTH_EMBEDDING_BACKEND || null,embeddingModel:process.env.ISTAROTH_EMBEDDING_MODEL || null,builtAt:new Date().toISOString()}; fs.writeFileSync(out, JSON.stringify(data,null,2)+'\n')" "${STARRAIL_CHECKPOINT_DIR}/checkpoint-metadata.json" "${istaroth_commit}" "${gamesmcp_commit}" "${source_commit}" "${corpus_hash}"
