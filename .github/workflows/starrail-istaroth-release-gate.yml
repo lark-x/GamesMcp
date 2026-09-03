@@ -73,9 +73,14 @@ jobs:
           ISTAROTH_DIR: ${{ github.workspace }}/istaroth
           STARRAIL_CORPUS_DIR: ${{ github.workspace }}/starrail-corpus
           STARRAIL_CHECKPOINT_DIR: ${{ github.workspace }}/starrail-checkpoint
-          ISTAROTH_EMBEDDING_BACKEND: sentence-transformers
+          ISTAROTH_EMBEDDINGS: local
           ISTAROTH_EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
+          ISTAROTH_EMBEDDINGS_MODEL: BAAI/bge-small-zh-v1.5
+          ISTAROTH_TRAINING_DEVICE: cpu
           ISTAROTH_DEVICE: cpu
+          ISTAROTH_BUILD_CONCURRENCY: "4"
+          OMP_NUM_THREADS: "2"
+          MKL_NUM_THREADS: "2"
       - name: Verify checkpoint integrity and provenance
         run: pnpm checkpoint:starrail:verify --checkpoint ../starrail-checkpoint
         working-directory: GamesMcp
