@@ -51,7 +51,7 @@ while true; do
     exit 1
   fi
 
-  if GAMESMCP_ISTAROTH_URL="http://${HOST}:${PORT}/mcp" node --import tsx "${GAMESMCP_DIR:-.}/scripts/check-istaroth-health.ts" >/dev/null 2>&1; then
+  if (cd "${GAMESMCP_DIR:-.}" && GAMESMCP_ISTAROTH_URL="http://${HOST}:${PORT}/mcp" node --import tsx scripts/check-istaroth-health.ts) >/dev/null 2>&1; then
     READY=1
     break
   fi
