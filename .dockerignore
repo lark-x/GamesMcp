@@ -2,6 +2,11 @@ node_modules
 dist
 coverage
 .git
-data/imports
-data/snapshots
+data
+.pnpm-store
+artifacts
+test-results
+*.cpuprofile
+.perfprof*
+.questprof
 .env
