@@ -78,10 +78,7 @@ services:
       retries: 20
 
   api:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: api-runtime
+    image: "ghcr.io/lark-x/gamesmcp-api:${GAMESMCP_VERSION:-latest}"
     env_file: .env
     environment:
       HOST: 0.0.0.0
@@ -109,10 +106,7 @@ services:
         ]
 
   worker:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: worker-runtime
+    image: "ghcr.io/lark-x/gamesmcp-worker:${GAMESMCP_VERSION:-latest}"
     env_file: .env
     environment:
       DATABASE_URL: postgres://gip:gip@postgres:5432/gip
@@ -125,10 +119,7 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: web-runtime
+    image: "ghcr.io/lark-x/gamesmcp-web:${GAMESMCP_VERSION:-latest}"
     depends_on:
       - api
     ports:

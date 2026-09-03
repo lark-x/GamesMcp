@@ -71,38 +71,39 @@ GamesMcp 是一个独立部署的多游戏叙事知识平台与 Codex 档案库�
 
 ## 生产环境部署
 
-### 方式一：Docker Compose 全栈部署（推荐）
+### 方式一：Docker Compose 容器化部署
 
-项目根目录提供了完整的 `docker-compose.yml`，包含 PostgreSQL (pgvector)、API、Worker、Web (Nginx) 服务。
+#### 1. 开发与本地构建环境 (`docker-compose.yml`)
 
-#### 1. 准备环境变量与持久化目录
-
-在外部持久化磁盘创建存储目录（例如 `/data/gamesmcp`），并在 `.env` 中配置：
+采用统一 Multi-stage Dockerfile 与 BuildKit pnpm 依赖缓存挂载，并隔离了 `apps/web`、`apps/api` 与 `apps/worker` 的源码构建层。日常修改任意前端代码不会重编后端与重新下载 npm 依赖：
 
 ```bash
-# 核心持久化路径
-DATA_DIR=/data/gamesmcp
-
-# 生产环境安全配置
-NODE_ENV=production
-ADMIN_TOKEN=your_strong_random_admin_token_here
-CORS_ORIGINS=https://knowledge.example.com
-
-# 数据库配置（Compose 内使用服务名通信）
-DATABASE_URL=postgres://gip:gip@postgres:5432/gip
-```
-
-#### 2. 构建并启动容器
-
-```bash
-# 构建并后台启动全部容器
+# 本地构建并后台启动开发容器集群
 docker compose up -d --build
 
-# 查看运行状态
+# 快速查看容器运行状态与健康探针
 docker compose ps
+```
 
-# 验证健康状态
-curl http://127.0.0.1:4100/api/health
+#### 2. 生产环境零编译部署 (`docker-compose.prod.yml`)
+
+生产环境严禁在宿主机上重新执行 `pnpm install` 或 `docker build` 编译源码。通过预构建并发布于 GitHub Container Registry (`ghcr.io`) 的不可变镜像直接拉取启动：
+
+```bash
+# 一键生产拉取与健康检查启动（自动校验持久化目录与依赖）
+bash scripts/deploy.sh
+
+# 平滑更新指定版本镜像
+bash scripts/update.sh <commit-sha-or-version>
+
+# 异常时一键秒级回滚
+bash scripts/rollback.sh
+
+# 随时执行系统与探针健康检查
+bash scripts/health-check.sh
+
+# （可选）预热外部 Istaroth 镜像与模型缓存
+bash scripts/prewarm-models.sh
 ```
 
 #### 3. 容器数据持久化结构
@@ -114,7 +115,8 @@ ${DATA_DIR}/
 ├── postgres/           # PostgreSQL 数据持久化
 ├── snapshots/          # 不可变原始资料快照
 ├── imports/            # 待导入的原始文件放置目录
-└── games/              # 多游戏静态解包资源与缓存
+├── games/              # 多游戏静态解包资源与缓存
+└── istaroth/           # （可选）Istaroth checkpoint 与模型缓存
 ```
 
 ---

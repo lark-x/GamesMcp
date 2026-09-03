@@ -139,3 +139,20 @@ jobs:
       - run: pnpm build
       - run: npx playwright install chromium
       - run: pnpm playwright test apps/web/tests/archive.spec.ts
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Validate Compose Configs
+        run: |
+          docker compose config
+          docker compose -f docker-compose.prod.yml config
+      - name: Build API Runtime Target
+        run: docker build --target api-runtime -f docker/Dockerfile .
+      - name: Build Worker Runtime Target
+        run: docker build --target worker-runtime -f docker/Dockerfile .
+      - name: Build Web Runtime Target
+        run: docker build --target web-runtime -f docker/Dockerfile .

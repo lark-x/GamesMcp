@@ -1,0 +1,90 @@
+name: docker-release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (defaults to commit SHA)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Version Tags
+        id: meta
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          TAGS_API="ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${SHA}"
+          TAGS_WORKER="ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${SHA}"
+          TAGS_WEB="ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${SHA}"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TAGS_API="${TAGS_API},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-api:latest"
+            TAGS_WORKER="${TAGS_WORKER},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:latest"
+            TAGS_WEB="${TAGS_WEB},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-web:latest"
+          fi
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            TAGS_API="${TAGS_API},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${RELEASE_TAG}"
+            TAGS_WORKER="${TAGS_WORKER},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${RELEASE_TAG}"
+            TAGS_WEB="${TAGS_WEB},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${RELEASE_TAG}"
+          fi
+          echo "tags_api=${TAGS_API}" >> $GITHUB_OUTPUT
+          echo "tags_worker=${TAGS_WORKER}" >> $GITHUB_OUTPUT
+          echo "tags_web=${TAGS_WEB}" >> $GITHUB_OUTPUT
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: api-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_api }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build and push Worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: worker-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_worker }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: web-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_web }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
