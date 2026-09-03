@@ -1,12 +1,17 @@
-export type ArchiveSection = "home" | "story" | "materials" | "text";
+export type ArchiveSection = "home" | "story" | "data" | "materials" | "text" | "search" | "ask";
+
+export type DataKind = "characters" | "weapons" | "artifacts" | "enemies" | "achievements";
 
 export type ArchiveRoute =
   | { kind: "home" }
-  | { kind: "quests" }
-  | { kind: "story"; questKey?: string }
-  | { kind: "story-catalog" }
+  | { kind: "story"; questKey?: string; subquestKey?: string }
+  | { kind: "quests" } // legacy alias
+  | { kind: "story-catalog" } // legacy alias
   | { kind: "materials"; materialId?: string }
+  | { kind: "data"; dataKind: DataKind; itemId?: string }
   | { kind: "text"; textKind: string; bookId?: string; chapterId?: string }
+  | { kind: "search"; query?: string }
+  | { kind: "ask"; question?: string }
   | { kind: "unknown" };
 
 export interface StoryTreeNode {
@@ -38,6 +43,6 @@ export type StoryEntry = {
 
 export type StoryCatalogFilters = {
   query: string;
-  type: string;
-  locale: string;
+  type?: string;
+  locale?: string;
 };

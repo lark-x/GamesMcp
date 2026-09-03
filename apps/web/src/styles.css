@@ -1,13 +1,6 @@
 @import "./styles/base.css";
 @import "./styles/release-gates.css";
 @import "./styles/admin-common.css";
-@import "./styles/responsive-legacy.css";
-@import "./styles/codex.css";
-@import "./styles/public-shell.css";
-@import "./styles/public-sidebar.css";
-@import "./styles/public-feed.css";
-@import "./styles/public-detail.css";
-@import "./styles/public-responsive.css";
 @import "./styles/preview.css";
 @import "./styles/admin-workbench.css";
 @import "./archive/archive.css";

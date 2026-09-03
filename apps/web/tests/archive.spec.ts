@@ -761,3 +761,246 @@ test.describe("Text Browser (T01 - T06)", () => {
     expect(docAttempts).toBeGreaterThanOrEqual(2);
   });
 });
+
+test.describe("Archive Home (A01 - A06)", () => {
+  test("A01: 根路径渲染全新 Archive Home，不出现旧 SearchCard / ArchiveFeed", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#");
+    await expect(page.getByRole("heading", { name: "游戏叙事与知识档案库" })).toBeVisible();
+    await expect(page.locator(".search-card")).toHaveCount(0);
+    await expect(page.locator(".archive-feed")).toHaveCount(0);
+    await expect(page.locator(".archive-sidebar")).toHaveCount(0);
+  });
+
+  test("A02: 首页卡片直达剧情档案 (#story)", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname === `/api/games/${gameId}/quests`)
+        return route.fulfill({ json: { quests: [] } });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#");
+    await page.getByRole("button", { name: "浏览剧情 →" }).click();
+    await expect(page).toHaveURL(/#story/);
+  });
+
+  test("A03: 首页卡片直达游戏资料 (#archive/characters)", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#");
+    await page.getByRole("button", { name: "查看资料 →" }).click();
+    await expect(page).toHaveURL(/#archive\/characters/);
+  });
+
+  test("A04: 首页快速搜索跳转至 #search?q=...", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#");
+    await page.getByPlaceholder("搜索剧情、角色、材料、文献或关键词...").fill("绝云椒椒");
+    await page.getByRole("button", { name: "检索", exact: true }).click();
+    await expect(page).toHaveURL(/#search\?q=%E7%BB%9D%E4%BA%91%E6%A4%92%E6%A4%92/);
+  });
+});
+
+test.describe("Data Browser (D01 - D05)", () => {
+  test("D01: 角色资料列表、汉字头像、详情与 Deep Link", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname.includes("/codex/characters")) {
+        return route.fulfill({
+          json: {
+            characters: [
+              {
+                stableId: "char-1",
+                name: "三月七",
+                title: "纯洁的光辉",
+                rarity: 4,
+                element: "冰",
+                weaponType: "存护",
+                affiliation: "星穹列车",
+                description: "精灵古怪的少女，热衷于用相机记录列车所行之处的一切。",
+              },
+            ],
+          },
+        });
+      }
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#archive/characters");
+    await expect(page.getByText("三月七").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "三月七" })).toBeVisible();
+    await expect(page.getByText("纯洁的光辉").first()).toBeVisible();
+    await expect(page.getByText("精灵古怪的少女").first()).toBeVisible();
+    // 汉字首字头像
+    await expect(page.getByLabel("三月七").first()).toContainText("三");
+  });
+
+  test("D02: 武器/光锥自适应展示名与分类切换", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname.includes("/codex/weapons")) {
+        return route.fulfill({
+          json: {
+            weapons: [
+              {
+                stableId: "weapon-1",
+                name: "余生的第一天",
+                weaponType: "存护",
+                rarity: 4,
+                description: "使装备者的防御力提高16%。进入战斗后使我方全体伤害抗性提高8%。",
+              },
+            ],
+          },
+        });
+      }
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#archive/weapons");
+    await expect(page.getByText("余生的第一天").first()).toBeVisible();
+    await expect(page.getByText("使装备者的防御力提高16%")).toBeVisible();
+  });
+});
+
+test.describe("Legacy Route Redirects (R01 - R04)", () => {
+  test("R01: #quests 自动重定向至 #story", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname === `/api/games/${gameId}/quests`)
+        return route.fulfill({ json: { quests: [] } });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#quests");
+    await expect(page).toHaveURL(/#story/);
+  });
+
+  test("R02: #codex/materials 自动重定向至 #archive/materials", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname.includes("/codex/materials"))
+        return route.fulfill({ json: { materials: [] } });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#codex/materials");
+    await expect(page).toHaveURL(/#archive\/materials/);
+  });
+
+  test("R03: #codex/characters 自动重定向至 #archive/characters", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname.includes("/codex/characters"))
+        return route.fulfill({ json: { characters: [] } });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#codex/characters");
+    await expect(page).toHaveURL(/#archive\/characters/);
+  });
+
+  test("R04: #codex/books 自动重定向至 #text/books", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname.includes("/codex/books")) return route.fulfill({ json: { books: [] } });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#codex/books");
+    await expect(page).toHaveURL(/#text\/books/);
+  });
+});
+
+test.describe("Search & QA (SQ01 - SQ02)", () => {
+  test("SQ01: 全局搜索页面与结果跳转", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname === `/api/games/${gameId}/quests`) {
+        return route.fulfill({
+          json: {
+            hits: [
+              {
+                questKey: "quest/1000",
+                title: "于枯索的冬夜里",
+                type: "archon_quest",
+                description: "主线开拓任务",
+              },
+            ],
+          },
+        });
+      }
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#search?q=%E5%86%AC%E5%A4%9C");
+    await expect(page.getByRole("heading", { name: "于枯索的冬夜里" })).toBeVisible();
+    await page.getByText("查看详情 →").first().click();
+    await expect(page).toHaveURL(/#story\/quest%2F1000/);
+  });
+
+  test("SQ02: 证据链问答提问与结果展示", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      if (u.pathname === `/api/games/${gameId}/qa`) {
+        return route.fulfill({
+          json: {
+            answer: "因为特瓦林受到了深渊教团的诅咒侵蚀。",
+            confidence: 0.95,
+            evidences: [
+              {
+                text: "深渊教团的污秽魔血污染了特瓦林的心智。",
+                source: "蒙德城主线剧情 第一幕",
+                score: 0.92,
+              },
+            ],
+          },
+        });
+      }
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#ask");
+    await page.getByPlaceholder("在此输入您的问题").fill("特瓦林为什么袭击蒙德？");
+    await page.getByRole("button", { name: "生成解答" }).click();
+    await expect(page.getByText("因为特瓦林受到了深渊教团的诅咒侵蚀。")).toBeVisible();
+    await expect(page.getByText("深渊教团的污秽魔血污染了特瓦林的心智。")).toBeVisible();
+    await expect(page.getByText("置信度: 95%")).toBeVisible();
+  });
+});
+
+test.describe("Admin Regression (AD01)", () => {
+  test("AD01: #admin/intake 正常进入管理后台且不受影响", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#admin/intake");
+    await expect(page.getByRole("heading", { name: "导入数据" })).toBeVisible();
+  });
+});
