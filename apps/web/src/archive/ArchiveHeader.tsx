@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { GameSummary } from "@gip/contracts";
 import { Select, Switch } from "antd";
 import { useThemeMode } from "../providers.jsx";
@@ -29,6 +30,22 @@ export function ArchiveHeader({
   selectedRevisionLabel?: string;
   onGameChange: (value: string) => void;
 }) {
+  const [currentHash, setCurrentHash] = useState(() => window.location.hash.replace(/^#\/?/, ""));
+
+  useEffect(() => {
+    function onHashChange() {
+      setCurrentHash(window.location.hash.replace(/^#\/?/, ""));
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  const isStory = currentHash.startsWith("story") || currentHash.startsWith("quests");
+  const isData = currentHash.startsWith("archive") || currentHash.startsWith("codex");
+  const isText = currentHash.startsWith("text");
+  const isSearch = currentHash.startsWith("search");
+  const isAsk = currentHash.startsWith("ask");
+
   return (
     <header className="archive-header" role="banner">
       <div
@@ -48,35 +65,35 @@ export function ArchiveHeader({
       <div className="archive-header-nav">
         <button
           type="button"
-          className="archive-header-link"
+          className={`archive-header-link ${isStory ? "active" : ""}`}
           onClick={() => (window.location.hash = "story")}
         >
           剧情档案
         </button>
         <button
           type="button"
-          className="archive-header-link"
+          className={`archive-header-link ${isData ? "active" : ""}`}
           onClick={() => (window.location.hash = "archive/characters")}
         >
           游戏资料
         </button>
         <button
           type="button"
-          className="archive-header-link"
+          className={`archive-header-link ${isText ? "active" : ""}`}
           onClick={() => (window.location.hash = "text/books")}
         >
           文献文本
         </button>
         <button
           type="button"
-          className="archive-header-link"
+          className={`archive-header-link ${isSearch ? "active" : ""}`}
           onClick={() => (window.location.hash = "search")}
         >
           搜索
         </button>
         <button
           type="button"
-          className="archive-header-link"
+          className={`archive-header-link ${isAsk ? "active" : ""}`}
           onClick={() => (window.location.hash = "ask")}
         >
           问答

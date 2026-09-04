@@ -1,7 +1,7 @@
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from "antd";
 import zhCN from "antd/locale/zh_CN.js";
 import type { Locale } from "antd/es/locale/index.js";
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 export type ThemeMode = "light" | "dark";
@@ -43,6 +43,15 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(readInitialMode);
 
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", mode);
+    if (mode === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [mode]);
+
   const value = useMemo(
     () => ({
       mode,
@@ -69,10 +78,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
           theme={{
             algorithm: mode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
             token: {
-              colorPrimary: "#2f80ed",
+              colorPrimary: mode === "dark" ? "#f8fafc" : "#0f172a",
               borderRadius: 8,
               fontFamily:
-                "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
             },
           }}
         >

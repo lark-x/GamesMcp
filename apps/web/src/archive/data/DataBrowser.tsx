@@ -244,6 +244,7 @@ export function DataBrowser({
                     type="button"
                     role="listitem"
                     className={`data-item-row ${isSelected ? "selected" : ""}`}
+                    data-rarity={item.rarity}
                     onClick={() => handleSelectItem(item)}
                   >
                     <ArchiveAvatar fallbackText={item.name} label={item.name} size={36} />

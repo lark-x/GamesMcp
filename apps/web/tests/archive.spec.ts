@@ -815,6 +815,28 @@ test.describe("Archive Home (A01 - A06)", () => {
     await page.getByRole("button", { name: "检索", exact: true }).click();
     await expect(page).toHaveURL(/#search\?q=%E7%BB%9D%E4%BA%91%E6%A4%92%E6%A4%92/);
   });
+
+  test("A05: 首页支持快捷键 / 与 ⌘K 自动聚焦搜索框", async ({ page }) => {
+    await page.route("**/api/**", async (route) => {
+      const u = new URL(route.request().url());
+      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto("/#");
+    const searchInput = page.getByPlaceholder("搜索剧情、角色、材料、文献或关键词...");
+    await expect(searchInput).not.toBeFocused();
+
+    // Press / to focus
+    await page.keyboard.press("/");
+    await expect(searchInput).toBeFocused();
+
+    // Blur and test meta+k
+    await searchInput.blur();
+    await expect(searchInput).not.toBeFocused();
+    await page.keyboard.press("Meta+k");
+    await expect(searchInput).toBeFocused();
+  });
 });
 
 test.describe("Data Browser (D01 - D05)", () => {
