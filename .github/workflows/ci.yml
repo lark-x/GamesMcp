@@ -142,12 +142,18 @@ jobs:
 
   docker-smoke:
     runs-on: ubuntu-latest
+    env:
+      DATA_DIR: /tmp/gamesmcp-data
+      GAMESMCP_VERSION: test
+      ISTAROTH_IMAGE: ghcr.io/example/istaroth:test
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Validate Compose Configs
         run: |
+          mkdir -p /tmp/gamesmcp-data
+          cp .env.example .env
           docker compose config
           docker compose -f docker-compose.prod.yml config
       - name: Build API Runtime Target
@@ -156,3 +162,80 @@ jobs:
         run: docker build --target worker-runtime -f docker/Dockerfile .
       - name: Build Web Runtime Target
         run: docker build --target web-runtime -f docker/Dockerfile .
+
+  docker-release:
+    needs:
+      - verify
+      - database
+      - candidate-flow
+      - story-gates
+      - archive-e2e
+      - docker-smoke
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Version Tags
+        id: meta
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          TAGS_API="ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-api:latest"
+          TAGS_WORKER="ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:latest"
+          TAGS_WEB="ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-web:latest"
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            TAGS_API="${TAGS_API},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${RELEASE_TAG}"
+            TAGS_WORKER="${TAGS_WORKER},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${RELEASE_TAG}"
+            TAGS_WEB="${TAGS_WEB},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${RELEASE_TAG}"
+          fi
+          echo "tags_api=${TAGS_API}" >> $GITHUB_OUTPUT
+          echo "tags_worker=${TAGS_WORKER}" >> $GITHUB_OUTPUT
+          echo "tags_web=${TAGS_WEB}" >> $GITHUB_OUTPUT
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: api-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_api }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build and push Worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: worker-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_worker }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: web-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_web }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

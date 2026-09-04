@@ -15,7 +15,11 @@ TARGET_ROLLBACK_VERSION="${1:-}"
 
 if [ -z "${TARGET_ROLLBACK_VERSION}" ]; then
   if [ -f ".previous_version" ]; then
-    TARGET_ROLLBACK_VERSION="$(cat .previous_version)"
+    TARGET_ROLLBACK_VERSION="$(cat .previous_version | tr -d '[:space:]')"
+    if [ -z "${TARGET_ROLLBACK_VERSION}" ] || [ "${TARGET_ROLLBACK_VERSION}" = "latest" ]; then
+      echo "ERROR: .previous_version is invalid or set to 'latest' (${TARGET_ROLLBACK_VERSION:-empty})."
+      exit 1
+    fi
   else
     echo "ERROR: No target version specified and .previous_version file not found."
     echo "Usage: bash scripts/rollback.sh <rollback-version-or-sha>"
@@ -27,7 +31,11 @@ echo "==> Rolling back to version: ${TARGET_ROLLBACK_VERSION}"
 export GAMESMCP_VERSION="${TARGET_ROLLBACK_VERSION}"
 
 echo "==> Ensuring target rollback images are present..."
-docker compose -f "${COMPOSE_FILE}" pull api worker web || true
+if ! docker compose -f "${COMPOSE_FILE}" pull api worker web; then
+  echo "ERROR: Failed to pull rollback images for version ${TARGET_ROLLBACK_VERSION}."
+  echo "       Rollback aborted to avoid inconsistent state."
+  exit 1
+fi
 
 echo "==> Restarting services with rollback version..."
 docker compose -f "${COMPOSE_FILE}" up -d api worker web

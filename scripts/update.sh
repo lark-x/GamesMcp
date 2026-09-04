@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
-TARGET_VERSION="${1:-${GAMESMCP_VERSION:-}}"
+TARGET_VERSION="${1:-}"
 COMPOSE_FILE="docker-compose.prod.yml"
 
 echo "================================================================="
@@ -20,21 +20,26 @@ fi
 
 # Save current version for rollback
 if [ -f ".current_version" ]; then
-  cp .current_version .previous_version
-  CURRENT_VERSION=$(cat .current_version)
+  CURRENT_VERSION=$(cat .current_version | tr -d '[:space:]')
+  if [ -z "${CURRENT_VERSION}" ] || [ "${CURRENT_VERSION}" = "latest" ]; then
+    echo "ERROR: Current version in .current_version is invalid (${CURRENT_VERSION:-empty})"
+    exit 1
+  fi
+  echo "${CURRENT_VERSION}" > .previous_version
   echo "==> Current running version: ${CURRENT_VERSION}"
 else
-  echo "latest" > .previous_version
+  echo "ERROR: .current_version file not found. Run scripts/deploy.sh first."
+  exit 1
 fi
 
 echo "==> Updating to version: ${TARGET_VERSION}"
 export GAMESMCP_VERSION="${TARGET_VERSION}"
 
 echo "==> Pulling target image version..."
-docker compose -f "${COMPOSE_FILE}" pull api worker web || {
+if ! docker compose -f "${COMPOSE_FILE}" pull api worker web; then
   echo "ERROR: Failed to pull target images for version ${TARGET_VERSION}"
   exit 1
-}
+fi
 
 echo "==> Applying updated containers..."
 docker compose -f "${COMPOSE_FILE}" up -d api worker web

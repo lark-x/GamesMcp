@@ -38,25 +38,48 @@ if [ ! -w "${DATA_DIR}" ]; then
   exit 1
 fi
 
-if [ -z "${GAMESMCP_VERSION:-}" ]; then
+TARGET_VERSION="${1:-${GAMESMCP_VERSION:-}}"
+
+if [ -z "${TARGET_VERSION}" ]; then
   if command -v git > /dev/null 2>&1 && git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    export GAMESMCP_VERSION="$(git rev-parse HEAD)"
+    TARGET_VERSION="$(git rev-parse HEAD)"
   else
-    export GAMESMCP_VERSION="latest"
+    echo "ERROR: Production deployment version must be explicitly provided."
+    echo "Usage: bash scripts/deploy.sh <COMMIT_SHA_OR_TAG>"
+    exit 1
   fi
 fi
+export GAMESMCP_VERSION="${TARGET_VERSION}"
 echo "    Deploying Version: ${GAMESMCP_VERSION}"
 
 # [2/7] Pull images
 echo "==> [2/7] Pulling prebuilt images from registry..."
-docker compose -f "${COMPOSE_FILE}" pull postgres || true
-if [ "${GAMESMCP_ISTAROTH_ENABLED:-false}" = "true" ] && [ -n "${ISTAROTH_IMAGE:-}" ]; then
-  docker compose -f "${COMPOSE_FILE}" pull istaroth || true
+if ! docker compose -f "${COMPOSE_FILE}" pull postgres; then
+  echo "ERROR: Failed to pull PostgreSQL image"
+  exit 1
 fi
-docker compose -f "${COMPOSE_FILE}" pull api worker web || {
-  echo "WARNING: Prebuilt images for version ${GAMESMCP_VERSION} could not be pulled from registry."
-  echo "         If deploying locally or before GHCR release, ensuring images are available..."
-}
+
+if [ "${GAMESMCP_ISTAROTH_ENABLED:-false}" = "true" ] && [ -n "${ISTAROTH_IMAGE:-}" ]; then
+  echo "    Pulling Genshin Istaroth image..."
+  if ! docker compose -f "${COMPOSE_FILE}" pull istaroth; then
+    echo "ERROR: Failed to pull Genshin Istaroth image (${ISTAROTH_IMAGE})"
+    exit 1
+  fi
+fi
+
+if [ "${GAMESMCP_STARRAIL_ISTAROTH_ENABLED:-false}" = "true" ] && [ -n "${ISTAROTH_IMAGE:-}" ]; then
+  echo "    Pulling StarRail Istaroth image..."
+  if ! docker compose -f "${COMPOSE_FILE}" pull istaroth-starrail; then
+    echo "ERROR: Failed to pull StarRail Istaroth image (${ISTAROTH_IMAGE})"
+    exit 1
+  fi
+fi
+
+if ! docker compose -f "${COMPOSE_FILE}" pull api worker web; then
+  echo "ERROR: Failed to pull application images for version ${GAMESMCP_VERSION}."
+  echo "       Deployment stopped to avoid running unverified or missing images."
+  exit 1
+fi
 
 # [3/7] Start database
 echo "==> [3/7] Starting database (PostgreSQL + pgvector)..."
@@ -73,27 +96,34 @@ done
 # [4/7] Start providers (if configured)
 echo "==> [4/7] Starting providers..."
 if [ "${GAMESMCP_ISTAROTH_ENABLED:-false}" = "true" ] && [ -n "${ISTAROTH_IMAGE:-}" ]; then
+  echo "    Starting Genshin Istaroth provider..."
   docker compose -f "${COMPOSE_FILE}" up -d istaroth
-else
-  echo "    Istaroth provider disabled or not configured."
+fi
+if [ "${GAMESMCP_STARRAIL_ISTAROTH_ENABLED:-false}" = "true" ] && [ -n "${ISTAROTH_IMAGE:-}" ]; then
+  echo "    Starting StarRail Istaroth provider..."
+  docker compose -f "${COMPOSE_FILE}" up -d istaroth-starrail
+fi
+if [ "${GAMESMCP_ISTAROTH_ENABLED:-false}" != "true" ] && [ "${GAMESMCP_STARRAIL_ISTAROTH_ENABLED:-false}" != "true" ]; then
+  echo "    Istaroth providers disabled or not configured."
 fi
 
 # [5/7] Start application services
 echo "==> [5/7] Starting core application services (API, Worker, Web)..."
 docker compose -f "${COMPOSE_FILE}" up -d api worker web
 
-# Record deployed version
-echo "${GAMESMCP_VERSION}" > .current_version
-
 # [6/7] Health check
 echo "==> [6/7] Running post-deployment health verification..."
 if ! bash "${SCRIPT_DIR}/health-check.sh"; then
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
   echo "DEPLOYMENT HEALTH CHECK FAILED!"
+  echo "Not recording ${GAMESMCP_VERSION} to .current_version."
   echo "To safely rollback, run: bash scripts/rollback.sh"
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
   exit 1
 fi
+
+# Record deployed version ONLY after health check passes
+echo "${GAMESMCP_VERSION}" > .current_version
 
 # [7/7] Complete
 echo "==> [7/7] Deployment complete! Service is running and verified."

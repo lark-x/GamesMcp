@@ -78,7 +78,7 @@ services:
       retries: 20
 
   api:
-    image: "ghcr.io/lark-x/gamesmcp-api:${GAMESMCP_VERSION:-latest}"
+    image: "ghcr.io/lark-x/gamesmcp-api:${GAMESMCP_VERSION:?GAMESMCP_VERSION is required}"
     env_file: .env
     environment:
       HOST: 0.0.0.0
@@ -106,7 +106,7 @@ services:
         ]
 
   worker:
-    image: "ghcr.io/lark-x/gamesmcp-worker:${GAMESMCP_VERSION:-latest}"
+    image: "ghcr.io/lark-x/gamesmcp-worker:${GAMESMCP_VERSION:?GAMESMCP_VERSION is required}"
     env_file: .env
     environment:
       DATABASE_URL: postgres://gip:gip@postgres:5432/gip
@@ -119,7 +119,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: "ghcr.io/lark-x/gamesmcp-web:${GAMESMCP_VERSION:-latest}"
+    image: "ghcr.io/lark-x/gamesmcp-web:${GAMESMCP_VERSION:?GAMESMCP_VERSION is required}"
     depends_on:
       - api
     ports:
