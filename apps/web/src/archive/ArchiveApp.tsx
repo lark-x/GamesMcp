@@ -30,9 +30,6 @@ export function ArchiveApp({
   selectedRevision,
   selectedRevisionLabel,
   onGameChange,
-  onPreview,
-  onRevision,
-  onCurrent,
 }: {
   gameId: string;
   games: GameSummary[];
@@ -40,9 +37,6 @@ export function ArchiveApp({
   selectedRevision?: string;
   selectedRevisionLabel?: string;
   onGameChange: (value: string) => void;
-  onPreview: (candidateId: string, buildId?: string) => void;
-  onRevision: (revisionId: string) => void;
-  onCurrent: () => void;
 }) {
   const [route, setRoute] = useState<ArchiveRoute>(() => parseArchiveRoute());
 
@@ -194,9 +188,6 @@ export function ArchiveApp({
         gameId={gameId}
         selectedRevisionLabel={revisionLabel}
         onGameChange={onGameChange}
-        onPreview={onPreview}
-        onRevision={onRevision}
-        onCurrent={onCurrent}
       />
       <main className="archive-app-main">{renderContent()}</main>
     </div>

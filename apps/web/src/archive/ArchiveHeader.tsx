@@ -1,7 +1,6 @@
 import type { GameSummary } from "@gip/contracts";
-import { Button, Select, Switch } from "antd";
+import { Select, Switch } from "antd";
 import { useThemeMode } from "../providers.jsx";
-import { VersionSwitcher } from "../versions/VersionSwitcher.js";
 import { ArchiveAvatar } from "./ArchiveAvatar.js";
 
 function ThemeToggle() {
@@ -23,18 +22,12 @@ export function ArchiveHeader({
   gameId,
   selectedRevisionLabel,
   onGameChange,
-  onPreview,
-  onRevision,
-  onCurrent,
 }: {
   gameName?: string;
   games: GameSummary[];
   gameId: string;
   selectedRevisionLabel?: string;
   onGameChange: (value: string) => void;
-  onPreview: (candidateId: string, buildId?: string) => void;
-  onRevision: Parameters<typeof VersionSwitcher>[0]["onRevision"];
-  onCurrent: () => void;
 }) {
   return (
     <header className="archive-header" role="banner">
@@ -105,10 +98,6 @@ export function ArchiveHeader({
             aria-label="选择游戏"
           />
         </div>
-        <VersionSwitcher onPreview={onPreview} onRevision={onRevision} onCurrent={onCurrent} />
-        <Button size="small" onClick={() => (window.location.hash = "admin/intake")}>
-          管理后台
-        </Button>
         <ThemeToggle />
       </div>
     </header>

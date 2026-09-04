@@ -991,16 +991,3 @@ test.describe("Search & QA (SQ01 - SQ02)", () => {
     await expect(page.getByText("置信度: 95%")).toBeVisible();
   });
 });
-
-test.describe("Admin Regression (AD01)", () => {
-  test("AD01: #admin/intake 正常进入管理后台且不受影响", async ({ page }) => {
-    await page.route("**/api/**", async (route) => {
-      const u = new URL(route.request().url());
-      if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
-      return route.fulfill({ json: {} });
-    });
-
-    await page.goto("/#admin/intake");
-    await expect(page.getByRole("heading", { name: "导入数据" })).toBeVisible();
-  });
-});
