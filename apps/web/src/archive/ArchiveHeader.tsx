@@ -100,7 +100,7 @@ export function ArchiveHeader({
             onChange={onGameChange}
             options={games.map((game) => ({
               value: game.id,
-              label: `${game.name} · ${game.currentRevision ?? "未发布"}`,
+              label: game.currentRevision ? `${game.name} · ${game.currentRevision}` : game.name,
             }))}
             aria-label="选择游戏"
           />

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, Revision } from "../api.js";
+import { Select } from "antd";
+import { api, type Revision } from "../api.js";
+
 export function VersionSwitcher({
   onPreview,
   onRevision,
@@ -19,6 +21,7 @@ export function VersionSwitcher({
   >([]);
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [value, setValue] = useState("current");
+
   useEffect(() => {
     Promise.all([api.candidates(), api.revisions()])
       .then(async ([v, r]) => {
@@ -31,50 +34,74 @@ export function VersionSwitcher({
       })
       .catch(() => undefined);
   }, []);
+
+  const options = [
+    {
+      label: "正式版本",
+      options: [
+        {
+          value: "current",
+          label: "正式发布 · Current",
+        },
+      ],
+    },
+    ...(revisions.length > 0
+      ? [
+          {
+            label: "历史正式版本",
+            options: revisions.map((r) => ({
+              value: `revision:${r.id}`,
+              label: `${r.version ?? r.id} · ${r.status ?? "published"}`,
+            })),
+          },
+        ]
+      : []),
+    ...(candidates.length > 0
+      ? [
+          {
+            label: "预发布候选",
+            options: candidates.flatMap((c) => [
+              {
+                value: `candidate:${c.id}`,
+                label: `候选 · ${c.name}`,
+              },
+              ...(c.builds ?? []).map((b) => ({
+                value: `candidate:${c.id}:${b.id}`,
+                label: `${c.name} · Build ${b.buildNumber}`,
+              })),
+            ]),
+          },
+        ]
+      : []),
+  ];
+
+  function handleChange(val: string) {
+    setValue(val);
+    if (val.startsWith("candidate:")) {
+      const [, c, b] = val.split(":");
+      if (c) onPreview(c, b);
+    } else if (val === "current") {
+      window.location.hash = "";
+      onCurrent?.();
+    } else if (val.startsWith("revision:")) {
+      const revisionId = val.slice(9);
+      onRevision?.(
+        revisionId,
+        revisions.find((revision) => revision.id === revisionId),
+      );
+    }
+  }
+
   return (
-    <label className="version-switcher">
-      版本{" "}
-      <select
+    <div className="archive-version-picker">
+      <Select
+        size="small"
+        style={{ minWidth: 155 }}
         value={value}
-        onChange={(e) => {
-          const v = e.target.value;
-          setValue(v);
-          if (v.startsWith("candidate:")) {
-            const [, c, b] = v.split(":");
-            if (c) onPreview(c, b);
-          } else if (v === "current") {
-            window.location.hash = "";
-            onCurrent?.();
-          } else if (v.startsWith("revision:")) {
-            const revisionId = v.slice(9);
-            onRevision?.(
-              revisionId,
-              revisions.find((revision) => revision.id === revisionId),
-            );
-          }
-        }}
-      >
-        <option value="current">正式 · Current</option>
-        <optgroup label="历史正式版本">
-          {revisions.map((r) => (
-            <option key={r.id} value={`revision:${r.id}`}>
-              {r.version ?? r.id} · {r.status ?? "published"}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="预发布 Candidate / Build">
-          {candidates.flatMap((c) => [
-            <option key={c.id} value={`candidate:${c.id}`}>
-              Candidate · {c.name} · {c.status}
-            </option>,
-            ...(c.builds ?? []).map((b) => (
-              <option key={b.id} value={`candidate:${c.id}:${b.id}`}>
-                {c.name} · Build {b.buildNumber}
-              </option>
-            )),
-          ])}
-        </optgroup>
-      </select>
-    </label>
+        onChange={handleChange}
+        options={options}
+        aria-label="选择版本"
+      />
+    </div>
   );
 }
