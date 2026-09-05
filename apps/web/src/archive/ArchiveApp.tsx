@@ -134,6 +134,7 @@ export function ArchiveApp({
               gameName={gameName}
               revisionLabel={revisionLabel}
               selectedRevision={selectedRevision}
+              textKind={route.textKind}
               initialBookId={route.bookId}
               initialChapterId={route.chapterId}
               onHome={() => (window.location.hash = "")}

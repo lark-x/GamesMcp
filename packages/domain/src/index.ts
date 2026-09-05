@@ -1812,8 +1812,8 @@ export class GameDomainService {
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.listCharacters({
-      revisionId: revision,
+    const adapter = await this.getArchiveAdapter(gameId);
+    return adapter.listCharacters(revision, {
       query: options.query,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
       offset: options.offset ?? 0,
@@ -1823,7 +1823,8 @@ export class GameDomainService {
   async getCharacter(gameId: Id, stableId: string, revisionId?: Id) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const character = await this.repository.genshin.getCharacter(revision, stableId);
+    const adapter = await this.getArchiveAdapter(gameId);
+    const character = await adapter.getCharacter(revision, stableId);
     if (!character)
       throw new DomainError("character_not_found", "Character was not found", undefined, 404);
     return character;
@@ -1836,8 +1837,8 @@ export class GameDomainService {
   ): Promise<import("@gip/contracts").CodexMaterial[]> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.listMaterials({
-      revisionId: revision,
+    const adapter = await this.getArchiveAdapter(gameId);
+    return adapter.listMaterials(revision, {
       query: options.query,
       category: options.category,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 200),
@@ -1852,14 +1853,13 @@ export class GameDomainService {
   ): Promise<number> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.countMaterials
-      ? this.repository.genshin.countMaterials({
-          revisionId: revision,
-          query: options.query,
-          category: options.category,
-          limit: 1,
-        })
-      : 0;
+    const adapter = await this.getArchiveAdapter(gameId);
+    const materials = await adapter.listMaterials(revision, {
+      query: options.query,
+      category: options.category,
+      limit: 1000,
+    });
+    return materials.length;
   }
 
   async aggregateMaterialCategories(
@@ -1869,9 +1869,21 @@ export class GameDomainService {
   ): Promise<import("@gip/contracts").CodexMaterialCategoryAggregation[]> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.aggregateMaterialCategories
-      ? this.repository.genshin.aggregateMaterialCategories(revision, query)
-      : [];
+    const adapter = await this.getArchiveAdapter(gameId);
+    const materials = await adapter.listMaterials(revision, { query, limit: 1000 });
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const m of materials) {
+      const key = m.category;
+      const label = m.categoryLabel ?? key;
+      const existing = counts.get(key) ?? { label, count: 0 };
+      existing.count++;
+      counts.set(key, existing);
+    }
+    return Array.from(counts.entries()).map(([key, val]) => ({
+      key,
+      label: val.label,
+      count: val.count,
+    }));
   }
 
   async getMaterial(
@@ -1881,7 +1893,8 @@ export class GameDomainService {
   ): Promise<import("@gip/contracts").CodexMaterial> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const material = await this.repository.genshin.getMaterial(revision, stableId);
+    const adapter = await this.getArchiveAdapter(gameId);
+    const material = await adapter.getMaterial(revision, stableId);
     if (!material)
       throw new DomainError("material_not_found", "Material was not found", undefined, 404);
     return material;
@@ -1894,8 +1907,8 @@ export class GameDomainService {
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.listWeapons({
-      revisionId: revision,
+    const adapter = await this.getArchiveAdapter(gameId);
+    return adapter.listWeapons(revision, {
       query: options.query,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
       offset: options.offset ?? 0,
@@ -1905,7 +1918,8 @@ export class GameDomainService {
   async getWeapon(gameId: Id, stableId: string, revisionId?: Id) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const weapon = await this.repository.genshin.getWeapon(revision, stableId);
+    const adapter = await this.getArchiveAdapter(gameId);
+    const weapon = await adapter.getWeapon(revision, stableId);
     if (!weapon) throw new DomainError("weapon_not_found", "Weapon was not found", undefined, 404);
     return weapon;
   }
@@ -1941,8 +1955,8 @@ export class GameDomainService {
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.listArtifactSets({
-      revisionId: revision,
+    const adapter = await this.getArchiveAdapter(gameId);
+    return adapter.listArtifactSets(revision, {
       query: options.query,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
       offset: options.offset ?? 0,
@@ -1952,7 +1966,8 @@ export class GameDomainService {
   async getArtifactSet(gameId: Id, stableId: string, revisionId?: Id) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const artifactSet = await this.repository.genshin.getArtifactSet(revision, stableId);
+    const adapter = await this.getArchiveAdapter(gameId);
+    const artifactSet = await adapter.getArtifactSet(revision, stableId);
     if (!artifactSet)
       throw new DomainError("artifact_set_not_found", "Artifact set was not found", undefined, 404);
     return artifactSet;
@@ -1965,8 +1980,8 @@ export class GameDomainService {
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.listAchievements({
-      revisionId: revision,
+    const adapter = await this.getArchiveAdapter(gameId);
+    return adapter.listAchievements(revision, {
       query: options.query,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
       offset: options.offset ?? 0,
@@ -1976,7 +1991,8 @@ export class GameDomainService {
   async getAchievement(gameId: Id, stableId: string, revisionId?: Id) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const achievement = await this.repository.genshin.getAchievement(revision, stableId);
+    const adapter = await this.getArchiveAdapter(gameId);
+    const achievement = await adapter.getAchievement(revision, stableId);
     if (!achievement)
       throw new DomainError("achievement_not_found", "Achievement was not found", undefined, 404);
     return achievement;
@@ -1989,8 +2005,8 @@ export class GameDomainService {
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    return this.repository.genshin.listEnemies({
-      revisionId: revision,
+    const adapter = await this.getArchiveAdapter(gameId);
+    return adapter.listEnemies(revision, {
       query: options.query,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
       offset: options.offset ?? 0,
@@ -2000,7 +2016,8 @@ export class GameDomainService {
   async getEnemy(gameId: Id, stableId: string, revisionId?: Id) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
-    const enemy = await this.repository.genshin.getEnemy(revision, stableId);
+    const adapter = await this.getArchiveAdapter(gameId);
+    const enemy = await adapter.getEnemy(revision, stableId);
     if (!enemy) throw new DomainError("enemy_not_found", "Enemy was not found", undefined, 404);
     return enemy;
   }

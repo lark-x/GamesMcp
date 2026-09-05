@@ -7,6 +7,7 @@ import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
 import { ArchivePagination } from "../ArchivePagination.js";
 import type { ArchiveMaterial } from "./material.types.js";
+import { isInternalEntry } from "../data/data.types.js";
 
 const CATEGORY_LABELS: Record<string, string> = {
   character_development: "角色培养素材",
@@ -19,8 +20,13 @@ const CATEGORY_LABELS: Record<string, string> = {
   cooking: "食材烹饪",
   furnishing: "摆设素材",
   character_ascension: "角色突破素材",
+  trace: "行迹材料",
   trace_material: "行迹材料",
   light_cone_ascension: "光锥突破素材",
+  enemy_drop: "敌方掉落",
+  weekly_boss: "周本材料",
+  synthesis: "合成材料",
+  mission: "任务道具",
   other: "其他",
 };
 
@@ -85,7 +91,8 @@ export function MaterialBrowser({
         total?: number;
         categories?: Array<{ key: string; label: string; count: number }>;
       }>(`/api/games/${gameId}/codex/materials?${params.toString()}`);
-      setMaterials(result.materials ?? []);
+      // 原神上游材料表混有 (test)/？？？ 等内部占位条目，目录中不展示。
+      setMaterials((result.materials ?? []).filter((m) => !isInternalEntry(m.name)));
       setTotal(result.total ?? result.materials?.length ?? 0);
       if (result.categories) {
         setServerCategories(result.categories);
@@ -333,7 +340,7 @@ export function MaterialBrowser({
               <InspectorSection title="来源">
                 <InspectorField
                   label="数据来源"
-                  value={selected.sourceName ?? "来源未解析"}
+                  value={selected.sourceName ?? undefined}
                 />
                 <InspectorField label="Stable ID" value={<code>{selected.stableId}</code>} />
                 <InspectorField

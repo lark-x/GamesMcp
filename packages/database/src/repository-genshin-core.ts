@@ -489,7 +489,10 @@ function rowsFromExecuteResult(result: unknown): StructuredRow[] {
   return [];
 }
 
-function valueForColumn(input: StructuredInput, column: string): unknown {
+function valueForColumn(
+  input: StructuredInput,
+  column: string,
+): unknown {
   const record = input as Record<string, unknown>;
   if (column === "game_id") return input.gameId;
   if (column === "revision_id") return input.revisionId;
@@ -504,13 +507,26 @@ function valueForColumn(input: StructuredInput, column: string): unknown {
   if (column === "sub_stat") return record.subStat ?? null;
   if (column === "passive_name") return record.passiveName ?? null;
   if (column === "passive_description") return record.passiveDescription ?? null;
-  if (column === "ascension_materials") return record.ascensionMaterials ?? [];
+  if (column === "ascension_materials") return jsonColumn(record.ascensionMaterials ?? []);
   if (column === "max_rarity") return record.maxRarity ?? null;
   if (column === "two_piece_bonus") return record.twoPieceBonus ?? null;
   if (column === "four_piece_bonus") return record.fourPieceBonus ?? null;
-  if (column === "used_by") return record.usedBy ?? [];
+  if (column === "used_by") return jsonColumn(record.usedBy ?? []);
   if (column === "reward_primogems") return record.rewardPrimogems ?? null;
-  return record[camelCase(column)] ?? defaultColumnValue(column);
+  const value = record[camelCase(column)] ?? defaultColumnValue(column);
+  // 数组/对象落 jsonb 列时必须走参数绑定；drizzle 会把裸数组展开成内联
+  // 列表（空数组直接生成 "()" 导致语法错误）。
+  if (Array.isArray(value) || (value && typeof value === "object")) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+function jsonColumn(value: unknown): unknown {
+  if (Array.isArray(value) || (value && typeof value === "object")) {
+    return JSON.stringify(value);
+  }
+  return value ?? [];
 }
 
 function defaultColumnValue(column: string): unknown {

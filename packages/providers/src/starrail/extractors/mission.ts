@@ -154,12 +154,22 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
         lines.push("");
 
         const subs = subMap.get(id) ?? [];
+        // Upstream repeats the chapter blurb verbatim on every sub-mission and
+        // reuses targets across steps; emit each target change once and each
+        // distinct description once so the body does not repeat itself.
+        let lastTarget: string | null = null;
+        const seenDescs = new Set<string>();
         for (const s of subs) {
           const target = resolveHash(s.TargetText);
           const desc = resolveHash(s.DescrptionText);
-          if (target || desc) {
-            if (target) lines.push(`### 阶段目标：${target}`);
-            if (desc) lines.push(desc);
+          if (!target && !desc) continue;
+          if (target && target !== lastTarget) {
+            lines.push(`### 阶段目标：${target}`);
+            lastTarget = target;
+          }
+          if (desc && !seenDescs.has(desc)) {
+            seenDescs.add(desc);
+            lines.push(desc);
             lines.push("");
           }
         }
@@ -172,7 +182,10 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
         }
 
         const content = normalizeStarRailText(lines.join("\n"));
-        if (!hasLikelyNarrativeText(content)) {
+        // Placeholder rows (same title, no targets/description/dialogue) are
+        // duplicates of the real mission and only pollute the quest tree.
+        const hasStoryContent = seenDescs.size > 0 || (dialogues?.length ?? 0) > 0;
+        if (!hasLikelyNarrativeText(content) || !hasStoryContent) {
           result.issues.push({
             code: "empty_or_non_narrative_document",
             message: `Skipped non-narrative mission`,

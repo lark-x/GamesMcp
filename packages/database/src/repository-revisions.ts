@@ -21,12 +21,30 @@ export async function listRevisions(
   ctx: RevisionOperationContext,
   gameId?: string,
 ): Promise<DatasetRevision[]> {
+  // 列表场景不读取 normalizedRecords/structuredRecords 等大 JSONB 载荷
+  //（单个历史 revision 可达数十 MB，SELECT * 会让元数据查询拖到秒级）。
   const rows = await ctx.db
-    .select()
+    .select({
+      id: datasetRevisions.id,
+      gameId: datasetRevisions.gameId,
+      revisionNumber: datasetRevisions.revisionNumber,
+      sourceBatchId: datasetRevisions.sourceBatchId,
+      releaseNote: datasetRevisions.releaseNote,
+      publishedAt: datasetRevisions.publishedAt,
+      isCurrent: datasetRevisions.isCurrent,
+      indexStatus: datasetRevisions.indexStatus,
+      lifecycleStatus: datasetRevisions.lifecycleStatus,
+      manifestId: datasetRevisions.manifestId,
+      sourceId: datasetRevisions.sourceId,
+      gameVersion: datasetRevisions.gameVersion,
+      locale: datasetRevisions.locale,
+      archivedReason: datasetRevisions.archivedReason,
+      archivedAt: datasetRevisions.archivedAt,
+    })
     .from(datasetRevisions)
     .where(gameId ? eq(datasetRevisions.gameId, gameId) : undefined)
     .orderBy(desc(datasetRevisions.revisionNumber));
-  return rows.map(mapDatasetRevision);
+  return rows.map((row) => mapDatasetRevision(row as typeof datasetRevisions.$inferSelect));
 }
 
 export async function rollbackRevision(

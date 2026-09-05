@@ -7,6 +7,7 @@ import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveIn
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js";
 import type { DataKind } from "../archive.types.js";
+import { isInternalEntry } from "./data.types.js";
 import type { DataItemSummary } from "./data.types.js";
 
 function getTerm(gameSlugOrId: string | undefined, kind: DataKind): string {
@@ -28,6 +29,33 @@ function getTerm(gameSlugOrId: string | undefined, kind: DataKind): string {
 }
 
 type UnknownRecord = Record<string, unknown>;
+
+// 原神上游武器类型为英文枚举；展示层本地化，不影响星铁命途文案。
+const GENSHIN_WEAPON_CN: Record<string, string> = {
+  sword: "单手剑",
+  claymore: "双手剑",
+  polearm: "长柄武器",
+  bow: "弓",
+  catalyst: "法器",
+};
+
+function weaponTypeLabel(value: string, isStarRail: boolean): string {
+  if (isStarRail) return value;
+  return GENSHIN_WEAPON_CN[value.toLowerCase()] ?? value;
+}
+
+/** 从上游行中按候选键名取第一个非空字符串（兼容 snake/camel 两种键风格）。 */
+function pickField(
+  raw: UnknownRecord | undefined,
+  keys: string[],
+): string | undefined {
+  if (!raw) return undefined;
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
 
 export function DataBrowser({
   gameId,
@@ -77,7 +105,12 @@ export function DataBrowser({
           weaponType: typeof c.weaponType === "string" ? c.weaponType : undefined,
           region: typeof c.region === "string" ? c.region : undefined,
           affiliation: typeof c.affiliation === "string" ? c.affiliation : undefined,
-          description: typeof c.description === "string" ? c.description : undefined,
+          description:
+            typeof c.description === "string"
+              ? c.description
+              : pickField(c as UnknownRecord, ["desc"]),
+          birthday: pickField(c as UnknownRecord, ["birthday"]),
+          constellation: pickField(c as UnknownRecord, ["constellation"]),
           raw: c,
         }));
       } else if (dataKind === "weapons" && Array.isArray(res.weapons)) {
@@ -86,12 +119,14 @@ export function DataBrowser({
           name: String(w.name),
           weaponType: typeof w.weaponType === "string" ? w.weaponType : undefined,
           rarity: typeof w.rarity === "number" ? w.rarity : undefined,
+          passiveName: pickField(w, ["passiveName", "passive_name"]),
+          passiveDescription: pickField(w, ["passiveDescription", "passive_description"]),
           description:
             typeof w.description === "string"
               ? w.description
               : typeof w.passiveDescription === "string"
                 ? w.passiveDescription
-                : undefined,
+                : pickField(w as UnknownRecord, ["desc"]),
           raw: w,
         }));
       } else if (dataKind === "artifacts" && Array.isArray(res.sets)) {
@@ -107,37 +142,65 @@ export function DataBrowser({
           raw: s,
         }));
       } else if (dataKind === "enemies" && Array.isArray(res.enemies)) {
-        parsed = (res.enemies as UnknownRecord[]).map((en) => ({
-          stableId: String(en.stableId),
-          name: String(en.name),
-          category:
-            typeof en.category === "string"
-              ? en.category
-              : typeof en.family === "string"
-                ? en.family
-                : undefined,
-          description: typeof en.description === "string" ? en.description : undefined,
-          raw: en,
-        }));
+        parsed = (res.enemies as UnknownRecord[]).map((en) => {
+          const profile = (en.profile ?? null) as UnknownRecord | null;
+          const weaknesses = Array.isArray(profile?.weaknesses)
+            ? (profile?.weaknesses as unknown[]).filter(
+                (item): item is string => typeof item === "string",
+              )
+            : undefined;
+          return {
+            stableId: String(en.stableId),
+            name: String(en.name),
+            category:
+              typeof en.category === "string"
+                ? en.category
+                : typeof en.family === "string"
+                  ? en.family
+                  : undefined,
+            description: typeof en.description === "string" ? en.description : undefined,
+            element: typeof en.element === "string" ? en.element : undefined,
+            rank: pickField(profile ?? undefined, ["rank"]),
+            weaknesses,
+            raw: en,
+          };
+        });
       } else if (dataKind === "achievements" && Array.isArray(res.achievements)) {
-        parsed = (res.achievements as UnknownRecord[]).map((a) => ({
-          stableId: String(a.stableId),
-          name: String(a.name),
-          category: typeof a.category === "string" ? a.category : undefined,
-          requirement: typeof a.requirement === "string" ? a.requirement : undefined,
-          reward: a.rewardPrimogems ? `${a.rewardPrimogems} 原石/星琼` : undefined,
-          description: typeof a.requirement === "string" ? a.requirement : undefined,
-          raw: a,
-        }));
+        parsed = (res.achievements as UnknownRecord[]).map((a) => {
+          const rawDescription = pickField(a, ["description", "desc"]);
+          const requirement = typeof a.requirement === "string" ? a.requirement : undefined;
+          return {
+            stableId: String(a.stableId),
+            name: String(a.name),
+            category: typeof a.category === "string" ? a.category : undefined,
+            requirement,
+            reward: a.rewardPrimogems ? `${a.rewardPrimogems} 原石/星琼` : undefined,
+            // 上游档案描述常与达成条件相同；相同则只展示达成条件，避免重复。
+            description: rawDescription && rawDescription !== requirement ? rawDescription : undefined,
+            raw: a,
+          };
+        });
       }
 
-      setItems(parsed);
+      setItems(
+        parsed.filter(
+          (item) =>
+            !isInternalEntry(item.name) &&
+            // 原神上游 11xxxxxx 角色 ID 段为内部测试/废弃角色，不对外展示。
+            !/character\/11\d{6}/.test(
+              typeof (item.raw as UnknownRecord | undefined)?.sourceKey === "string"
+                ? String((item.raw as UnknownRecord).sourceKey)
+                : "",
+            ),
+        ),
+      );
       if (parsed.length > 0) {
-        if (initialItemId && parsed.some((it) => it.stableId === initialItemId)) {
+        const visible = parsed.filter((item) => !isInternalEntry(item.name));
+        if (initialItemId && visible.some((it) => it.stableId === initialItemId)) {
           setActiveItemId(initialItemId);
-        } else if (!activeItemId || !parsed.some((it) => it.stableId === activeItemId)) {
-          setActiveItemId(parsed[0].stableId);
-          onSelectItem?.(parsed[0].stableId);
+        } else if (!activeItemId || !visible.some((it) => it.stableId === activeItemId)) {
+          setActiveItemId(visible[0]?.stableId);
+          if (visible[0]) onSelectItem?.(visible[0].stableId);
         }
       } else {
         setActiveItemId(undefined);
@@ -255,7 +318,9 @@ export function DataBrowser({
                       </div>
                       <div className="data-item-subtext">
                         {item.element && <span className="data-tag">{item.element}</span>}
-                        {item.weaponType && <span className="data-tag">{item.weaponType}</span>}
+                        {item.weaponType && (
+                          <span className="data-tag">{weaponTypeLabel(item.weaponType, isStarRail)}</span>
+                        )}
                         {item.category && <span className="data-tag">{item.category}</span>}
                         {item.region && <span className="data-tag">{item.region}</span>}
                         {item.title && <span className="data-item-title-tag">{item.title}</span>}
@@ -297,7 +362,7 @@ export function DataBrowser({
                   {activeItem.weaponType && (
                     <div className="data-prop-pill">
                       <span className="data-prop-k">{isStarRail ? "命途倾向" : "武器类型"}</span>
-                      <span className="data-prop-v">{activeItem.weaponType}</span>
+                      <span className="data-prop-v">{weaponTypeLabel(activeItem.weaponType, isStarRail)}</span>
                     </div>
                   )}
                   {activeItem.region && (
@@ -318,8 +383,39 @@ export function DataBrowser({
                       <span className="data-prop-v">{activeItem.category}</span>
                     </div>
                   )}
+                  {activeItem.rank && (
+                    <div className="data-prop-pill">
+                      <span className="data-prop-k">等级</span>
+                      <span className="data-prop-v">{activeItem.rank}</span>
+                    </div>
+                  )}
+                  {activeItem.birthday && (
+                    <div className="data-prop-pill">
+                      <span className="data-prop-k">生日</span>
+                      <span className="data-prop-v">{activeItem.birthday}</span>
+                    </div>
+                  )}
+                  {activeItem.constellation && (
+                    <div className="data-prop-pill">
+                      <span className="data-prop-k">命之座</span>
+                      <span className="data-prop-v">{activeItem.constellation}</span>
+                    </div>
+                  )}
                 </div>
               </header>
+
+              {activeItem.weaknesses && activeItem.weaknesses.length > 0 && (
+                <section className="data-article-section">
+                  <h2>弱点属性</h2>
+                  <div className="data-article-props">
+                    {activeItem.weaknesses.map((weakness) => (
+                      <div key={weakness} className="data-prop-pill">
+                        <span className="data-prop-v">{weakness}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {activeItem.description && (
                 <section className="data-article-section">
@@ -328,6 +424,18 @@ export function DataBrowser({
                     {activeItem.description.split("\n").map((line, idx) => (
                       <p key={idx}>{line}</p>
                     ))}
+                  </div>
+                </section>
+              )}
+
+              {activeItem.passiveName && (
+                <section className="data-article-section">
+                  <h2>{isStarRail ? "光锥技能" : "武器技能"}</h2>
+                  <div className="data-article-highlight">
+                    <strong>{activeItem.passiveName}</strong>
+                    {activeItem.passiveDescription ? (
+                      <p style={{ margin: "6px 0 0" }}>{activeItem.passiveDescription}</p>
+                    ) : null}
                   </div>
                 </section>
               )}
@@ -345,28 +453,6 @@ export function DataBrowser({
                   <p className="data-article-reward">🎁 {activeItem.reward}</p>
                 </section>
               )}
-
-              {activeItem.raw && (
-                <section className="data-article-section data-article-extra">
-                  <h2>详细属性</h2>
-                  <div className="data-raw-fields">
-                    {Object.entries(activeItem.raw)
-                      .filter(
-                        ([k, v]) =>
-                          !["stableId", "name", "description", "raw"].includes(k) &&
-                          v !== null &&
-                          v !== undefined &&
-                          typeof v !== "object",
-                      )
-                      .map(([k, v]) => (
-                        <div key={k} className="data-raw-row">
-                          <span className="data-raw-key">{k}:</span>
-                          <span className="data-raw-value">{String(v)}</span>
-                        </div>
-                      ))}
-                  </div>
-                </section>
-              )}
             </article>
           ) : (
             <ArchiveEmpty message={`请在左侧列表选择${term}查看详情`} />
@@ -378,9 +464,11 @@ export function DataBrowser({
           <ArchiveInspector title={`${term}出处与信息`}>
             <InspectorSection title="基础元数据">
               <InspectorField label="词条名称" value={activeItem.name} />
-              <InspectorField label="Stable ID" value={activeItem.stableId} mono />
+              {activeItem.stableId && activeItem.stableId !== "undefined" ? (
+                <InspectorField label="Stable ID" value={activeItem.stableId} mono />
+              ) : null}
               <InspectorField label="资料分类" value={term} />
-              <InspectorField label="关联游戏" value={gameId} />
+              <InspectorField label="关联游戏" value={gameSlug ?? gameId} />
             </InspectorSection>
             <InspectorSection title="版本与来源">
               <InspectorField label="当前版本" value={selectedRevision ?? "published"} />

@@ -90,15 +90,21 @@ export function registerCodexRoutes(
   app.get("/api/games/:gameId/codex/characters", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const characters = await gameDomain.listCharacters(gameId, query.revisionId, {
-      query: query.q,
-      limit: query.limit ?? 20,
-      offset: query.offset ?? 0,
-    });
+    const [adapter, characters] = await Promise.all([
+      gameDomain.getArchiveAdapter(gameId),
+      gameDomain.listCharacters(gameId, query.revisionId, {
+        query: query.q,
+        limit: query.limit ?? 20,
+        offset: query.offset ?? 0,
+      }),
+    ]);
+    const isGenshin = adapter.gameSlug === "genshin-impact";
     return {
       gameId,
       revisionId: query.revisionId ?? null,
-      characters: characters.map((character) => genshinCharacterSchema.parse(character)),
+      characters: characters.map((character) =>
+        isGenshin ? genshinCharacterSchema.parse(character) : character,
+      ),
     };
   });
 
@@ -106,12 +112,18 @@ export function registerCodexRoutes(
     const params = stableIdParams.parse(request.params);
     const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const character = await gameDomain.getCharacter(
-        params.gameId,
-        decodeStableId(params.stableId),
-        query.revisionId,
-      );
-      return { character: genshinCharacterSchema.parse(character) };
+      const [adapter, character] = await Promise.all([
+        gameDomain.getArchiveAdapter(params.gameId),
+        gameDomain.getCharacter(
+          params.gameId,
+          decodeStableId(params.stableId),
+          query.revisionId,
+        ),
+      ]);
+      const isGenshin = adapter.gameSlug === "genshin-impact";
+      return {
+        character: isGenshin ? genshinCharacterSchema.parse(character) : character,
+      };
     } catch (error) {
       if ((error as { code?: string }).code === "character_not_found")
         return reply.code(404).send({ error: { code: "character_not_found" } });
@@ -123,15 +135,21 @@ export function registerCodexRoutes(
   app.get("/api/games/:gameId/codex/weapons", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const weapons = await gameDomain.listWeapons(gameId, query.revisionId, {
-      query: query.q,
-      limit: query.limit ?? 20,
-      offset: query.offset ?? 0,
-    });
+    const [adapter, weapons] = await Promise.all([
+      gameDomain.getArchiveAdapter(gameId),
+      gameDomain.listWeapons(gameId, query.revisionId, {
+        query: query.q,
+        limit: query.limit ?? 20,
+        offset: query.offset ?? 0,
+      }),
+    ]);
+    const isGenshin = adapter.gameSlug === "genshin-impact";
     return {
       gameId,
       revisionId: query.revisionId ?? null,
-      weapons: weapons.map((weapon) => genshinWeaponSchema.parse(weapon)),
+      weapons: weapons.map((weapon) =>
+        isGenshin ? genshinWeaponSchema.parse(weapon) : weapon,
+      ),
     };
   });
 
@@ -139,12 +157,16 @@ export function registerCodexRoutes(
     const params = stableIdParams.parse(request.params);
     const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const weapon = await gameDomain.getWeapon(
-        params.gameId,
-        decodeStableId(params.stableId),
-        query.revisionId,
-      );
-      return { weapon: genshinWeaponSchema.parse(weapon) };
+      const [adapter, weapon] = await Promise.all([
+        gameDomain.getArchiveAdapter(params.gameId),
+        gameDomain.getWeapon(
+          params.gameId,
+          decodeStableId(params.stableId),
+          query.revisionId,
+        ),
+      ]);
+      const isGenshin = adapter.gameSlug === "genshin-impact";
+      return { weapon: isGenshin ? genshinWeaponSchema.parse(weapon) : weapon };
     } catch (error) {
       if ((error as { code?: string }).code === "weapon_not_found")
         return reply.code(404).send({ error: { code: "weapon_not_found" } });
@@ -189,15 +211,21 @@ export function registerCodexRoutes(
   app.get("/api/games/:gameId/codex/enemies", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const enemies = await gameDomain.listEnemies(gameId, query.revisionId, {
-      query: query.q,
-      limit: query.limit ?? 20,
-      offset: query.offset ?? 0,
-    });
+    const [adapter, enemies] = await Promise.all([
+      gameDomain.getArchiveAdapter(gameId),
+      gameDomain.listEnemies(gameId, query.revisionId, {
+        query: query.q,
+        limit: query.limit ?? 20,
+        offset: query.offset ?? 0,
+      }),
+    ]);
+    const isGenshin = adapter.gameSlug === "genshin-impact";
     return {
       gameId,
       revisionId: query.revisionId ?? null,
-      enemies: enemies.map((enemy) => genshinEnemySchema.parse(enemy)),
+      enemies: enemies.map((enemy) =>
+        isGenshin ? genshinEnemySchema.parse(enemy) : enemy,
+      ),
     };
   });
 
@@ -205,12 +233,16 @@ export function registerCodexRoutes(
     const params = stableIdParams.parse(request.params);
     const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const enemy = await gameDomain.getEnemy(
-        params.gameId,
-        decodeStableId(params.stableId),
-        query.revisionId,
-      );
-      return { enemy: genshinEnemySchema.parse(enemy) };
+      const [adapter, enemy] = await Promise.all([
+        gameDomain.getArchiveAdapter(params.gameId),
+        gameDomain.getEnemy(
+          params.gameId,
+          decodeStableId(params.stableId),
+          query.revisionId,
+        ),
+      ]);
+      const isGenshin = adapter.gameSlug === "genshin-impact";
+      return { enemy: isGenshin ? genshinEnemySchema.parse(enemy) : enemy };
     } catch (error) {
       if ((error as { code?: string }).code === "enemy_not_found")
         return reply.code(404).send({ error: { code: "enemy_not_found" } });
@@ -222,15 +254,21 @@ export function registerCodexRoutes(
   app.get("/api/games/:gameId/codex/achievements", async (request) => {
     const { gameId } = parseIdParams(request);
     const query = listQuerySchema.parse(parseQuery(request));
-    const achievements = await gameDomain.listAchievements(gameId, query.revisionId, {
-      query: query.q,
-      limit: query.limit ?? 20,
-      offset: query.offset ?? 0,
-    });
+    const [adapter, achievements] = await Promise.all([
+      gameDomain.getArchiveAdapter(gameId),
+      gameDomain.listAchievements(gameId, query.revisionId, {
+        query: query.q,
+        limit: query.limit ?? 20,
+        offset: query.offset ?? 0,
+      }),
+    ]);
+    const isGenshin = adapter.gameSlug === "genshin-impact";
     return {
       gameId,
       revisionId: query.revisionId ?? null,
-      achievements: achievements.map((achievement) => genshinAchievementSchema.parse(achievement)),
+      achievements: achievements.map((achievement) =>
+        isGenshin ? genshinAchievementSchema.parse(achievement) : achievement,
+      ),
     };
   });
 
@@ -238,12 +276,18 @@ export function registerCodexRoutes(
     const params = stableIdParams.parse(request.params);
     const query = listQuerySchema.parse(parseQuery(request));
     try {
-      const achievement = await gameDomain.getAchievement(
-        params.gameId,
-        decodeStableId(params.stableId),
-        query.revisionId,
-      );
-      return { achievement: genshinAchievementSchema.parse(achievement) };
+      const [adapter, achievement] = await Promise.all([
+        gameDomain.getArchiveAdapter(params.gameId),
+        gameDomain.getAchievement(
+          params.gameId,
+          decodeStableId(params.stableId),
+          query.revisionId,
+        ),
+      ]);
+      const isGenshin = adapter.gameSlug === "genshin-impact";
+      return {
+        achievement: isGenshin ? genshinAchievementSchema.parse(achievement) : achievement,
+      };
     } catch (error) {
       if ((error as { code?: string }).code === "achievement_not_found")
         return reply.code(404).send({ error: { code: "achievement_not_found" } });

@@ -12,28 +12,28 @@ export interface GameArchiveAdapter {
   listCharacters(
     revisionId: Id,
     options: { query?: string; limit: number; offset?: number },
-  ): Promise<unknown[]>;
-  getCharacter(revisionId: Id, stableId: string): Promise<unknown | null>;
+  ): Promise<any[]>;
+  getCharacter(revisionId: Id, stableId: string): Promise<any | null>;
   listWeapons(
     revisionId: Id,
     options: { query?: string; limit: number; offset?: number },
-  ): Promise<unknown[]>;
-  getWeapon(revisionId: Id, stableId: string): Promise<unknown | null>;
+  ): Promise<any[]>;
+  getWeapon(revisionId: Id, stableId: string): Promise<any | null>;
   listArtifactSets(
     revisionId: Id,
     options: { query?: string; limit: number; offset?: number },
-  ): Promise<unknown[]>;
-  getArtifactSet(revisionId: Id, stableId: string): Promise<unknown | null>;
+  ): Promise<any[]>;
+  getArtifactSet(revisionId: Id, stableId: string): Promise<any | null>;
   listEnemies(
     revisionId: Id,
     options: { query?: string; limit: number; offset?: number },
-  ): Promise<unknown[]>;
-  getEnemy(revisionId: Id, stableId: string): Promise<unknown | null>;
+  ): Promise<any[]>;
+  getEnemy(revisionId: Id, stableId: string): Promise<any | null>;
   listAchievements(
     revisionId: Id,
     options: { query?: string; limit: number; offset?: number },
-  ): Promise<unknown[]>;
-  getAchievement(revisionId: Id, stableId: string): Promise<unknown | null>;
+  ): Promise<any[]>;
+  getAchievement(revisionId: Id, stableId: string): Promise<any | null>;
 }
 
 export class GenshinArchiveAdapter implements GameArchiveAdapter {
@@ -148,6 +148,21 @@ export class GenshinArchiveAdapter implements GameArchiveAdapter {
   }
 }
 
+const STARRAIL_CATEGORY_LABELS: Record<string, string> = {
+  character_ascension: "角色晋阶",
+  trace: "行迹材料",
+  trace_material: "行迹材料",
+  lightcone_ascension: "光锥晋阶",
+  enemy_drop: "怪物掉落",
+  weekly_boss: "历战余响",
+  currency: "通用货币",
+  synthesis: "合成素材",
+  consumable: "消耗料理",
+  mission: "任务道具",
+  event: "活动道具",
+  other: "其他素材",
+};
+
 export class StarRailArchiveAdapter implements GameArchiveAdapter {
   readonly gameSlug = "honkai-star-rail";
 
@@ -166,62 +181,127 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
     revisionId: Id,
     options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<CodexMaterial[]> {
-    if (this.repository.genshin?.listMaterials) {
-      return this.repository.genshin.listMaterials({
-        revisionId,
-        query: options.query,
-        category: options.category,
-        limit: options.limit,
-        offset: options.offset,
-      });
-    }
-    return [];
+    const materials = await this.repository.genshin.listMaterials({
+      revisionId,
+      query: options.query,
+      category: options.category,
+      limit: options.limit,
+      offset: options.offset,
+    });
+    return materials.map((material) => ({
+      id: `sr_mat_${material.stableId}`,
+      gameId: material.gameId,
+      revisionId: material.revisionId,
+      stableId: material.stableId,
+      sourceKey: material.sourceKey ?? undefined,
+      name: material.name,
+      category: material.category,
+      categoryLabel: STARRAIL_CATEGORY_LABELS[material.category] ?? material.category,
+      rarity: material.rarity ?? null,
+      description: material.description ?? null,
+      sources: material.sources ?? [],
+      usedBy: material.usedBy ?? [],
+      provenance: material.provenance,
+    }));
   }
 
   async getMaterial(revisionId: Id, stableId: string): Promise<CodexMaterial | null> {
-    if (this.repository.genshin?.getMaterial) {
-      return this.repository.genshin.getMaterial(revisionId, stableId);
-    }
-    return null;
+    const material = await this.repository.genshin.getMaterial(revisionId, stableId);
+    if (!material) return null;
+    return {
+      id: `sr_mat_${material.stableId}`,
+      gameId: material.gameId,
+      revisionId: material.revisionId,
+      stableId: material.stableId,
+      sourceKey: material.sourceKey ?? undefined,
+      name: material.name,
+      category: material.category,
+      categoryLabel: STARRAIL_CATEGORY_LABELS[material.category] ?? material.category,
+      rarity: material.rarity ?? null,
+      description: material.description ?? null,
+      sources: material.sources ?? [],
+      usedBy: material.usedBy ?? [],
+      provenance: material.provenance,
+    };
   }
 
-  async listCharacters(): Promise<unknown[]> {
-    return [];
+  async listCharacters(
+    revisionId: Id,
+    options: { query?: string; limit: number; offset?: number },
+  ): Promise<unknown[]> {
+    return this.repository.genshin.listCharacters({
+      revisionId,
+      query: options.query,
+      limit: options.limit,
+      offset: options.offset,
+    });
   }
 
-  async getCharacter(): Promise<unknown | null> {
-    return null;
+  async getCharacter(revisionId: Id, stableId: string): Promise<unknown | null> {
+    return this.repository.genshin.getCharacter(revisionId, stableId);
   }
 
-  async listWeapons(): Promise<unknown[]> {
-    return [];
+  async listWeapons(
+    revisionId: Id,
+    options: { query?: string; limit: number; offset?: number },
+  ): Promise<unknown[]> {
+    return this.repository.genshin.listWeapons({
+      revisionId,
+      query: options.query,
+      limit: options.limit,
+      offset: options.offset,
+    });
   }
 
-  async getWeapon(): Promise<unknown | null> {
-    return null;
+  async getWeapon(revisionId: Id, stableId: string): Promise<unknown | null> {
+    return this.repository.genshin.getWeapon(revisionId, stableId);
   }
 
-  async listArtifactSets(): Promise<unknown[]> {
-    return [];
+  async listArtifactSets(
+    revisionId: Id,
+    options: { query?: string; limit: number; offset?: number },
+  ): Promise<unknown[]> {
+    return this.repository.genshin.listArtifactSets({
+      revisionId,
+      query: options.query,
+      limit: options.limit,
+      offset: options.offset,
+    });
   }
 
-  async getArtifactSet(): Promise<unknown | null> {
-    return null;
+  async getArtifactSet(revisionId: Id, stableId: string): Promise<unknown | null> {
+    return this.repository.genshin.getArtifactSet(revisionId, stableId);
   }
 
-  async listEnemies(): Promise<unknown[]> {
-    return [];
+  async listEnemies(
+    revisionId: Id,
+    options: { query?: string; limit: number; offset?: number },
+  ): Promise<unknown[]> {
+    return this.repository.genshin.listEnemies({
+      revisionId,
+      query: options.query,
+      limit: options.limit,
+      offset: options.offset,
+    });
   }
 
-  async getEnemy(): Promise<unknown | null> {
-    return null;
+  async getEnemy(revisionId: Id, stableId: string): Promise<unknown | null> {
+    return this.repository.genshin.getEnemy(revisionId, stableId);
   }
 
-  async listAchievements(): Promise<unknown[]> {
-    return [];
+  async listAchievements(
+    revisionId: Id,
+    options: { query?: string; limit: number; offset?: number },
+  ): Promise<unknown[]> {
+    return this.repository.genshin.listAchievements({
+      revisionId,
+      query: options.query,
+      limit: options.limit,
+      offset: options.offset,
+    });
   }
 
-  async getAchievement(): Promise<unknown | null> {
-    return null;
+  async getAchievement(revisionId: Id, stableId: string): Promise<unknown | null> {
+    return this.repository.genshin.getAchievement(revisionId, stableId);
   }
 }

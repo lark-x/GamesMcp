@@ -146,14 +146,14 @@ export function StoryBrowser({
   }, [filters, loadCatalog]);
 
   const openQuest = useCallback(
-    async (questKey: string, options?: { cursor?: string | null; subquestKey?: string }) => {
+    async (questKey: string, options?: { cursor?: string | null; subquestId?: string }) => {
       setDetailLoading(true);
       setDetailError("");
       try {
         const params = new URLSearchParams({ locale: filters.locale, limit: "100" });
         if (selectedRevision) params.set("revisionId", selectedRevision);
         if (options?.cursor) params.set("cursor", options.cursor);
-        if (options?.subquestKey) params.set("subquestId", options.subquestKey);
+        if (options?.subquestId) params.set("subquestId", options.subquestId);
         const result = await apiFetch<{ quest: QuestDetail }>(
           `/api/games/${gameId}/quests/${encodeURIComponent(questKey)}?${params.toString()}`,
         );
@@ -534,7 +534,9 @@ export function StoryBrowser({
                       className={subquest.subquestKey === activeSubquestKey ? "is-active" : ""}
                       onClick={() => {
                         setActiveSubquestKey(subquest.subquestKey);
-                        void openQuest(quest.questKey, { subquestKey: subquest.subquestKey });
+                        void openQuest(quest.questKey, {
+                          subquestId: String(subquest.subquestId),
+                        });
                       }}
                     >
                       {subquest.title}

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createPool } from "../packages/database/src/client.js";
+import { createPool, createDatabase } from "../packages/database/src/client.js";
+import { SqlGenshinStructuredRepository } from "../packages/database/src/repository-genshin-core.js";
 
 import { buildStarRailInventory } from "../packages/providers/src/starrail/source/inventory.js";
 import { readStarRailSourceSnapshot } from "../packages/providers/src/starrail/source/snapshot.js";
@@ -15,8 +16,17 @@ import {
   extractTrainVisitorDocuments,
   extractVoiceLineDocuments,
 } from "../packages/providers/src/starrail/extractors/index.js";
-import { normalizeStarRailText } from "../packages/providers/src/starrail/corpus/normalizer.js";
+import { normalizeStarRailText, normalizeStarRailLabel } from "../packages/providers/src/starrail/corpus/normalizer.js";
 import type { StarRailCorpusDocument } from "../packages/providers/src/starrail/corpus/types.js";
+import { StarRailWorldChapterResolver } from "../packages/providers/src/starrail/structured/world-chapter.js";
+import { StarRailCharacterExtractor } from "../packages/providers/src/starrail/structured/character.js";
+import { StarRailLightConeExtractor } from "../packages/providers/src/starrail/structured/lightcone.js";
+import { StarRailRelicExtractor } from "../packages/providers/src/starrail/structured/relic.js";
+import { StarRailEnemyExtractor } from "../packages/providers/src/starrail/structured/enemy.js";
+import { StarRailMaterialExtractor } from "../packages/providers/src/starrail/structured/material.js";
+import { StarRailAchievementExtractor } from "../packages/providers/src/starrail/structured/achievement.js";
+import type { StarRailCharacter } from "../packages/providers/src/starrail/structured/types.js";
+import { readSafeJsonFile } from "../packages/providers/src/starrail/extractors/shared.js";
 
 const GAME_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd2"; // Honkai: Star Rail
 const SOURCE_ID = "c1000000-0000-4000-8000-000000000001";
@@ -25,17 +35,323 @@ const BATCH_ID = "c4000000-0000-4000-8000-000000000001";
 const MANIFEST_ID = "c5000000-0000-4000-8000-000000000001";
 const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd3";
 
+// 星铁命途/属性 -> 中文展示名（共用 genshin_* 结构化表，与既有中文数据保持一致）。
+const PATH_CN: Record<string, string> = {
+  Knight: "存护",
+  Destruction: "毁灭",
+  Hunt: "巡猎",
+  Erudition: "智识",
+  Harmony: "同谐",
+  Nihility: "虚无",
+  Abundance: "丰饶",
+  Remembrance: "记忆",
+  Memory: "记忆",
+  Rogue: "巡猎",
+  Mage: "智识",
+  Warlock: "虚无",
+  Shaman: "丰饶",
+  Priest: "同谐",
+  Warrior: "毁灭",
+  Elation: "欢愉",
+};
+
+const ELEMENT_CN: Record<string, string> = {
+  Physical: "物理",
+  Fire: "火",
+  Ice: "冰",
+  Thunder: "雷",
+  Wind: "风",
+  Quantum: "量子",
+  Imaginary: "虚数",
+};
+
+interface StructuredCodex {
+  characters: StarRailCharacter[];
+  lightCones: Array<Record<string, unknown>>;
+  relics: Array<Record<string, unknown>>;
+  enemies: Array<Record<string, unknown>>;
+  materials: Array<Record<string, unknown>>;
+  achievements: Array<Record<string, unknown>>;
+}
+
+async function extractStructuredCodex(input: {
+  dataDir: string;
+  sourceRef: string;
+  inventory: unknown;
+  resolver: unknown;
+}): Promise<StructuredCodex> {
+  const options = input as unknown as {
+    dataDir: string;
+    sourceRef: string;
+    inventory: never;
+    resolver: never;
+  };
+  const [characters, lightCones, relics, enemies, materials, achievements] = await Promise.all([
+    new StarRailCharacterExtractor(options).extractCharacters(),
+    new StarRailLightConeExtractor(options).extractLightCones(),
+    new StarRailRelicExtractor(options).extractRelics(),
+    new StarRailEnemyExtractor(options).extractEnemies(),
+    new StarRailMaterialExtractor(options).extractMaterials(),
+    new StarRailAchievementExtractor(options).extractAchievements(),
+  ]);
+  return {
+    characters,
+    lightCones: lightCones as unknown as Array<Record<string, unknown>>,
+    relics: relics as unknown as Array<Record<string, unknown>>,
+    enemies: enemies as unknown as Array<Record<string, unknown>>,
+    materials: materials as unknown as Array<Record<string, unknown>>,
+    achievements: achievements as unknown as Array<Record<string, unknown>>,
+  };
+}
+
+/** 结构化资料写入共用 genshin_* 结构化表（ingest 事务提交后执行，幂等可重跑）。 */
+async function persistStructuredCodex(
+  pool: ReturnType<typeof createPool>,
+  structured: StructuredCodex,
+): Promise<Record<string, number>> {
+  // genshin_* 表为两游戏共用的结构化存储；这里以宽类型写入星铁业务字段
+  //（值超出原神 zod 枚举，但存储层为纯列映射，无枚举校验）。
+  const repo = new SqlGenshinStructuredRepository(createDatabase(pool)) as unknown as {
+    upsertCharacter: (input: Record<string, unknown>) => Promise<unknown>;
+    upsertWeapon: (input: Record<string, unknown>) => Promise<unknown>;
+    upsertArtifactSet: (input: Record<string, unknown>) => Promise<unknown>;
+    upsertArtifact: (input: Record<string, unknown>) => Promise<unknown>;
+    upsertMaterial: (input: Record<string, unknown>) => Promise<unknown>;
+    upsertAchievement: (input: Record<string, unknown>) => Promise<unknown>;
+    upsertEnemy: (input: Record<string, unknown>) => Promise<unknown>;
+  };
+  const gameId = GAME_ID;
+  const revisionId = REVISION_ID;
+  const base = {
+    gameId,
+    revisionId,
+    locale: "zh-CN",
+    gameVersion: "3.0",
+    sourceId: null,
+    sourceSnapshotId: null,
+    provenance: { source: "turn-based-game-data" },
+  };
+
+  for (const table of [
+    "genshin_characters",
+    "genshin_weapons",
+    "genshin_artifact_sets",
+    "genshin_artifacts",
+    "genshin_materials",
+    "genshin_achievements",
+    "genshin_enemies",
+  ]) {
+    await pool.query(`DELETE FROM knowledge.${table} WHERE revision_id = $1`, [revisionId]);
+  }
+
+  for (const character of structured.characters) {
+    const pathCn = PATH_CN[character.path] ?? character.path;
+    const elementCn = ELEMENT_CN[character.element] ?? character.element;
+    await repo.upsertCharacter({
+      ...base,
+      stableId: `sr_char_${character.id}`,
+      sourceKey: `sr/character/${character.id}`,
+      name: character.name,
+      title: null,
+      rarity: character.rarity >= 5 ? 5 : 4,
+      element: elementCn,
+      weaponType: pathCn,
+      region: null,
+      affiliation: null,
+      birthday: null,
+      constellation: null,
+      description: null,
+      profile: {
+        path: character.path,
+        baseHp: character.baseHp,
+        baseAtk: character.baseAtk,
+        baseDef: character.baseDef,
+        baseSpeed: character.baseSpeed,
+        skills: character.skills,
+        traces: character.traces,
+        eidolons: character.eidolons,
+        ascensionMaterials: character.ascensionMaterials,
+      },
+    });
+  }
+
+  for (const raw of structured.lightCones) {
+    const lc = raw as unknown as {
+      id: string | number;
+      name: string;
+      rarity: number;
+      path: string;
+      skillName?: string;
+      skillDesc?: string;
+      story?: string;
+    };
+    await repo.upsertWeapon({
+      ...base,
+      stableId: `sr_lc_${lc.id}`,
+      sourceKey: `sr/lightcone/${lc.id}`,
+      name: lc.name,
+      weaponType: PATH_CN[lc.path] ?? lc.path,
+      rarity: lc.rarity,
+      baseAttack: null,
+      subStat: null,
+      passiveName: lc.skillName ?? null,
+      passiveDescription: lc.skillDesc ?? null,
+      ascensionMaterials: [],
+      description: lc.story ?? null,
+    });
+  }
+
+  const relicSets = new Map<
+    number,
+    { name: string; maxRarity: number; two: string; four: string; slots: Set<string> }
+  >();
+  for (const raw of structured.relics) {
+    const relic = raw as unknown as {
+      id: string | number;
+      name: string;
+      setId: number;
+      setName: string;
+      slotType: string;
+      rarity: number;
+      twoPieceBonus?: string;
+      fourPieceBonus?: string;
+      story?: string;
+    };
+    const set = relicSets.get(relic.setId) ?? {
+      name: relic.setName,
+      maxRarity: 0,
+      two: "",
+      four: "",
+      slots: new Set<string>(),
+    };
+    set.maxRarity = Math.max(set.maxRarity, relic.rarity);
+    if (relic.twoPieceBonus) set.two = relic.twoPieceBonus;
+    if (relic.fourPieceBonus) set.four = relic.fourPieceBonus;
+    set.slots.add(relic.slotType);
+    relicSets.set(relic.setId, set);
+    await repo.upsertArtifact({
+      ...base,
+      stableId: `sr_relic_${relic.id}`,
+      sourceKey: `sr/relic/${relic.id}`,
+      name: relic.name,
+      setStableId: `sr_relic_set_${relic.setId}`,
+      slot: relic.slotType,
+      rarity: relic.rarity,
+      description: relic.story ?? null,
+    });
+  }
+  for (const [setId, set] of relicSets) {
+    await repo.upsertArtifactSet({
+      ...base,
+      stableId: `sr_relic_set_${setId}`,
+      sourceKey: `sr/relic-set/${setId}`,
+      name: set.name,
+      maxRarity: set.maxRarity,
+      twoPieceBonus: set.two || null,
+      fourPieceBonus: set.four || null,
+      pieces: [...set.slots],
+    });
+  }
+
+  for (const raw of structured.enemies) {
+    const enemy = raw as unknown as {
+      id: string | number;
+      name: string;
+      rank: string;
+      camp?: string;
+      weaknesses: string[];
+      resistances: string[];
+      drops: Array<{ itemId: number | string; name?: string }>;
+    };
+    await repo.upsertEnemy({
+      ...base,
+      stableId: `sr_enemy_${enemy.id}`,
+      sourceKey: `sr/enemy/${enemy.id}`,
+      name: enemy.name,
+      category: enemy.rank === "BOSS" ? "boss" : enemy.rank === "ELITE" ? "elite" : "common",
+      family: enemy.camp ?? null,
+      description: null,
+      drops: enemy.drops.map((drop) => drop.name ?? String(drop.itemId)),
+      resistances: {
+        rank: enemy.rank,
+        weaknesses: enemy.weaknesses,
+        resistances: enemy.resistances,
+      },
+    });
+  }
+
+  for (const raw of structured.materials) {
+    const material = raw as unknown as {
+      id: string | number;
+      name: string;
+      category: string;
+      rarity: number;
+      description?: string;
+      story?: string;
+      sources?: Array<{ description: string }>;
+      usages?: Array<{ targetName: string }>;
+    };
+    await repo.upsertMaterial({
+      ...base,
+      stableId: `material_${material.id}`,
+      sourceKey: `item/${material.id}`,
+      name: material.name,
+      category: material.category,
+      rarity: material.rarity,
+      description: material.description || material.story || null,
+      sources: (material.sources ?? []).map((source) => source.description),
+      usedBy: (material.usages ?? []).map((usage) => usage.targetName),
+    });
+  }
+
+  for (const raw of structured.achievements) {
+    const achievement = raw as unknown as {
+      id: string | number;
+      title: string;
+      seriesId: number;
+      seriesTitle?: string;
+      description: string;
+      rewardJade: number;
+      isHidden: boolean;
+    };
+    await repo.upsertAchievement({
+      ...base,
+      stableId: `sr_ach_${achievement.id}`,
+      sourceKey: `sr/achievement/${achievement.id}`,
+      name: achievement.title,
+      category: achievement.seriesTitle ?? `系列 ${achievement.seriesId}`,
+      requirement: achievement.description,
+      rewardPrimogems: achievement.rewardJade,
+      hidden: achievement.isHidden,
+    });
+  }
+
+  return {
+    characters: structured.characters.length,
+    lightCones: structured.lightCones.length,
+    relicSets: relicSets.size,
+    relics: structured.relics.length,
+    enemies: structured.enemies.length,
+    materials: structured.materials.length,
+    achievements: structured.achievements.length,
+  };
+}
+
 interface IngestOptions {
   sourceDir?: string;
   dryRun: boolean;
   limit?: number;
   databaseUrl: string;
+  fixture?: boolean;
+  production?: boolean;
 }
 
 function parseArgs(args: string[]): IngestOptions {
   let sourceDir: string | undefined = process.env.GAMESMCP_STARRAIL_DATA_DIR;
   let dryRun = false;
   let limit: number | undefined;
+  let fixture = false;
+  let production = process.env.NODE_ENV === "production";
   const databaseUrl = process.env.DATABASE_URL ?? "postgres://gip:gip@127.0.0.1:5432/gip";
 
   for (let i = 0; i < args.length; i++) {
@@ -46,10 +362,14 @@ function parseArgs(args: string[]): IngestOptions {
       sourceDir = args[++i];
     } else if (arg === "--limit" && i + 1 < args.length) {
       limit = Number(args[++i]);
+    } else if (arg === "--fixture") {
+      fixture = true;
+    } else if (arg === "--production") {
+      production = true;
     }
   }
 
-  return { sourceDir, dryRun, limit, databaseUrl };
+  return { sourceDir, dryRun, limit, databaseUrl, fixture, production };
 }
 
 function splitIntoSegments(
@@ -91,18 +411,80 @@ export async function runStarRailIngestion(options: IngestOptions) {
   console.log("=== Star Rail Data Ingestion Pipeline ===");
   console.log(`Mode: ${options.dryRun ? "DRY-RUN (No DB changes)" : "LIVE (PostgreSQL upsert)"}`);
 
+  // Phase 0: Task 0.4 - Fail if --limit applied in production mode
+  if (options.production && options.limit !== undefined) {
+    throw new Error(
+      "[P0-02] Fatal: --limit is strictly forbidden in production/release mode to prevent database truncation.",
+    );
+  }
+
+  // Phase 0: Task 0.1 - Fail fast if full sourceDir is missing without explicit --fixture
+  let targetDir: string;
+  let sourceMode: "full" | "fixture";
+
+  if (options.fixture) {
+    sourceMode = "fixture";
+    targetDir = resolve("data/fixtures/starrail");
+    if (!existsSync(targetDir)) {
+      throw new Error(`[P0-01] Fixture directory not found at: ${targetDir}`);
+    }
+  } else {
+    sourceMode = "full";
+    if (!options.sourceDir) {
+      throw new Error(
+        "[P0-01] Fatal: Full TurnBasedGameData source directory is required. Set GAMESMCP_STARRAIL_DATA_DIR or pass --source <dir>. Silent fallback to fixture is strictly prohibited. (To explicitly run with fixture test data, pass --fixture).",
+      );
+    }
+    targetDir = resolve(options.sourceDir);
+    if (!existsSync(targetDir)) {
+      throw new Error(
+        `[P0-01] Fatal: Specified source directory does not exist: ${targetDir}. Silent fallback to fixture is prohibited.`,
+      );
+    }
+  }
+
+  // Phase 0: Task 0.2 - Full Source Manifest Check
+  if (sourceMode === "full") {
+    const requiredFiles = [
+      "ExcelOutput/MainMission.json",
+      "ExcelOutput/SubMission.json",
+      "ExcelOutput/TalkSentenceConfig.json",
+      "Story/Mission",
+      "Story/Discussion",
+    ];
+    const missing: string[] = [];
+    for (const rel of requiredFiles) {
+      if (!existsSync(resolve(targetDir, rel))) {
+        missing.push(rel);
+      }
+    }
+    const hasTextMap =
+      existsSync(resolve(targetDir, "TextMap/TextMapCHS.json")) ||
+      existsSync(resolve(targetDir, "TextMap/TextMap_MediumCHS.json"));
+    if (!hasTextMap) missing.push("TextMap/TextMapCHS.json");
+
+    if (missing.length > 0) {
+      throw new Error(
+        `[P0-02] Source Manifest Check Failed: Missing required upstream datasets in ${targetDir}:\n  - ${missing.join("\n  - ")}`,
+      );
+    }
+  }
+
   const sampleReviewPath = resolve("artifacts/starrail-full-corpus/sample-review.json");
   const hasSampleData = existsSync(sampleReviewPath);
-  const targetDir = options.sourceDir && existsSync(options.sourceDir)
-    ? options.sourceDir
-    : existsSync("data/fixtures/starrail")
-      ? "data/fixtures/starrail"
-      : undefined;
 
-  console.log(`Target data source: ${targetDir ?? "None (sample review fallback)"}`);
+  console.log("---------------- Phase 0 Source Gate ----------------");
+  console.log(`STAR_RAIL_SOURCE_MODE = ${sourceMode}`);
+  console.log(`fixtureFallback = false`);
+  console.log(`limitApplied = ${Boolean(options.limit)}`);
+  console.log(`targetDir = ${targetDir}`);
+  console.log("-----------------------------------------------------");
 
   const allDocuments: StarRailCorpusDocument[] = [];
   let sourceCommit = "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091";
+  let worldChapterResolver: StarRailWorldChapterResolver | undefined;
+  let structuredCodex: StructuredCodex | undefined;
+  const mainMissionMap = new Map<number, Record<string, unknown>>();
 
   if (targetDir) {
     console.log(`Building inventory and text map from ${targetDir}...`);
@@ -118,6 +500,27 @@ export async function runStarRailIngestion(options: IngestOptions) {
       locale: "CHS",
     });
     await resolver.load();
+
+    worldChapterResolver = new StarRailWorldChapterResolver({
+      dataDir: targetDir,
+      resolver,
+    });
+    await worldChapterResolver.initialize();
+
+    const mainItem = inventory.items.find((i) => i.path === "ExcelOutput/MainMission.json");
+    if (mainItem) {
+      const parsed = await readSafeJsonFile<Array<Record<string, unknown>>>(
+        resolve(targetDir, mainItem.path),
+      );
+      if (Array.isArray(parsed)) {
+        for (const m of parsed) {
+          const id = Number(m.MainMissionID ?? m.ID);
+          if (Number.isInteger(id)) {
+            mainMissionMap.set(id, m);
+          }
+        }
+      }
+    }
 
     const extractorInput = {
       dataDir: targetDir,
@@ -158,6 +561,9 @@ export async function runStarRailIngestion(options: IngestOptions) {
       ...voicelines.documents,
       ...itemLores.documents,
     );
+
+    console.log("Extracting structured codex data...");
+    structuredCodex = await extractStructuredCodex(extractorInput);
   }
 
   // Also incorporate high-fidelity samples from sample-review.json if targetDir was fixture-only
@@ -195,13 +601,29 @@ export async function runStarRailIngestion(options: IngestOptions) {
     }
   }
 
-  const categoryCounts: Record<string, number> = {};
+  const uniqueDocuments: StarRailCorpusDocument[] = [];
+  const seenDocKeys = new Set<string>();
+  // 正文头部的内部 ID 元数据行对读者无意义，统一移除。
+  const INTERNAL_ID_LINE =
+    /^(?:MessageSectionID|ContactID|VisitorID|AvatarID|MissionID|MainMissionID|类型|章节|类别)\s*[：:]\s*\S*(?:\n|$)/gm;
   for (const doc of allDocuments) {
+    const key = `${doc.category}:${doc.id}`;
+    if (!seenDocKeys.has(key)) {
+      seenDocKeys.add(key);
+      // 标题与正文统一清洗：剥离富文本标签、替换 {NICKNAME} 等模板占位符。
+      doc.title = normalizeStarRailLabel(doc.title);
+      doc.content = normalizeStarRailText(doc.content).replace(INTERNAL_ID_LINE, "");
+      uniqueDocuments.push(doc);
+    }
+  }
+
+  const categoryCounts: Record<string, number> = {};
+  for (const doc of uniqueDocuments) {
     categoryCounts[doc.category] = (categoryCounts[doc.category] ?? 0) + 1;
   }
 
   console.log("\n--- Extracted Document Summary ---");
-  console.log(`Total Documents: ${allDocuments.length}`);
+  console.log(`Total Documents: ${uniqueDocuments.length}`);
   for (const [cat, count] of Object.entries(categoryCounts)) {
     console.log(`  - ${cat}: ${count}`);
   }
@@ -316,7 +738,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
     await client.query("DELETE FROM knowledge.document_segments WHERE revision_id = $1", [REVISION_ID]);
     await client.query("DELETE FROM knowledge.documents WHERE revision_id = $1", [REVISION_ID]);
 
-    const docsToInsert = options.limit ? allDocuments.slice(0, options.limit) : allDocuments;
+    const docsToInsert = options.limit ? uniqueDocuments.slice(0, options.limit) : uniqueDocuments;
+    const seenSourceKeys = new Set<string>();
 
     for (const doc of docsToInsert) {
       const isQuest = doc.category === "sr_mission" || doc.category === "sr_story";
@@ -350,56 +773,49 @@ export async function runStarRailIngestion(options: IngestOptions) {
       };
 
       if (questKey) {
-        let region = "空间站「黑塔」";
-        let regionId = "space_station";
-        let series = "开拓任务";
-        let chapter = "序章 · 今天是明天的前夜";
-        let chapterId = "space_station_prologue";
-
-        // Assign region and series based on ID pattern
-        if (doc.id >= 1000100 && doc.id < 1010000) {
-          region = "空间站「黑塔」";
-          regionId = "space_station";
-          series = "开拓任务";
-          chapter = "序章 · 今天是明天的前夜";
-          chapterId = "space_station_prologue";
-        } else if (doc.id >= 1010000 && doc.id < 1020000) {
-          region = "雅利洛-Ⅵ";
-          regionId = "jarilo_vi";
-          series = "开拓任务";
-          chapter = "第一章 · 于枯索的冬夜里";
-          chapterId = "jarilo_vi_ch1";
-        } else if (doc.id >= 1020000 && doc.id < 1030000) {
-          region = "仙舟「罗浮」";
-          regionId = "xianzhou_luofu";
-          series = "开拓任务";
-          chapter = "第二章 · 乘槎驭风追云游";
-          chapterId = "xianzhou_ch2";
-        } else if (doc.id >= 1030000 && doc.id < 1040000) {
-          region = "匹诺康尼";
-          regionId = "penacony";
-          series = "开拓任务";
-          chapter = "第三章 · 鸽子在云端哀歌";
-          chapterId = "penacony_ch3";
-        } else if (doc.id >= 1040000 && doc.id < 1050000) {
-          region = "翁法罗斯";
-          regionId = "amphoreus";
-          series = "开拓任务";
-          chapter = "第四章 · 众神陨落的荒原";
-          chapterId = "amphoreus_ch4";
-        } else if (doc.category === "sr_story") {
-          region = "匹诺康尼";
-          regionId = "penacony";
-          series = "散篇剧情";
-          chapter = "梦境切片";
-          chapterId = "penacony_slices";
-        } else {
-          region = "匹诺康尼";
-          regionId = "penacony";
-          series = "开拓任务";
-          chapter = "篇章切片";
-          chapterId = "penacony_extra";
+        // sr_story fragments live under Story/Discussion/Mission/<mainMissionId>/;
+        // attach them to that mission so they inherit its world/chapter placement.
+        let missionId = doc.id;
+        if (doc.category === "sr_story") {
+          const discussionPath = doc.sourceFiles.find((p) => p.startsWith("Story/Discussion/"));
+          const match = discussionPath?.match(/Story\/Discussion\/Mission\/(\d+)/u);
+          if (match) missionId = Number(match[1]);
         }
+        const mm = mainMissionMap.get(missionId);
+        let cId = mm?.ChapterID ? Number(mm.ChapterID) : undefined;
+        const chap = cId && worldChapterResolver ? worldChapterResolver.getChapter(cId) : undefined;
+        // Chapter placement wins over the per-mission WorldID, which is noisy
+        // for activity chapters whose entry missions sit in another world.
+        let worldId =
+          chap && chap.worldId > 0
+            ? chap.worldId
+            : mm?.WorldID
+              ? Number(mm.WorldID)
+              : undefined;
+        const wld = worldId && worldChapterResolver ? worldChapterResolver.getWorld(worldId) : undefined;
+
+        const rawType = String(mm?.Type ?? "");
+        let series = doc.category === "sr_story" ? "散篇剧情" : "冒险任务";
+        if (rawType === "Main" || rawType === "1") {
+          series = "开拓任务";
+        } else if (rawType === "Companion" || rawType === "2") {
+          series = "同行任务";
+        } else if (rawType === "Daily" || rawType === "3") {
+          series = "日常任务";
+        }
+
+        const region = wld?.name ?? (worldId ? `世界 ${worldId}` : "其他世界");
+        const regionId = `world_${worldId ?? 0}`;
+        // Missions without a chapter group under their series label instead of
+        // a numeric placeholder.
+        const chapter = chap?.name ?? (cId ? `章节 ${cId}` : series);
+        const chapterId = `chapter_${cId ?? `none_${series}`}`;
+
+        // Unnamed internal missions and raw discussion fragments are not story
+        // navigation entries; keep them out of the public quest tree while the
+        // bodies stay searchable.
+        const unnamed = /^任务 \d+$/u.test(doc.title);
+        const visibility = unnamed || doc.category === "sr_story" ? "hidden" : "public";
 
         const questData = {
           questKey,
@@ -417,7 +833,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
           seriesTitle: series,
           order: doc.hierarchy?.order ?? doc.id,
           completeness: "complete",
-          visibility: "public",
+          visibility,
           dialogueNodes: [{ id: 1 }],
         };
 
@@ -425,7 +841,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
         metadata.questPayload = questData;
         metadata.questKey = questKey;
         metadata.completeness = "complete";
-        metadata.visibility = "public";
+        metadata.visibility = visibility;
         metadata.region = region;
         metadata.regionId = regionId;
         metadata.series = series;
@@ -439,6 +855,14 @@ export async function runStarRailIngestion(options: IngestOptions) {
       const docIdRes = await client.query("SELECT gen_random_uuid() AS id");
       const docId = docIdRes.rows[0].id;
 
+      const rawSourceKey = questKey ? `${questKey}/locale/zh-CN` : `${doc.category}/${doc.id}/locale/zh-CN`;
+      let sourceKey = rawSourceKey;
+      let suffix = 1;
+      while (seenSourceKeys.has(sourceKey)) {
+        sourceKey = `${rawSourceKey}#${suffix++}`;
+      }
+      seenSourceKeys.add(sourceKey);
+
       await client.query(`
         INSERT INTO knowledge.documents (
           id, game_id, source_key, type, title, normalized_title, game_version,
@@ -450,7 +874,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       `, [
         docId,
         GAME_ID,
-        questKey ? `${questKey}/locale/zh-CN` : `${doc.category}/${doc.id}/locale/zh-CN`,
+        sourceKey,
         docType,
         doc.title,
         doc.title.toLowerCase(),
@@ -523,7 +947,13 @@ export async function runStarRailIngestion(options: IngestOptions) {
         let ordinal = 1;
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("MainMissionID") || trimmed.startsWith("类型：")) {
+          if (
+            !trimmed ||
+            trimmed.startsWith("#") ||
+            trimmed.startsWith("MainMissionID") ||
+            trimmed.startsWith("类型：") ||
+            trimmed.startsWith("章节：")
+          ) {
             continue;
           }
           let speakerName: string | null = null;
@@ -564,6 +994,17 @@ export async function runStarRailIngestion(options: IngestOptions) {
 
     await client.query("COMMIT");
     console.log(`\nSuccessfully ingested ${docsToInsert.length} documents into PostgreSQL!`);
+
+    // 结构化资料（角色/光锥/遗器/敌人/材料/成就）在主事务提交后写入，
+    // 失败不影响已提交的文档数据，且可幂等重跑。
+    if (structuredCodex) {
+      try {
+        const stats = await persistStructuredCodex(pool, structuredCodex);
+        console.log("Structured codex upserted:", JSON.stringify(stats));
+      } catch (error) {
+        console.error("Structured codex persistence failed:", error);
+      }
+    }
     return { ok: true, documents: docsToInsert.length, revisionId: REVISION_ID };
   } catch (error) {
     await client.query("ROLLBACK");

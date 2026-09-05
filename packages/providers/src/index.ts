@@ -15,4 +15,5 @@ export * from "./starrail/corpus/manifest.js";
 export * from "./starrail/corpus/normalizer.js";
 export * from "./starrail/corpus/types.js";
 export * from "./starrail/corpus/validator.js";
+export * from "./starrail/structured/index.js";
 export * from "./factory.js";

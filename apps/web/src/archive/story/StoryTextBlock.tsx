@@ -120,6 +120,9 @@ export function StoryTextBlock({
 }) {
   if (!node.body.trim()) return null;
 
+  // 星铁正文按连续文本阅读，节点编号徽标默认不展示（原神保持原样）。
+  const showNodeId = prefs.game !== "starrail";
+
   if (node.type === "player_choice") {
     const isStarRail = prefs.game === "starrail";
     const defaultNick = isStarRail ? "开拓者" : "旅行者";
@@ -139,9 +142,8 @@ export function StoryTextBlock({
         <span className="story-choice-diamond" aria-hidden="true">◆</span>
         <span className="story-choice-prefix">{prefix}</span>
         <span className="story-choice-text">{formatStoryText(node.body, prefs)}</span>
-        <span className="story-script-node-id" title={`分支节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}
-        </span>
+        {showNodeId ? (<span className="story-script-node-id" title={`分支节点: #${node.nodeKey}`}>
+          #{shortNodeKey(node.nodeKey)}</span>) : null}
       </div>
     );
   }
@@ -151,9 +153,8 @@ export function StoryTextBlock({
       <div className="story-script-objective">
         <span className="story-objective-badge">任务目标</span>
         <span className="story-objective-text">{formatStoryText(node.body, prefs)}</span>
-        <span className="story-script-node-id" title={`目标节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}
-        </span>
+        {showNodeId ? (<span className="story-script-node-id" title={`目标节点: #${node.nodeKey}`}>
+          #{shortNodeKey(node.nodeKey)}</span>) : null}
       </div>
     );
   }
@@ -163,9 +164,8 @@ export function StoryTextBlock({
       <div className="story-script-system">
         <span className="story-system-icon" aria-hidden="true">ⓘ</span>
         <span className="story-system-text">{formatStoryText(node.body, prefs)}</span>
-        <span className="story-script-node-id" title={`系统节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}
-        </span>
+        {showNodeId ? (<span className="story-script-node-id" title={`系统节点: #${node.nodeKey}`}>
+          #{shortNodeKey(node.nodeKey)}</span>) : null}
       </div>
     );
   }
@@ -177,9 +177,8 @@ export function StoryTextBlock({
         <div className="story-narration-content">
           <p className="story-narration-text">{formatStoryText(node.body, prefs)}</p>
         </div>
-        <span className="story-script-node-id" title={`旁白节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}
-        </span>
+        {showNodeId ? (<span className="story-script-node-id" title={`旁白节点: #${node.nodeKey}`}>
+          #{shortNodeKey(node.nodeKey)}</span>) : null}
       </div>
     );
   }
@@ -198,9 +197,8 @@ export function StoryTextBlock({
       <div className="story-script-body-col">
         <p className="story-script-text">{formatStoryText(node.body, prefs)}</p>
       </div>
-      <span className="story-script-node-id" title={`对白节点: #${node.nodeKey}`}>
-        #{shortNodeKey(node.nodeKey)}
-      </span>
+      {showNodeId ? (<span className="story-script-node-id" title={`对白节点: #${node.nodeKey}`}>
+        #{shortNodeKey(node.nodeKey)}</span>) : null}
     </div>
   );
 }

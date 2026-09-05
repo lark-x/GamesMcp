@@ -46,6 +46,7 @@ export async function extractStoryDocuments(input: ExtractorInput): Promise<Extr
     }
 
     const result: ExtractorResult = { documents: [], issues: [], unresolvedText: 0 };
+    const seenIds = new Set<number>();
 
     for (const item of discussionItems) {
       const parsed = await readSafeJsonFile<unknown>(resolve(input.dataDir, item.path));
@@ -75,12 +76,17 @@ export async function extractStoryDocuments(input: ExtractorInput): Promise<Extr
 
       const rawDigits = basename(item.path, ".json").replace(/\D/gu, "");
       const parsedId = rawDigits ? Number(rawDigits) : undefined;
-      const id =
-        naturalId(parsedId) ??
-        deterministicCorpusId({
+      let id = naturalId(parsedId);
+      if (!id || seenIds.has(id)) {
+        id = deterministicCorpusId({
           category: "sr_story",
           identity: item.path,
         });
+        while (seenIds.has(id)) {
+          id++;
+        }
+      }
+      seenIds.add(id);
 
       const snippet = lines[0] ? ` · ${lines[0].replace(/^[^\s：:]+[：:]/u, "").slice(0, 16).trim()}` : "";
       const title = `剧情片段 ${rawDigits || basename(item.path, ".json")}${snippet}`;

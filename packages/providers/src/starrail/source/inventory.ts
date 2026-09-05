@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 
-const TRACKED_FAMILIES = new Set(["Config", "ExcelOutput", "Story", "TextMap"]);
+const TRACKED_FAMILIES = new Set(["Config", "ExcelOutput", "Story", "TextMap", "Stages"]);
 
 export interface StarRailInventoryItem {
   path: string;

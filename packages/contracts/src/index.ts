@@ -257,6 +257,8 @@ export type ArchiveHomeEntry = {
   documentId?: string;
   /** Stable node/anchor key when the entry represents a child of a document. */
   anchorId?: string;
+  /** Inline body for corpora that store text on the entry itself (voice lines). */
+  body?: string;
 };
 
 export type ArchiveHomeCategory = {

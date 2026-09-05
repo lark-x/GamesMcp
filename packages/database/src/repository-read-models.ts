@@ -182,7 +182,8 @@ export class RepositoryReadModels {
         latestRevisionId: current.id,
       };
     const locale = options.locale ?? "zh-CN";
-    const limit = Math.min(Math.max(options.limit ?? 6, 1), 12);
+    // 首页聚合默认取 6 条；text/voices 等语料端点会显式传大 limit 透传。
+    const limit = Math.min(Math.max(options.limit ?? 6, 1), 500);
     const entityCategory = async (
       id: string,
       label: string,
@@ -347,6 +348,8 @@ export class RepositoryReadModels {
         eq(genshinVoiceLines.revisionId, revision.id),
         eq(genshinVoiceLines.locale, locale),
         sql`${genshinVoiceLines.title} <> ''`,
+        // 过滤未解析的角色名模板占位（如 #{REALNAME[ID(1)]}...）。
+        sql`${genshinVoiceLines.title} not like '%#{%'`,
       ];
       const [countRows, rows] = await Promise.all([
         this.db
@@ -357,6 +360,7 @@ export class RepositoryReadModels {
           .select({
             id: genshinVoiceLines.id,
             name: genshinVoiceLines.title,
+            body: genshinVoiceLines.body,
             type: sql<string>`'voice'`,
             locale: genshinVoiceLines.locale,
           })
@@ -376,6 +380,7 @@ export class RepositoryReadModels {
           kind: "document" as const,
           type: row.type,
           locale: row.locale,
+          body: row.body ?? undefined,
         })),
       };
     };

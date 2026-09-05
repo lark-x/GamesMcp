@@ -62,20 +62,35 @@ function createTestApp() {
     },
     listGames: async () => [genshinGame, starRailGame],
     getCapabilities: async () => [{ capability: "entity_search" as const, enabled: true }],
-    listRevisions: async () => [
-      {
-        id: revisionId,
-        gameId: genshinGameId,
-        revisionNumber: 1,
-        sourceBatchId: "00000000-0000-0000-0000-0000000000bb",
-        releaseNote: null,
-        lifecycleStatus: "published",
-        indexStatus: "ready",
-        publishedAt: new Date(),
-        isCurrent: true,
-        manifestId: "00000000-0000-0000-0000-0000000000cc",
-      },
-    ],
+    listRevisions: async (gameId?: string) => {
+      const all = [
+        {
+          id: revisionId,
+          gameId: genshinGameId,
+          revisionNumber: 1,
+          sourceBatchId: "00000000-0000-0000-0000-0000000000bb",
+          releaseNote: null,
+          lifecycleStatus: "published" as const,
+          indexStatus: "ready" as const,
+          publishedAt: new Date(),
+          isCurrent: true,
+          manifestId: "00000000-0000-0000-0000-0000000000cc",
+        },
+        {
+          id: "00000000-0000-0000-0000-0000000000ab",
+          gameId: starRailGameId,
+          revisionNumber: 1,
+          sourceBatchId: "00000000-0000-0000-0000-0000000000bc",
+          releaseNote: null,
+          lifecycleStatus: "published" as const,
+          indexStatus: "ready" as const,
+          publishedAt: new Date(),
+          isCurrent: true,
+          manifestId: "00000000-0000-0000-0000-0000000000cd",
+        },
+      ];
+      return gameId ? all.filter((r) => r.gameId === gameId) : all;
+    },
     genshin: {
       listMaterials: async (options: { limit: number; offset?: number }) => {
         // Return matching materials based on limit/offset
@@ -88,6 +103,97 @@ function createTestApp() {
         if (stableId === "material/trace-destiny") return starRailMaterial;
         return null;
       },
+      listCharacters: async () => [
+        {
+          gameId: starRailGameId,
+          revisionId,
+          stableId: "char_1001",
+          sourceKey: "sr/character/1001",
+          name: "三月七",
+          locale: "zh-CN",
+          rarity: 4,
+          element: "冰",
+          weaponType: "存护",
+          affiliation: "星穹列车",
+          profile: {},
+        },
+      ],
+      getCharacter: async (_rev: string, stableId: string) =>
+        stableId === "char_1001"
+          ? {
+              gameId: starRailGameId,
+              revisionId,
+              stableId: "char_1001",
+              sourceKey: "sr/character/1001",
+              name: "三月七",
+              locale: "zh-CN",
+              rarity: 4,
+              element: "冰",
+              weaponType: "存护",
+              profile: {},
+            }
+          : null,
+      listWeapons: async () => [
+        {
+          gameId: starRailGameId,
+          revisionId,
+          stableId: "lc_21001",
+          sourceKey: "sr/lightcone/21001",
+          name: "无可取代的东西",
+          locale: "zh-CN",
+          rarity: 5,
+          weaponType: "毁灭",
+          passiveName: "家人",
+          passiveDescription: "使装备者的攻击力提高24%。",
+        },
+      ],
+      getWeapon: async (_rev: string, stableId: string) =>
+        stableId === "lc_21001"
+          ? {
+              gameId: starRailGameId,
+              revisionId,
+              stableId: "lc_21001",
+              sourceKey: "sr/lightcone/21001",
+              name: "无可取代的东西",
+              locale: "zh-CN",
+              rarity: 5,
+              weaponType: "毁灭",
+              passiveName: "家人",
+            }
+          : null,
+      listArtifactSets: async () => [],
+      getArtifactSet: async () => null,
+      listEnemies: async () => [],
+      getEnemy: async () => null,
+      listAchievements: async () => [
+        {
+          gameId: starRailGameId,
+          revisionId,
+          stableId: "ach_4040101",
+          sourceKey: "sr/achievement/4040101",
+          name: "通往群星的轨道",
+          locale: "zh-CN",
+          category: "通往群星的轨道",
+          requirement: "登上「星穹列车」，踏上开拓的旅程。",
+          rewardPrimogems: 10,
+          hidden: false,
+        },
+      ],
+      getAchievement: async (_rev: string, stableId: string) =>
+        stableId === "ach_4040101"
+          ? {
+              gameId: starRailGameId,
+              revisionId,
+              stableId: "ach_4040101",
+              sourceKey: "sr/achievement/4040101",
+              name: "通往群星的轨道",
+              locale: "zh-CN",
+              category: "通往群星的轨道",
+              requirement: "登上「星穹列车」，踏上开拓的旅程。",
+              rewardPrimogems: 10,
+              hidden: false,
+            }
+          : null,
     } as unknown as GenshinStructuredRepository,
   } as unknown as KnowledgeRepository;
 
@@ -188,6 +294,29 @@ describe("Codex materials API", () => {
       artifactLabel: "遗器",
       materialLabel: "材料",
     });
+    await app.close();
+  });
+
+  it("exposes characters and weapons for StarRail without Genshin schema violations", async () => {
+    const app = createTestApp();
+    const charResp = await app.inject({
+      method: "GET",
+      url: `/api/games/${starRailGameId}/codex/characters`,
+    });
+    expect(charResp.statusCode).toBe(200);
+    const charBody = charResp.json();
+    expect(Array.isArray(charBody.characters)).toBe(true);
+    expect(charBody.characters.length).toBeGreaterThan(0);
+    expect(charBody.characters[0].name).toBe("三月七");
+
+    const weaponResp = await app.inject({
+      method: "GET",
+      url: `/api/games/${starRailGameId}/codex/weapons`,
+    });
+    expect(weaponResp.statusCode).toBe(200);
+    const weaponBody = weaponResp.json();
+    expect(Array.isArray(weaponBody.weapons)).toBe(true);
+    expect(weaponBody.weapons.length).toBeGreaterThan(0);
     await app.close();
   });
 });

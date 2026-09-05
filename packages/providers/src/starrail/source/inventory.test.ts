@@ -28,7 +28,7 @@ describe("StarRail Source Inventory canonical paths", () => {
     expect(inventory.items.length).toBeGreaterThan(0);
     for (const item of inventory.items) {
       expect(item.path).not.toContain("\\");
-      expect(item.path).toMatch(/^(?:Config|ExcelOutput|Story|TextMap)\//u);
+      expect(item.path).toMatch(/^(?:Config|ExcelOutput|Story|TextMap|Stages)\//u);
     }
   });
 });

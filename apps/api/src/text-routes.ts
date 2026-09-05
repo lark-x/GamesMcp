@@ -429,8 +429,42 @@ export function registerTextRoutes(
     };
   });
 
-  app.get("/api/games/:gameId/text/voices", async (request) => {
+  // Generic document list for flat corpus categories (star rail messages,
+  // train visitors). Entries are plain titles; bodies load via /documents/:id.
+  app.get("/api/games/:gameId/text/documents", async (request) => {
     const params = z.object({ gameId: gameIdSchema }).parse(request.params);
+    const query = textDocumentListQuerySchema.parse(parseQuery(request));
+    const documentType = z
+      .enum(["message", "train_visitor", "item_lore", "voiceline", "character_story", "book"])
+      .parse(parseQuery(request).type ?? "message");
+    const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
+    const summaries = await gameDomain.listDocuments(params.gameId, {
+      query: query.q ?? query.query,
+      type: documentType,
+      locale: query.locale,
+      limit: query.limit,
+      offset: query.offset,
+      revisionId,
+    });
+    return {
+      gameId: params.gameId,
+      revisionId,
+      locale: query.locale,
+      corpusStatus: summaries.length ? "available" : "source_empty",
+      entries: summaries.map((summary) => ({
+        id: summary.id,
+        documentId: summary.id,
+        title: summary.title,
+        type: summary.type,
+        locale: summary.locale ?? null,
+      })),
+      count: summaries.length,
+      truncated: summaries.length === query.limit,
+      nextOffset: summaries.length === query.limit ? query.offset + summaries.length : null,
+    };
+  });
+
+  app.get("/api/games/:gameId/text/voices", async (request) => {    const params = z.object({ gameId: gameIdSchema }).parse(request.params);
     const query = voiceQuerySchema.parse(parseQuery(request));
     const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
     const home = repository.getArchiveHome
