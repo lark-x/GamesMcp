@@ -23,24 +23,49 @@ export function registerCodexRoutes(
   app: FastifyInstance,
   { gameDomain }: CodexRoutesDependencies,
 ): void {
+  // Terminology
+  app.get("/api/games/:gameId/codex/terminology", async (request) => {
+    const { gameId } = parseIdParams(request);
+    const adapter = await gameDomain.getArchiveAdapter(gameId);
+    return {
+      gameId,
+      terminology: adapter.getTerminology(),
+    };
+  });
+
   // Materials
   app.get("/api/games/:gameId/codex/materials", async (request) => {
     const { gameId } = parseIdParams(request);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const rawQuery = parseQuery(request);
+    const query = listQuerySchema.parse(rawQuery);
+    const category =
+      typeof rawQuery.category === "string" && rawQuery.category.trim()
+        ? rawQuery.category.trim()
+        : undefined;
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
-    const materials = await gameDomain.listMaterials(gameId, query.revisionId, {
-      query: query.q,
-      limit,
-      offset,
-    });
+    const [materials, total, categories] = await Promise.all([
+      gameDomain.listMaterials(gameId, query.revisionId, {
+        query: query.q,
+        category,
+        limit,
+        offset,
+      }),
+      gameDomain.countMaterials(gameId, query.revisionId, {
+        query: query.q,
+        category,
+      }),
+      gameDomain.aggregateMaterialCategories(gameId, query.revisionId, query.q),
+    ]);
     return {
       gameId,
       revisionId: query.revisionId ?? null,
       materials: materials.map((material) => codexMaterialSchema.parse(material)),
+      total,
+      categories,
       limit,
       offset,
-      nextOffset: materials.length === limit ? offset + materials.length : null,
+      nextOffset: offset + materials.length < total ? offset + materials.length : null,
     };
   });
 

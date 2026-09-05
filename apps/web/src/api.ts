@@ -168,6 +168,56 @@ export type QuestDetail = QuestSearchHit & {
   loadedDialogueNodes?: number;
   hasMore?: boolean;
   nextCursor?: string | null;
+  region?: string | null;
+  regionId?: string | null;
+  chapter?: string | null;
+  series?: string | null;
+  narrative?: {
+    mode: "structured_dialogue" | "document" | "objective_only" | "unavailable";
+    dialogueNodes: Array<{
+      nodeKey: string;
+      nodeId: string | number;
+      type: string;
+      subquestKey?: string;
+      speakerKey?: string;
+      speakerName?: string;
+      body: string;
+      segmentId?: string | null;
+      order?: number;
+    }>;
+    documentSegments?: Array<{ segmentId: string; heading?: string; body: string }>;
+    documentBody?: string;
+    reason?: string;
+  };
+};
+
+export type StoryQuestEntry = {
+  questKey: string;
+  title: string;
+  order: number;
+  completeness: "complete" | "partial" | "metadata_only";
+  bodyAvailability: "dialogue" | "document" | "objective_only" | "unavailable";
+};
+
+export type StoryChapter = {
+  id: string;
+  name: string;
+  order: number;
+  series?: string;
+  quests: StoryQuestEntry[];
+};
+
+export type StoryRegion = {
+  id: string;
+  name: string;
+  order: number;
+  chapters: StoryChapter[];
+};
+
+export type StoryCatalog = {
+  gameId: string;
+  revisionId?: string | null;
+  regions: StoryRegion[];
 };
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem("gip.adminToken");
@@ -357,6 +407,14 @@ export const api = {
     const query = params.toString();
     return request<{ quest: QuestDetail }>(
       `/api/games/${gameId}/quests/${encodeURIComponent(questId)}${query ? `?${query}` : ""}`,
+    );
+  },
+  storyCatalog: (gameId: string, options?: { revisionId?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.revisionId) params.set("revisionId", options.revisionId);
+    const query = params.toString();
+    return request<StoryCatalog>(
+      `/api/games/${gameId}/story/catalog${query ? `?${query}` : ""}`,
     );
   },
 };

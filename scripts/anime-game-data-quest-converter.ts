@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
@@ -10,7 +11,11 @@ import { isPathInside, runStoragePreflight } from "./check-data-storage.ts";
 import { loadConfig } from "../packages/config/src/index.ts";
 
 export const QUEST_CONVERTER_VERSION = "anime-game-data-quests-v1";
-export const DEFAULT_QUEST_UPSTREAM_DIR = "data/upstream/AnimeGameData";
+export const DEFAULT_QUEST_UPSTREAM_DIR =
+  process.env.ANIME_GAME_DATA_DIR ??
+  (existsSync("data/upstream/AnimeGameData-current")
+    ? "data/upstream/AnimeGameData-current"
+    : "data/upstream/AnimeGameData");
 export const QUEST_UPSTREAM_SOURCE = "DimbreathBot/AnimeGameData";
 const execFileAsync = promisify(execFile);
 
@@ -280,7 +285,7 @@ async function readJson(
   return { value: JSON.parse(raw), hash: sha256(raw) };
 }
 
-async function loadInputs(root: string): Promise<Inputs> {
+export async function loadInputs(root: string): Promise<Inputs> {
   const loaded = await Promise.all(
     Object.entries(inputPaths).map(async ([key, relativePath]) => {
       const file = await readJson(root, relativePath);
@@ -399,7 +404,7 @@ async function loadInputs(root: string): Promise<Inputs> {
 
 export function questType(value: unknown): QuestType {
   const raw = text(value)?.toLocaleLowerCase("en");
-  if (raw === "aq" || raw === "iq" || raw === "archon" || raw === "archon_quest")
+  if (raw === "aq" || raw === "archon" || raw === "archon_quest")
     return "archon_quest";
   if (raw === "lq" || raw === "story" || raw === "story_quest") return "story_quest";
   if (raw === "eq" || raw === "event" || raw === "event_quest") return "event_quest";
@@ -625,7 +630,9 @@ function buildDialogueGraph(
     const groups = asArray(codexText(codexFile.value, "EBNBLBEIFFJ"));
     groups.forEach((group, groupIndex) => {
       const groupTitleHash = hashValue(codexText(group, "OGEGCCLHIHP"));
-      const subquestKey = groupTitleHash ? subquestKeyByTitleHash.get(groupTitleHash) : undefined;
+      const subquestKey =
+        (groupTitleHash ? subquestKeyByTitleHash.get(groupTitleHash) : undefined) ??
+        `quest/${mainId}/subquest/${groupIndex + 1}`;
       const lines = asArray(codexText(group, "PEAKPGNONFA"));
       lines.forEach((line, lineIndex) => {
         const lineId = idText(line.EICGDLLPINH ?? lineIndex) ?? String(lineIndex);
@@ -803,7 +810,7 @@ function questBody(payload: QuestRecordPayload): string {
   return lines.join("\n");
 }
 
-function buildRecord(
+export function buildRecord(
   inputs: Inputs,
   main: Json,
   locale: Locale,
@@ -824,18 +831,41 @@ function buildRecord(
   }) as Record<string, unknown>;
   const codexFile = inputs.codexQuestByMainId.get(mainId);
   const originalQuestType = text(main.type ?? codexFile?.value.DCNPPIOLEOK ?? main.questType);
-  const resolvedQuestType = questType(originalQuestType);
   const questRows = inputs.questByMainId.get(mainId) ?? [];
   const codexIndexRows = inputs.questCodex.filter(
     (row) => idText(row.parentQuestId ?? row.mainQuestId ?? row.mainId) === mainId,
   );
   const chapterId = idText(
     main.chapterId ??
+      main.resId ??
       codexIndexRows[0]?.chapterId ??
       codexFile?.value.PBIOMJGIMAK ??
       (numericId(main.series) ? main.series : undefined),
   );
   const chapterRow = inputs.chapter.find((row) => idText(row.id ?? row.chapterId) === chapterId);
+  const chapterStyle = text(chapterRow?.LINLPCFFGFC);
+  const codexType = text(codexFile?.value.DCNPPIOLEOK);
+
+  const explicitType = text(main.type ?? main.questType);
+  let resolvedQuestType = questType(originalQuestType);
+  if (!explicitType && resolvedQuestType === "other") {
+    if (chapterStyle === "CHAPTER_STYLE_TYPE_AQ" || codexType === "AQ") {
+      resolvedQuestType = "archon_quest";
+    } else if (
+      chapterStyle === "CHAPTER_STYLE_TYPE_PERSONALLINE" ||
+      chapterStyle === "CHAPTER_STYLE_TYPE_LEGEND" ||
+      codexType === "LQ"
+    ) {
+      resolvedQuestType = "story_quest";
+    } else if (chapterStyle === "CHAPTER_STYLE_TYPE_ACTIVITY_QUEST" || codexType === "EQ") {
+      resolvedQuestType = "event_quest";
+    } else if (chapterStyle === "CHAPTER_STYLE_TYPE_WORLD_QUEST_RANK_ZERO" || codexType === "WQ") {
+      resolvedQuestType = "world_quest";
+    } else if (chapterStyle === "CHAPTER_STYLE_TYPE_COOP_QUEST") {
+      resolvedQuestType = "hangout";
+    }
+  }
+
   const chapterTitleHash =
     chapterRow?.chapterTitleTextMapHash ??
     chapterRow?.titleTextMapHash ??
@@ -846,6 +876,73 @@ function buildRecord(
     (text(chapterRow?.title)
       ? { value: text(chapterRow.title)!, locale, hash: undefined }
       : undefined);
+
+  const chapterNumHash =
+    chapterRow?.chapterNumTextMapHash ??
+    chapterRow?.numTextMapHash ??
+    codexFile?.value.NNPJABOAJPL;
+  const chapterNumResolution = resolveLocalizedText(inputs.textMaps, locale, chapterNumHash);
+
+  const chapterNum = chapterNumResolution?.value;
+  const rawChapterTitle = chapterTitleResolution?.value;
+  const fullChapterTitle =
+    chapterNum && rawChapterTitle
+      ? locale === "zh-CN"
+        ? `${chapterNum} ${rawChapterTitle}`
+        : `${chapterNum}: ${rawChapterTitle}`
+      : (rawChapterTitle ?? chapterNum);
+
+  const cityRegions: Record<number, { id: string; zh: string; en: string }> = {
+    1: { id: "mondstadt", zh: "蒙德", en: "Mondstadt" },
+    2: { id: "liyue", zh: "璃月", en: "Liyue" },
+    3: { id: "inazuma", zh: "稻妻", en: "Inazuma" },
+    4: { id: "sumeru", zh: "须弥", en: "Sumeru" },
+    5: { id: "fontaine", zh: "枫丹", en: "Fontaine" },
+    6: { id: "natlan", zh: "纳塔", en: "Natlan" },
+    7: { id: "nod_krai", zh: "诺德卡莱", en: "Nod-Krai" },
+    8: { id: "snezhnaya", zh: "至冬", en: "Snezhnaya" },
+    100: { id: "golden_apple", zh: "金苹果群岛", en: "Golden Apple Archipelago" },
+    101: { id: "three_realms", zh: "三界路飨祭", en: "Three Realms Gateway Offering" },
+    102: { id: "golden_apple", zh: "金苹果群岛", en: "Golden Apple Archipelago" },
+    103: { id: "veluriyam_mirage", zh: "琉形蜃境", en: "Veluriyam Mirage" },
+    104: { id: "simulanka", zh: "希穆兰卡", en: "Simulanka" },
+    105: { id: "temple_of_space", zh: "空之神殿", en: "Temple of Space" },
+  };
+
+  const rawCityId = typeof chapterRow?.cityId === "number" ? chapterRow.cityId : undefined;
+  let regionInfo = rawCityId ? cityRegions[rawCityId] : undefined;
+  if (!regionInfo && resolvedQuestType === "archon_quest") {
+    const chapterName = fullChapterTitle ?? "";
+    if (chapterName.includes("序章") || chapterName.includes("Prologue")) {
+      regionInfo = cityRegions[1];
+    } else if (chapterName.includes("第一章") || chapterName.includes("Chapter I")) {
+      regionInfo = cityRegions[2];
+    } else if (chapterName.includes("第二章") || chapterName.includes("Chapter II")) {
+      regionInfo = cityRegions[3];
+    } else if (chapterName.includes("第三章") || chapterName.includes("Chapter III")) {
+      regionInfo = cityRegions[4];
+    } else if (chapterName.includes("第四章") || chapterName.includes("Chapter IV")) {
+      regionInfo = cityRegions[5];
+    } else if (chapterName.includes("第五章") || chapterName.includes("Chapter V")) {
+      regionInfo = cityRegions[6];
+    } else if (
+      chapterName.includes("空月之歌") ||
+      chapterName.includes("第六章") ||
+      chapterName.includes("Chapter VI") ||
+      chapterName.includes("Song of the Moon")
+    ) {
+      regionInfo = cityRegions[7];
+    } else if (chapterName.includes("第七章") || chapterName.includes("Chapter VII")) {
+      regionInfo = cityRegions[8];
+    }
+  }
+
+  const resolvedRegionId = regionInfo?.id;
+  const resolvedRegionName = regionInfo
+    ? locale === "en"
+      ? regionInfo.en
+      : regionInfo.zh
+    : undefined;
   const seriesValue = asObject(main.series);
   const rawSeriesId =
     main.seriesId ??
@@ -872,6 +969,12 @@ function buildRecord(
           hash: undefined,
         }
       : undefined);
+
+  const resolvedSeriesTitle =
+    seriesTitleResolution?.value && !/^\d+$/.test(seriesTitleResolution.value.trim())
+      ? seriesTitleResolution.value
+      : (resolvedQuestType === "archon_quest" ? (locale === "en" ? "Archon Quests" : "魔神任务") : undefined);
+
   const titleResolution = resolveTitle(
     inputs,
     main,
@@ -886,40 +989,79 @@ function buildRecord(
     titleResolution.method !== "textmap_direct" || titleResolution.locale !== locale;
   const speakerRows = inputs.npcById;
   const subquestKeyByTitleHash = new Map<string, string>();
-  const subquests = questRows.map((row, index) => {
-    const subquestId = idText(row.subId ?? row.id ?? row.subQuestId);
-    if (!subquestId) throw new Error(`subquest_id_missing:${sourceKey}`);
-    const titleHash = hashValue(
-      row.titleTextMapHash ?? row.titleHash ?? row.failParent ?? row.stepDescTextMapHash,
-    );
-    const subquestKey = `quest/${mainId}/subquest/${subquestId}`;
-    if (titleHash) subquestKeyByTitleHash.set(titleHash, subquestKey);
-    return {
-      subquestKey,
-      subquestId,
-      title:
-        tryResolveText(textMap, row.titleTextMapHash ?? row.titleHash ?? row.failParent) ??
-        tryResolveText(textMap, row.stepDescTextMapHash) ??
-        `Subquest ${subquestId}`,
-      objective:
-        (row.objectiveTextMapHash ?? row.objectiveHash) === undefined
-          ? tryResolveText(textMap, row.stepDescTextMapHash ?? row.guideTipsTextMapHash)
-          : resolveText(
-              textMap,
-              row.objectiveTextMapHash ?? row.objectiveHash,
-              sourceKey,
-              `subquest:${subquestId}:objective`,
-            ),
-      order: Number(row.order ?? index),
-      completeness: "complete" as const,
-      metadata: {
-        sourceFile: inputPaths.quest,
-        titleTextMapHash: titleHash,
-        stepDescTextMapHash: hashValue(row.stepDescTextMapHash),
-        guideTipsTextMapHash: hashValue(row.guideTipsTextMapHash),
-      },
-    };
-  });
+  let subquests: Array<{
+    subquestKey: string;
+    subquestId: string;
+    title: string;
+    objective?: string;
+    order: number;
+    completeness: "complete";
+    metadata: Record<string, unknown>;
+  }> = [];
+
+  if (questRows.length > 0) {
+    subquests = questRows.map((row, index) => {
+      const subquestId = idText(row.subId ?? row.id ?? row.subQuestId);
+      if (!subquestId) throw new Error(`subquest_id_missing:${sourceKey}`);
+      const titleHash = hashValue(
+        row.titleTextMapHash ?? row.titleHash ?? row.failParent ?? row.stepDescTextMapHash,
+      );
+      const subquestKey = `quest/${mainId}/subquest/${subquestId}`;
+      if (titleHash) subquestKeyByTitleHash.set(titleHash, subquestKey);
+      return {
+        subquestKey,
+        subquestId,
+        title:
+          tryResolveText(textMap, row.titleTextMapHash ?? row.titleHash ?? row.failParent) ??
+          tryResolveText(textMap, row.stepDescTextMapHash) ??
+          `Subquest ${subquestId}`,
+        objective:
+          (row.objectiveTextMapHash ?? row.objectiveHash) === undefined
+            ? tryResolveText(textMap, row.stepDescTextMapHash ?? row.guideTipsTextMapHash)
+            : resolveText(
+                textMap,
+                row.objectiveTextMapHash ?? row.objectiveHash,
+                sourceKey,
+                `subquest:${subquestId}:objective`,
+              ),
+        order: Number(row.order ?? index),
+        completeness: "complete" as const,
+        metadata: {
+          sourceFile: inputPaths.quest,
+          titleTextMapHash: titleHash,
+          stepDescTextMapHash: hashValue(row.stepDescTextMapHash),
+          guideTipsTextMapHash: hashValue(row.guideTipsTextMapHash),
+        },
+      };
+    });
+  } else if (codexFile) {
+    const groups = asArray(codexText(codexFile.value, "EBNBLBEIFFJ"));
+    subquests = groups.map((group, groupIndex) => {
+      const subquestId = String(groupIndex + 1);
+      const titleHash = hashValue(codexText(group, "OGEGCCLHIHP"));
+      const subquestKey = `quest/${mainId}/subquest/${subquestId}`;
+      if (titleHash) subquestKeyByTitleHash.set(titleHash, subquestKey);
+      return {
+        subquestKey,
+        subquestId,
+        title:
+          (titleHash ? tryResolveText(textMap, titleHash) : undefined) ??
+          `Subquest ${subquestId}`,
+        objective: undefined,
+        order: groupIndex,
+        completeness: "complete" as const,
+        metadata: {
+          sourceFile: codexFile.relativePath,
+          titleTextMapHash: titleHash,
+        },
+      };
+    });
+  }
+
+  const codexSortOrder =
+    typeof codexIndexRows[0]?.sortOrder === "number" ? codexIndexRows[0].sortOrder : undefined;
+  const questOrder = codexSortOrder ?? Number(main.order ?? mainId);
+
   const graph = buildDialogueGraph(inputs, mainId, locale, textMap, subquestKeyByTitleHash);
   const subquestKeys = new Set(subquests.map((subquest) => subquest.subquestKey));
   const dialogueNodes = graph.nodes.map((node) => ({
@@ -958,13 +1100,16 @@ function buildRecord(
     mainQuestId: mainId,
     questType: resolvedQuestType,
     locale,
+    regionId: resolvedRegionId,
+    region: resolvedRegionName,
+    regionName: resolvedRegionName,
     chapterId,
-    chapterTitle: chapterTitleResolution?.value,
+    chapterTitle: fullChapterTitle,
     seriesId,
-    seriesTitle: seriesTitleResolution?.value,
-    chapter: chapterTitleResolution?.value,
-    series: seriesTitleResolution?.value ?? seriesId,
-    order: Number(main.order ?? mainId),
+    seriesTitle: resolvedSeriesTitle,
+    chapter: fullChapterTitle,
+    series: resolvedSeriesTitle,
+    order: questOrder,
     completeness:
       dialogueNodes.length && subquests.length
         ? "complete"
@@ -992,9 +1137,15 @@ function buildRecord(
       titleResolutionLocale: titleResolution.locale,
       titleResolutionSource: titleResolution.source,
       titleUnresolved: titleResolution.method === "unresolved",
+      region: {
+        id: resolvedRegionId,
+        name: resolvedRegionName,
+        cityId: rawCityId,
+      },
       chapter: {
         id: chapterId,
-        title: chapterTitleResolution?.value,
+        num: chapterNum,
+        title: fullChapterTitle,
         sourceFile: chapterRow
           ? inputPaths.chapter
           : (codexFile?.relativePath ?? inputPaths.mainQuest),
@@ -1007,7 +1158,7 @@ function buildRecord(
       },
       series: {
         id: seriesId,
-        title: seriesTitleResolution?.value,
+        title: resolvedSeriesTitle,
         sourceFile: inputPaths.mainQuest,
         idField: seriesId ? "MainQuestExcelConfigData.series" : undefined,
         titleField: seriesTitleHash ? "seriesTitleTextMapHash" : undefined,
@@ -1024,12 +1175,6 @@ function buildRecord(
     body: node.speakerName ? `${node.speakerName}: ${node.body}` : node.body,
     startOffset: index,
     endOffset: index + node.body.length,
-    metadata: {
-      questKey: payload.questKey,
-      subquestKey: node.subquestKey,
-      dialogueNodeKey: node.nodeKey,
-      locale,
-    },
   }));
   const entities = [
     {
@@ -1105,7 +1250,6 @@ function buildRecord(
           },
           dialogue: {
             relativeFile: codexFile?.relativePath ?? inputPaths.dialog,
-            upstreamId: payload.dialogueNodes.map((node) => node.nodeId),
             hash: codexFile?.hash ?? inputs.inputHashes[inputPaths.dialog],
             valueHash: sha256(stableStringify(payload.dialogueNodes)),
           },
@@ -1113,18 +1257,11 @@ function buildRecord(
         upstreamIds: {
           mainQuestId: mainId,
           subquestIds: questRows.map((row) => idText(row.subId ?? row.id ?? row.subQuestId) ?? ""),
-          dialogueNodeIds: payload.dialogueNodes.map((node) => node.nodeId),
         },
         textMapHashes: {
           ...(hashValue(titleHash) && Number.isSafeInteger(Number(hashValue(titleHash)))
             ? { title: Number(hashValue(titleHash)) }
             : {}),
-          dialogue: payload.dialogueNodes
-            .map((node) => node.metadata?.textMapHash)
-            .filter(
-              (value): value is number | number[] =>
-                typeof value === "number" || Array.isArray(value),
-            ),
         },
         rawContentHash: sha256(stableStringify({ main, questRows, codexFile: codexFile?.value })),
         normalizedContentHash: sha256(stableStringify(contentBasis)),
@@ -1139,7 +1276,23 @@ function buildRecord(
         visibility: payload.visibility,
         visibilityReason: payload.visibilityReason,
       },
-      questPayload: payload,
+      questPayload: {
+        questKey: payload.questKey,
+        mainQuestId: payload.mainQuestId,
+        questType: payload.questType,
+        regionId: payload.regionId,
+        regionName: payload.regionName,
+        chapterId: payload.chapterId,
+        chapterTitle: payload.chapterTitle,
+        chapterNum: payload.chapterNum,
+        seriesTitle: payload.seriesTitle,
+        seriesId: payload.seriesId,
+        order: payload.order,
+        completeness: payload.completeness,
+        visibility: payload.visibility,
+        dialogueNodes: payload.dialogueNodes.length > 0 ? [{ nodeId: "has_dialogue" }] : [],
+        subquests: payload.subquests.length > 0 ? [{ subquestId: "has_subquests" }] : [],
+      },
       titleResolutionMethod: titleResolution.method,
       titleResolutionLocale: titleResolution.locale,
       completenessReasons,
@@ -1394,7 +1547,7 @@ export async function writeQuestSnapshot(result: QuestConversionResult, outputDi
   const recordsDir = resolve(outputDir, "records");
   await mkdir(recordsDir, { recursive: true });
   const manifest = { ...result.manifest, generatedAt: new Date().toISOString() };
-  await writeFile(join(recordsDir, "quests.json"), JSON.stringify(result.records, null, 2) + "\n");
+  await writeFile(join(recordsDir, "quests.json"), JSON.stringify(result.records) + "\n");
   await writeFile(
     join(resolve(outputDir), "manifest.json"),
     JSON.stringify(manifest, null, 2) + "\n",

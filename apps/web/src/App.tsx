@@ -7,7 +7,14 @@ type GameResponse = { games: GameSummary[] };
 
 export function App() {
   const [games, setGames] = useState<GameSummary[]>([]);
-  const [gameId, setGameId] = useState("");
+  const [gameId, setGameId] = useState(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get("gameId") || urlParams.get("game") || localStorage.getItem("gip_active_game") || "";
+    } catch {
+      return "";
+    }
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -16,8 +23,13 @@ export function App() {
         const response = await apiFetch<GameResponse>("/api/games");
         if (cancelled) return;
         setGames(response.games);
-        if (response.games.length > 0 && !gameId) {
-          setGameId(response.games[0].id);
+        if (response.games.length > 0) {
+          const match = response.games.find((g) => g.id === gameId || g.slug === gameId);
+          if (match) {
+            setGameId(match.id);
+          } else if (!gameId) {
+            setGameId(response.games[0].id);
+          }
         }
       } catch {
         // network or server error handled gracefully
@@ -42,6 +54,11 @@ export function App() {
       selectedRevisionLabel={currentGame?.currentRevision}
       onGameChange={(nextGameId) => {
         setGameId(nextGameId);
+        try {
+          localStorage.setItem("gip_active_game", nextGameId);
+        } catch {
+          // ignore
+        }
       }}
     />
   );

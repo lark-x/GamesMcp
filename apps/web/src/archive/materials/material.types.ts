@@ -9,4 +9,5 @@ export type ArchiveMaterial = {
   gameVersion?: string | null;
   locale?: string | null;
   revisionId?: string;
+  sourceName?: string;
 };

@@ -226,6 +226,20 @@ export function registerPublicRoutes(
     return { quest };
   });
 
+  app.get("/api/games/:gameId/story/catalog", async (request) => {
+    const { gameId } = parseIdParams(request);
+    await domain.requireGame(gameId);
+    if (!repository.getStoryCatalog) {
+      throw new DomainError("story_catalog_not_ready", "Story catalog is not implemented");
+    }
+    const query = parseQuery(request);
+    const revisionId = query.revisionId
+      ? revisionIdSchema.parse(String(query.revisionId))
+      : undefined;
+    const catalog = await repository.getStoryCatalog(gameId, revisionId);
+    return catalog;
+  });
+
   app.post("/api/games/:gameId/search", async (request) => {
     const { gameId } = parseIdParams(request);
     await domain.requireGame(gameId);

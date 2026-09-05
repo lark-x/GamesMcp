@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-09-05T01:56:17.898Z",
+  "revisionId": "a1ef50c6-dbc5-4c37-8a1e-6d5e2290abe4",
+  "revisionNumber": 2,
+  "lifecycleStatus": "published",
+  "isCurrent": true,
+  "comparison": {
+    "materials": {
+      "metric": "Material Domain Model",
+      "baseline": {
+        "withSources": 0,
+        "withUsedBy": 0,
+        "otherRatio": "44.4%",
+        "categoriesCount": 6,
+        "publicFilter": "None (Included debug/test items)"
+      },
+      "postRepair": {
+        "total": 10395,
+        "withSources": 2307,
+        "withUsedBy": 504,
+        "otherRatio": "26.8%",
+        "categoriesCount": 10,
+        "publicFilter": "Public only (Filtered out test/debug/deprecated items)"
+      },
+      "status": "PASSED (Quality Gate other <= 30% met)"
+    },
+    "story": {
+      "metric": "Story Narrative & Region Hierarchy",
+      "baseline": {
+        "catalogStructure": "Flat Quest list via /quests?limit=50",
+        "regionModeling": "None (3,572 unresolved regions)",
+        "narrativeModes": "Dialogue only (blank screen on missing dialogue)",
+        "fakeDataFallback": "Hardcoded fake dialogue in UI components"
+      },
+      "postRepair": {
+        "catalogStructure": "Hierarchical StoryCatalog: Region -> Chapter -> Quest",
+        "regionsCount": 9,
+        "regionNames": [
+          "蒙德",
+          "璃月",
+          "稻妻",
+          "须弥",
+          "枫丹",
+          "纳塔",
+          "诺德卡莱",
+          "至冬",
+          "其他地区"
+        ],
+        "narrativeModes": [
+          "structured_dialogue",
+          "document",
+          "objective_only",
+          "unavailable"
+        ],
+        "fakeDataFallback": "PURGED (Clean empty states: '暂无数据' / '来源未解析')"
+      },
+      "status": "PASSED"
+    },
+    "crossGameCodex": {
+      "metric": "Cross-Game Codex & Terminology",
+      "baseline": {
+        "architecture": "Genshin-hardcoded codex routes and terminology",
+        "starRailTerminology": "Weapon = '武器', Artifact = '圣遗物' (Leaked Genshin terms)"
+      },
+      "postRepair": {
+        "architecture": "Abstract GameArchiveAdapter with GameDomainService registry",
+        "starRailTerminology": "Weapon = '光锥', Artifact = '遗器' (Officially isolated)",
+        "genshinTerminology": "Weapon = '武器', Artifact = '圣遗物'"
+      },
+      "status": "PASSED"
+    },
+    "searchAndAggregation": {
+      "metric": "Search & Aggregations",
+      "baseline": {
+        "searchScope": "Client-side / Title only",
+        "categoryCounts": "Frontend page-slice counts"
+      },
+      "postRepair": {
+        "searchScope": "Full backend search across name, description, sources, and usedBy",
+        "categoryCounts": "Server-side SQL aggregations across full dataset revision"
+      },
+      "status": "PASSED"
+    }
+  }
+}

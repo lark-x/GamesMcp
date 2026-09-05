@@ -15,4 +15,9 @@ describe("normalizeStarRailText", () => {
       }
     });
   }
+
+  it("strips unbreak tags and converts escaped newlines", () => {
+    expect(normalizeStarRailText("【3月<unbreak>20</unbreak>日 周一】")).toBe("【3月20日 周一】");
+    expect(normalizeStarRailText("第一段\\n第二段")).toBe("第一段\n第二段");
+  });
 });

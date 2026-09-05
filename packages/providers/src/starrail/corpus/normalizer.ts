@@ -1,12 +1,13 @@
 const COLOR_TAG = /<\/?color(?:=[^>]*)?>/giu;
 const RUBY_TAG = /<\/?ruby(?:=[^>]*)?>/giu;
-const HTML_LIKE_TAG = /<\/?(?:size|b|i|u|align|sprite|icon)(?:=[^>]*)?>/giu;
+const HTML_LIKE_TAG = /<\/?(?:size|b|i|u|align|sprite|icon|unbreak)(?:=[^>]*)?>/giu;
 
 export function normalizeStarRailText(input: string): string {
   return input
     .replace(COLOR_TAG, "")
     .replace(RUBY_TAG, "")
     .replace(HTML_LIKE_TAG, "")
+    .replace(/\\n/gu, "\n")
     .split("")
     .filter((char) => !isDiscardedControlCharacter(char))
     .join("")

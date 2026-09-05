@@ -107,7 +107,7 @@ async function snapshotFiles(
   const snapshotDirectory = resolve(input.storageDir, "snapshots", input.sourceId);
   await mkdir(snapshotDirectory, { recursive: true });
   const storagePath = resolve(snapshotDirectory, `${contentHash}.json`);
-  const serialized = JSON.stringify({ files, metadata, contentHash }, null, 2);
+  const serialized = JSON.stringify({ files, metadata, contentHash });
   try {
     await writeFile(storagePath, serialized, { encoding: "utf8", flag: "wx" });
   } catch (error) {
@@ -119,11 +119,15 @@ async function snapshotFiles(
       throw new Error(`Immutable snapshot is unreadable: ${storagePath}`);
     }
     const existingObject = asObject(existing);
-    const existingFiles = Array.isArray(existingObject.files) ? existingObject.files : [];
-    if (
-      existingObject.contentHash !== contentHash ||
-      JSON.stringify(existingFiles) !== JSON.stringify(files)
-    )
+    const existingFiles = Array.isArray(existingObject.files)
+      ? (existingObject.files as Array<{ relativePath: string; content: string }>)
+      : [];
+    const filesMismatch =
+      existingFiles.length !== files.length ||
+      existingFiles.some(
+        (f, idx) => f.relativePath !== files[idx]?.relativePath || f.content !== files[idx]?.content,
+      );
+    if (existingObject.contentHash !== contentHash || filesMismatch)
       throw new Error(`Immutable snapshot content mismatch: ${storagePath}`);
   }
   return {

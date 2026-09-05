@@ -423,11 +423,19 @@ export const codexMaterialSchema = z.object({
 });
 export type CodexMaterial = z.infer<typeof codexMaterialSchema>;
 
+export const codexMaterialCategoryAggregationSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  count: z.number().int(),
+});
+export type CodexMaterialCategoryAggregation = z.infer<typeof codexMaterialCategoryAggregationSchema>;
+
 export const codexMaterialListResponseSchema = z.object({
   gameId: gameIdSchema,
   revisionId: revisionIdSchema.nullable(),
   materials: z.array(codexMaterialSchema),
   total: z.number().int().optional(),
+  categories: z.array(codexMaterialCategoryAggregationSchema).optional(),
   limit: z.number().int().optional(),
   offset: z.number().int().optional(),
   nextOffset: z.number().int().nullable().optional(),
@@ -452,3 +460,94 @@ export const genshinEnemySchema = structuredBaseSchema.extend({
   resistances: z.record(z.string(), z.unknown()).default({}),
 });
 export type GenshinEnemy = z.infer<typeof genshinEnemySchema>;
+
+// --- Story Catalog Read Model ---
+export const bodyAvailabilitySchema = z.enum([
+  "dialogue",
+  "document",
+  "objective_only",
+  "none",
+]);
+export type BodyAvailability = z.infer<typeof bodyAvailabilitySchema>;
+
+export const narrativeModeSchema = z.enum([
+  "structured_dialogue",
+  "document",
+  "objective_only",
+  "unavailable",
+]);
+export type NarrativeMode = z.infer<typeof narrativeModeSchema>;
+
+export const storyQuestEntrySchema = z.object({
+  questKey: z.string(),
+  title: z.string(),
+  order: z.number().default(0),
+  completeness: z.enum(["complete", "partial", "metadata_only"]).default("complete"),
+  bodyAvailability: bodyAvailabilitySchema.default("dialogue"),
+});
+export type StoryQuestEntry = z.infer<typeof storyQuestEntrySchema>;
+
+export const storyChapterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number().default(0),
+  series: z.string().optional(),
+  quests: z.array(storyQuestEntrySchema),
+});
+export type StoryChapter = z.infer<typeof storyChapterSchema>;
+
+export const storyRegionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number().default(0),
+  chapters: z.array(storyChapterSchema),
+});
+export type StoryRegion = z.infer<typeof storyRegionSchema>;
+
+export const storyCatalogSchema = z.object({
+  gameId: gameIdSchema,
+  revisionId: revisionIdSchema.nullable().optional(),
+  regions: z.array(storyRegionSchema),
+});
+export type StoryCatalog = z.infer<typeof storyCatalogSchema>;
+
+// --- Material Domain Sources & Usages ---
+export const materialSourceSchema = z.object({
+  type: z.enum([
+    "enemy_drop",
+    "domain",
+    "collection",
+    "shop",
+    "quest",
+    "reward",
+    "craft",
+    "weekly_boss",
+    "event",
+    "other",
+  ]),
+  name: z.string(),
+  relatedId: z.string().optional(),
+});
+export type MaterialSource = z.infer<typeof materialSourceSchema>;
+
+export const materialUsageSchema = z.object({
+  type: z.enum([
+    "character_ascension",
+    "character_talent",
+    "weapon_ascension",
+    "craft",
+    "other",
+  ]),
+  targetId: z.string().optional(),
+  targetName: z.string(),
+});
+export type MaterialUsage = z.infer<typeof materialUsageSchema>;
+
+export const gameTerminologySchema = z.object({
+  characterLabel: z.string().default("角色"),
+  weaponLabel: z.string().default("武器"),
+  artifactLabel: z.string().default("圣遗物"),
+  materialLabel: z.string().default("材料"),
+});
+export type GameTerminology = z.infer<typeof gameTerminologySchema>;
+

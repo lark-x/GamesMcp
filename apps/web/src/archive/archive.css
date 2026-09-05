@@ -902,6 +902,149 @@
   font-size: 12px;
 }
 
+/* Story Ruby Furigana */
+ruby.story-ruby {
+  ruby-align: center;
+  ruby-position: over;
+  padding: 0 1px;
+}
+
+ruby.story-ruby rt.story-rt {
+  font-size: 0.6em;
+  line-height: 1;
+  color: var(--archive-accent, #c99c47);
+  user-select: none;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+:root[data-theme="dark"] ruby.story-ruby rt.story-rt {
+  color: #e5b95c;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Story Reader Option A Controls (Traveler Preferences Bar) */
+.story-reader-pref-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--archive-surface-alt);
+  border: 1px solid var(--archive-border);
+}
+
+.story-pref-controls-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.story-pref-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.story-pref-label {
+  color: var(--archive-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.story-gender-segmented {
+  display: inline-flex;
+  border-radius: 6px;
+  padding: 2px;
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-border);
+  gap: 2px;
+}
+
+.story-gender-btn {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--archive-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.story-gender-btn:hover {
+  color: var(--archive-text);
+  background: var(--archive-surface-hover);
+}
+
+.story-gender-btn.is-active {
+  background: var(--archive-accent);
+  color: var(--archive-accent-foreground);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.story-nickname-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.story-nickname-input {
+  border: 1px solid var(--archive-border);
+  border-radius: 6px;
+  background: var(--archive-surface);
+  color: var(--archive-text);
+  font-size: 12px;
+  padding: 4px 22px 4px 8px;
+  width: 110px;
+  transition: all 0.15s ease;
+}
+
+.story-nickname-input:focus {
+  outline: none;
+  border-color: var(--archive-accent);
+  box-shadow: 0 0 0 2px rgba(201, 156, 71, 0.2);
+  width: 140px;
+}
+
+.story-nickname-reset-btn {
+  position: absolute;
+  right: 4px;
+  background: none;
+  border: none;
+  color: var(--archive-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 50%;
+}
+
+.story-nickname-reset-btn:hover {
+  color: var(--archive-text);
+}
+
+.story-pref-hint {
+  font-size: 11px;
+  color: var(--archive-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .story-subquest-row {
   display: flex;
   flex-wrap: wrap;
@@ -930,57 +1073,170 @@
   background: var(--archive-accent);
 }
 
-/* Option B: Structured Prose Nodes */
+/* Option A: Immersive Script & Novel Reader Layout (沉浸式剧本纪行模式) */
 .story-prose {
-  margin-top: 18px;
+  margin-top: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  max-width: 860px;
 }
 
 .story-node {
-  border-radius: 8px;
-  transition: all 0.15s ease;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+  position: relative;
 }
 
-.story-node-card {
-  padding: 12px 16px;
-  border-radius: 8px;
+.story-node:hover {
   background: var(--archive-surface-alt);
-  border: 1px solid var(--archive-border-subtle);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background 0.15s ease;
 }
 
-.story-node-card:hover {
-  border-color: var(--archive-border-hover);
-  background: var(--archive-surface);
-}
-
-.story-node.is-highlight .story-node-card,
-.story-node.is-highlight .story-narration-card,
-.story-node.is-highlight .story-choice-card {
-  border-color: var(--badge-5star);
+.story-node.is-highlight {
   background: var(--badge-5star-bg);
   box-shadow: 0 0 0 1px var(--badge-5star);
 }
 
-.story-node-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
+/* Script Dialogue Row */
+.story-script-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: 6px;
 }
 
-.story-speaker {
-  margin: 0 !important;
-  color: var(--archive-text);
-  font-size: 12px !important;
-  font-weight: 700;
+@media (max-width: 640px) {
+  .story-script-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+.story-script-speaker-col {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .story-script-speaker-col {
+    justify-content: flex-start;
+  }
+}
+
+/* Speaker Badge Column */
+.story-speaker-badge {
   display: inline-flex;
   align-items: center;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  background: var(--archive-surface);
+  color: var(--archive-text);
+  border: 1px solid var(--archive-border-subtle);
+  user-select: none;
+}
+
+/* Special character badges */
+.story-speaker-badge.speaker-paimon {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-paimon {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.story-speaker-badge.speaker-traveler {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+  border-color: rgba(13, 148, 136, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-traveler {
+  background: rgba(13, 148, 136, 0.2);
+  color: #2dd4bf;
+  border-color: rgba(13, 148, 136, 0.45);
+}
+
+/* Star Rail Astral Express Badges */
+.story-speaker-badge.speaker-trailblazer {
+  background: rgba(100, 116, 139, 0.14);
+  color: #334155;
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-trailblazer {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.story-speaker-badge.speaker-march7th {
+  background: rgba(236, 72, 153, 0.12);
+  color: #db2777;
+  border-color: rgba(236, 72, 153, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-march7th {
+  background: rgba(236, 72, 153, 0.18);
+  color: #f472b6;
+  border-color: rgba(236, 72, 153, 0.45);
+}
+
+.story-speaker-badge.speaker-danheng {
+  background: rgba(6, 182, 212, 0.12);
+  color: #0891b2;
+  border-color: rgba(6, 182, 212, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-danheng {
+  background: rgba(6, 182, 212, 0.18);
+  color: #22d3ee;
+  border-color: rgba(6, 182, 212, 0.45);
+}
+
+.story-speaker-badge.speaker-pompom {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-pompom {
+  background: rgba(220, 38, 38, 0.18);
+  color: #f87171;
+  border-color: rgba(220, 38, 38, 0.45);
+}
+
+.story-speaker-badge.speaker-himeko {
+  background: rgba(190, 18, 60, 0.12);
+  color: #be123c;
+  border-color: rgba(190, 18, 60, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-himeko {
+  background: rgba(190, 18, 60, 0.18);
+  color: #fb7185;
+  border-color: rgba(190, 18, 60, 0.45);
+}
+
+.story-speaker-badge.speaker-welt {
+  background: rgba(180, 83, 9, 0.12);
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.35);
+}
+
+:root[data-theme="dark"] .story-speaker-badge.speaker-welt {
+  background: rgba(180, 83, 9, 0.18);
+  color: #fbbf24;
+  border-color: rgba(180, 83, 9, 0.45);
 }
 
 .story-speaker-empty {
@@ -988,109 +1244,212 @@
   width: 1px;
 }
 
-.story-node-id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  color: var(--archive-muted);
-  opacity: 0.55;
-  transition: opacity 0.15s ease;
+.story-script-body-col {
+  flex: 1;
+  min-width: 0;
 }
 
-.story-node:hover .story-node-id {
-  opacity: 1;
-}
-
-.story-dialogue {
-  margin: 0 !important;
-  max-width: 76ch;
-  line-height: 1.75;
-  font-size: 14px;
+/* Dialogue Text */
+.story-script-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.8;
   color: var(--archive-text);
+  word-break: break-word;
 }
 
-.story-narration-card {
-  padding: 10px 14px;
-  border-left: 3px solid var(--archive-muted);
+/* Node ID (Subtle, only shows on hover) */
+.story-script-node-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--archive-muted);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  user-select: all;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.story-node:hover .story-script-node-id,
+.story-script-choice:hover .story-script-node-id,
+.story-script-objective:hover .story-script-node-id,
+.story-script-system:hover .story-script-node-id,
+.story-script-narration:hover .story-script-node-id {
+  opacity: 0.65;
+}
+
+/* Narration / Stage direction: Novel format */
+.story-script-narration {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 16px;
+  margin: 4px 0 4px 24px;
+  border-left: 3px solid var(--archive-border);
   background: transparent;
-  margin: 4px 0;
   border-radius: 0 6px 6px 0;
 }
 
-.story-narration-tag {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--archive-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+@media (max-width: 640px) {
+  .story-script-narration {
+    margin-left: 0;
+  }
 }
 
-.story-narration {
-  margin: 4px 0 0 !important;
-  color: var(--archive-text-secondary) !important;
-  font-size: 13px !important;
+.story-narration-glyph {
+  color: var(--archive-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  opacity: 0.7;
+  user-select: none;
+}
+
+.story-narration-content {
+  flex: 1;
+}
+
+.story-narration-text {
+  margin: 0;
+  font-size: 13.5px;
   font-style: italic;
-  line-height: 1.65;
+  line-height: 1.75;
+  color: var(--archive-text-secondary);
 }
 
-.story-choice-card {
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px dashed var(--archive-border);
-  background: var(--archive-surface-alt);
-  margin: 6px 0;
-}
-
-.story-choice {
-  margin: 4px 0 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--archive-text);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.story-choice-label {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--archive-muted);
-  letter-spacing: 0.05em;
-}
-
-.story-objective-card,
-.story-system-card {
+/* Player Choice Option: In-game styled choice */
+.story-script-choice {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
+  gap: 10px;
+  padding: 8px 14px;
+  margin: 4px 0 4px 48px;
   border-radius: 6px;
-  background: var(--archive-surface-alt);
-  border: 1px solid var(--archive-border-subtle);
+  border: 1px solid var(--archive-border);
+  background: var(--archive-surface);
+  transition: all 0.15s ease;
+}
+
+@media (max-width: 640px) {
+  .story-script-choice {
+    margin-left: 12px;
+  }
+}
+
+.story-script-choice:hover {
+  border-color: var(--badge-5star);
+  background: var(--badge-5star-bg);
+}
+
+.story-choice-diamond {
+  color: #d97706;
   font-size: 12px;
 }
 
-.story-objective {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0;
+:root[data-theme="dark"] .story-choice-diamond {
+  color: #fbbf24;
 }
 
-.story-objective-label {
-  flex: none;
-  border: 1px solid var(--archive-border);
+.story-choice-prefix {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--archive-muted);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.story-choice-text {
+  font-size: 13.5px;
+  color: var(--archive-text);
+  line-height: 1.6;
+  flex: 1;
+}
+
+/* Objective Milestone */
+.story-script-objective {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin: 6px 0 6px 24px;
+  border-radius: 6px;
+  background: var(--archive-surface-alt);
+  border: 1px dashed var(--archive-border);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .story-script-objective {
+    margin-left: 0;
+  }
+}
+
+.story-objective-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--archive-border);
+  color: var(--archive-text);
+  white-space: nowrap;
+}
+
+.story-objective-text {
+  color: var(--archive-text);
+  line-height: 1.5;
+  flex: 1;
+}
+
+/* System notice */
+.story-script-system {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 4px 0 4px 24px;
   border-radius: 4px;
   background: var(--archive-surface);
+  border: 1px solid var(--archive-border-subtle);
+  font-size: 12px;
   color: var(--archive-muted);
-  padding: 1px 6px;
-  font-size: 10px;
 }
 
-.story-system small {
-  display: block;
-  color: var(--archive-muted);
-  font-size: 10px;
-  margin-bottom: 2px;
+@media (max-width: 640px) {
+  .story-script-system {
+    margin-left: 0;
+  }
+}
+
+.story-system-icon {
+  font-size: 12px;
+}
+
+.story-system-text {
+  flex: 1;
+}
+
+.story-active-subquest-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  margin-top: 10px;
+  border-radius: 6px;
+  background: var(--archive-surface-alt);
+  border-left: 3px solid var(--archive-accent);
+  font-size: 13px;
+  color: var(--archive-text);
+}
+
+.story-inline-link {
+  background: transparent;
+  border: none;
+  color: var(--archive-accent);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
 }
 
 .story-reader-footer {
@@ -2190,3 +2549,144 @@
     max-height: none !important;
   }
 }
+
+/* 14. Star Rail Readiness & World Badges --------------------------------- */
+.starrail-readiness-card {
+  margin: 24px auto;
+  max-width: 760px;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.04) 0%, rgba(56, 189, 248, 0.06) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="dark"] .starrail-readiness-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.7) 0%, rgba(14, 116, 144, 0.15) 100%);
+  border-color: rgba(56, 189, 248, 0.3);
+  box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.35);
+}
+
+.starrail-readiness-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0284c7;
+  background: rgba(14, 165, 233, 0.12);
+  padding: 4px 10px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+  letter-spacing: 0.03em;
+}
+
+:root[data-theme="dark"] .starrail-readiness-badge {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.16);
+}
+
+.starrail-readiness-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--archive-text);
+  margin: 0 0 10px;
+}
+
+.starrail-readiness-desc {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--archive-text-secondary);
+  margin: 0 0 20px;
+}
+
+.starrail-worlds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.starrail-world-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 8px;
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-border);
+  border-radius: 8px;
+  text-align: center;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.starrail-world-chip:hover {
+  transform: translateY(-2px);
+  border-color: #38bdf8;
+}
+
+.starrail-world-icon {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.starrail-world-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--archive-text);
+}
+
+.starrail-world-sub {
+  font-size: 11px;
+  color: var(--archive-muted);
+  margin-top: 2px;
+}
+
+.starrail-readiness-info {
+  background: rgba(0, 0, 0, 0.03);
+  border-left: 3px solid #38bdf8;
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--archive-text-secondary);
+  margin-bottom: 20px;
+}
+
+:root[data-theme="dark"] .starrail-readiness-info {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.starrail-readiness-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.starrail-action-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--archive-border);
+  background: var(--archive-surface);
+  color: var(--archive-text);
+  transition: all 0.15s;
+}
+
+.starrail-action-btn:hover {
+  border-color: #38bdf8;
+  color: #0284c7;
+}
+
+.starrail-action-btn.primary {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+.starrail-action-btn.primary:hover {
+  background: #0369a1;
+}
+

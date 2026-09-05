@@ -21,11 +21,17 @@ const inputPaths = {
   textMap: "TextMap/TextMap_MediumCHS.json",
   textMapFull: "TextMap/TextMapCHS.json",
   avatar: "ExcelBinOutput/AvatarExcelConfigData.json",
+  avatarPromote: "ExcelBinOutput/AvatarPromoteExcelConfigData.json",
+  avatarSkill: "ExcelBinOutput/AvatarSkillExcelConfigData.json",
+  avatarSkillDepot: "ExcelBinOutput/AvatarSkillDepotExcelConfigData.json",
+  proudSkill: "ExcelBinOutput/ProudSkillExcelConfigData.json",
   weapon: "ExcelBinOutput/WeaponExcelConfigData.json",
+  weaponPromote: "ExcelBinOutput/WeaponPromoteExcelConfigData.json",
   reliquarySet: "ExcelBinOutput/ReliquarySetExcelConfigData.json",
   reliquaryAffix: "ExcelBinOutput/ReliquaryAffixExcelConfigData.json",
   reliquary: "ExcelBinOutput/ReliquaryExcelConfigData.json",
   material: "ExcelBinOutput/MaterialExcelConfigData.json",
+  materialSource: "ExcelBinOutput/MaterialSourceDataExcelConfigData.json",
   achievementGoal: "ExcelBinOutput/AchievementGoalExcelConfigData.json",
   achievement: "ExcelBinOutput/AchievementExcelConfigData.json",
   monster: "ExcelBinOutput/MonsterExcelConfigData.json",
@@ -237,13 +243,34 @@ function textMapValueWithFallback(
 }
 
 async function readJson<T>(upstreamDir: string, relativePath: string): Promise<SourceFile<T>> {
-  const raw = await readFile(resolve(upstreamDir, relativePath), "utf8");
-  return {
-    relativePath,
-    raw,
-    value: JSON.parse(raw) as T,
-    fileHash: sha256(raw),
-  };
+  try {
+    const raw = await readFile(resolve(upstreamDir, relativePath), "utf8");
+    return {
+      relativePath,
+      raw,
+      value: JSON.parse(raw) as T,
+      fileHash: sha256(raw),
+    };
+  } catch (err: unknown) {
+    const isEnrichment = [
+      "AvatarPromoteExcelConfigData.json",
+      "AvatarSkillExcelConfigData.json",
+      "AvatarSkillDepotExcelConfigData.json",
+      "ProudSkillExcelConfigData.json",
+      "WeaponPromoteExcelConfigData.json",
+      "MaterialSourceDataExcelConfigData.json",
+    ].some((f) => relativePath.endsWith(f));
+    if (isEnrichment && (err as { code?: string })?.code === "ENOENT") {
+      const raw = "[]";
+      return {
+        relativePath,
+        raw,
+        value: [] as T,
+        fileHash: sha256(raw),
+      };
+    }
+    throw err;
+  }
 }
 
 async function loadInputs(upstreamDir: string): Promise<LoadedInputs> {
@@ -321,15 +348,80 @@ function rarity(value: unknown): number | null {
   return null;
 }
 
-function materialCategory(value: unknown): GenshinMaterial["category"] {
-  const normalized = textValue(value)?.toLowerCase() ?? "";
-  if (normalized.includes("avatar") || normalized.includes("character"))
+function resolveMaterialCategory(
+  materialType: unknown,
+  itemType: unknown,
+  typeDesc?: string | null,
+): GenshinMaterial["category"] {
+  const desc = typeDesc?.trim() ?? "";
+  if (desc.includes("区域特产")) return "local_specialty";
+  if (
+    desc.includes("角色培养素材") ||
+    desc.includes("角色天赋素材") ||
+    desc.includes("角色突破素材") ||
+    desc.includes("角色与武器培养素材") ||
+    desc.includes("角色经验素材") ||
+    desc.includes("命之座") ||
+    desc.includes("角色解锁") ||
+    desc.includes("角色成长") ||
+    desc.includes("好感成长")
+  ) {
     return "character_development";
-  if (normalized.includes("weapon")) return "weapon_development";
-  if (normalized.includes("currency")) return "currency";
-  if (normalized.includes("food")) return "cooking";
-  if (normalized.includes("quest")) return "quest_item";
-  if (normalized.includes("furniture")) return "furnishing";
+  }
+  if (
+    desc.includes("武器突破素材") ||
+    desc.includes("武器强化素材") ||
+    desc.includes("精炼材料")
+  ) {
+    return "weapon_development";
+  }
+  if (
+    desc.includes("食物") ||
+    desc.includes("食谱") ||
+    desc.includes("食材") ||
+    desc.includes("药剂") ||
+    desc.includes("鱼饵")
+  ) {
+    return "cooking";
+  }
+  if (desc.includes("矿石") || desc.includes("锻造")) {
+    return "forging";
+  }
+  if (desc.includes("摆设") || desc.includes("家具")) {
+    return "furnishing";
+  }
+  if (
+    desc.includes("任务") ||
+    desc.includes("道具") ||
+    desc.includes("凭证") ||
+    desc.includes("贵重")
+  ) {
+    return "quest_item";
+  }
+  if (desc.includes("货币") || desc.includes("兑换券") || desc.includes("祈愿") || desc.includes("徽印")) {
+    return "currency";
+  }
+  if (desc.includes("消耗品") || desc.includes("素材") || desc.includes("礼包") || desc.includes("宝箱")) {
+    return "consumable";
+  }
+
+  // Fallback to materialType / itemType enum
+  const rawType = String(materialType ?? itemType ?? "").toUpperCase();
+  if (
+    rawType.includes("TALENT") ||
+    rawType.includes("AVATAR") ||
+    rawType.includes("ELEM_GEM")
+  ) {
+    return "character_development";
+  }
+  if (rawType.includes("WEAPON")) return "weapon_development";
+  if (rawType.includes("FOOD")) return "cooking";
+  if (rawType.includes("WOOD")) return "forging";
+  if (rawType.includes("FURNITURE")) return "furnishing";
+  if (rawType.includes("QUEST")) return "quest_item";
+  if (rawType.includes("CURRENCY") || rawType.includes("EXCHANGE")) return "currency";
+  if (rawType.includes("CONSUME")) return "consumable";
+
   return "other";
 }
 
@@ -516,6 +608,128 @@ export async function convertStructuredAnimeGameData(
     ];
   });
 
+  // 1. Build Material Sources Map
+  const sourcesMap = new Map<string, string[]>();
+  for (const s of asArray(inputs.materialSource.value)) {
+    const matId = idText(s.id);
+    if (!matId) continue;
+    if (Array.isArray(s.textList)) {
+      const texts = s.textList
+        .map((h: unknown) => textMapValue(textMap, h))
+        .filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+      if (texts.length > 0) {
+        sourcesMap.set(matId, texts);
+      }
+    }
+  }
+
+  // 2. Build Material Usages (usedBy) Map
+  const usedByMap = new Map<string, Set<string>>();
+  function addUsage(matIdRaw: unknown, user: string) {
+    const matId = idText(matIdRaw);
+    if (!matId || !user) return;
+    let set = usedByMap.get(matId);
+    if (!set) {
+      set = new Set();
+      usedByMap.set(matId, set);
+    }
+    set.add(user);
+  }
+
+  // 2.1 Character Ascension Usages
+  const avatarPromoteMap = new Map<string, string>();
+  for (const a of asArray(inputs.avatar.value)) {
+    const name = textMapValue(textMap, a.nameTextMapHash);
+    if (!name || name.includes("测试") || name.includes("废弃") || name.includes("【弃用】") || name.startsWith("test_")) continue;
+    const promoteId = idText(a.avatarPromoteId);
+    if (promoteId) {
+      avatarPromoteMap.set(promoteId, name);
+    }
+  }
+  for (const ap of asArray(inputs.avatarPromote.value)) {
+    const promoteId = idText(ap.avatarPromoteId);
+    const charName = promoteId ? avatarPromoteMap.get(promoteId) : undefined;
+    if (charName && Array.isArray(ap.costItems)) {
+      for (const item of ap.costItems as JsonObject[]) {
+        if (item.id) addUsage(item.id, charName);
+      }
+    }
+  }
+
+  // 2.2 Character Talent Usages
+  const depotToAvatar = new Map<string, string>();
+  for (const a of asArray(inputs.avatar.value)) {
+    const name = textMapValue(textMap, a.nameTextMapHash);
+    if (!name || name.includes("测试") || name.includes("废弃") || name.includes("【弃用】") || name.startsWith("test_")) continue;
+    const skillDepotId = idText(a.skillDepotId);
+    if (skillDepotId) depotToAvatar.set(skillDepotId, name);
+    if (Array.isArray(a.candSkillDepotIds)) {
+      for (const d of a.candSkillDepotIds) {
+        const dId = idText(d);
+        if (dId) depotToAvatar.set(dId, name);
+      }
+    }
+  }
+  const skillToProudGroup = new Map<string, string>();
+  for (const s of asArray(inputs.avatarSkill.value)) {
+    const sId = idText(s.id);
+    const pGroup = idText(s.proudSkillGroupId);
+    if (sId && pGroup) skillToProudGroup.set(sId, pGroup);
+  }
+  const proudGroupToAvatars = new Map<string, Set<string>>();
+  for (const d of asArray(inputs.avatarSkillDepot.value)) {
+    const dId = idText(d.id);
+    const avatarName = dId ? depotToAvatar.get(dId) : undefined;
+    if (!avatarName) continue;
+    const skillsList = Array.isArray(d.skills) ? d.skills : [];
+    const subSkillsList = Array.isArray(d.subSkills) ? d.subSkills : [];
+    const allSkillIds = [...skillsList, d.energySkill, ...subSkillsList].map(idText).filter(Boolean);
+    for (const sid of allSkillIds) {
+      if (!sid) continue;
+      const groupId = skillToProudGroup.get(sid);
+      if (groupId) {
+        let set = proudGroupToAvatars.get(groupId);
+        if (!set) {
+          set = new Set();
+          proudGroupToAvatars.set(groupId, set);
+        }
+        set.add(avatarName);
+      }
+    }
+  }
+  for (const p of asArray(inputs.proudSkill.value)) {
+    const pGroupId = idText(p.proudSkillGroupId);
+    const avatarNames = pGroupId ? proudGroupToAvatars.get(pGroupId) : undefined;
+    if (avatarNames && Array.isArray(p.costItems)) {
+      for (const item of p.costItems as JsonObject[]) {
+        if (item.id) {
+          for (const name of avatarNames) {
+            addUsage(item.id, name);
+          }
+        }
+      }
+    }
+  }
+
+  // 2.3 Weapon Ascension Usages
+  const weaponPromoteMap = new Map<string, string>();
+  for (const w of asArray(inputs.weapon.value)) {
+    const name = textMapValue(textMap, w.nameTextMapHash);
+    const wpId = idText(w.weaponPromoteId);
+    if (name && wpId) {
+      weaponPromoteMap.set(wpId, name);
+    }
+  }
+  for (const wp of asArray(inputs.weaponPromote.value)) {
+    const wpId = idText(wp.weaponPromoteId);
+    const weaponName = wpId ? weaponPromoteMap.get(wpId) : undefined;
+    if (weaponName && Array.isArray(wp.costItems)) {
+      for (const item of wp.costItems as JsonObject[]) {
+        if (item.id) addUsage(item.id, weaponName);
+      }
+    }
+  }
+
   const materials = asArray(inputs.material.value).flatMap((row): GenshinMaterial[] => {
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.nameTextMapHash);
@@ -527,10 +741,32 @@ export async function convertStructuredAnimeGameData(
       });
       return [];
     }
+
+    if (
+      name.startsWith("$") ||
+      name.startsWith("test_") ||
+      name.startsWith("DEBUG_") ||
+      name.startsWith("TEMP_") ||
+      name.includes("测试用") ||
+      name.includes("【弃用】")
+    ) {
+      excluded.push({
+        kind: "materials",
+        upstreamId,
+        reason: "internal_or_placeholder",
+      });
+      return [];
+    }
+
+    const typeDesc = textMapValue(textMap, row.typeDescTextMapHash);
+    const category = resolveMaterialCategory(row.materialType, row.itemType, typeDesc);
+    const sources = sourcesMap.get(upstreamId) ?? [];
+    const usedBy = Array.from(usedByMap.get(upstreamId) ?? []);
+
     return [
       {
         ...baseRecord(options, "material", upstreamId, inputs.material, row, name),
-        category: materialCategory(row.materialType ?? row.itemType),
+        category,
         rarity: rarity(row.rankLevel),
         description: [
           textMapValue(textMap, row.descTextMapHash),
@@ -538,8 +774,8 @@ export async function convertStructuredAnimeGameData(
         ]
           .filter(Boolean)
           .join("\n\n"),
-        sources: [],
-        usedBy: [],
+        sources,
+        usedBy,
       },
     ];
   });

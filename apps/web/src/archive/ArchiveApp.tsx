@@ -69,6 +69,7 @@ export function ArchiveApp({
           <Suspense fallback={<ArchiveLoading label="加载剧情档案中..." />}>
             <StoryBrowser
               gameId={gameId}
+              gameSlug={currentGame?.slug}
               gameName={gameName}
               revisionLabel={revisionLabel}
               selectedRevision={selectedRevision}
@@ -109,6 +110,7 @@ export function ArchiveApp({
           <Suspense fallback={<ArchiveLoading label="加载游戏资料中..." />}>
             <DataBrowser
               gameId={gameId}
+              gameSlug={currentGame?.slug}
               dataKind={route.dataKind}
               selectedRevision={selectedRevision}
               initialItemId={route.itemId}

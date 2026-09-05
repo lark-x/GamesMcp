@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api.js";
+import { isStarRailGame } from "../../shared.js";
 import { ArchiveAvatar } from "../ArchiveAvatar.js";
 import { ArchiveGlobalNav } from "../ArchiveGlobalNav.js";
 import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveInspector.js";
@@ -8,8 +9,8 @@ import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js"
 import type { DataKind } from "../archive.types.js";
 import type { DataItemSummary } from "./data.types.js";
 
-function getTerm(gameId: string, kind: DataKind): string {
-  const isStarRail = gameId.toLowerCase().includes("starrail");
+function getTerm(gameSlugOrId: string | undefined, kind: DataKind): string {
+  const isStarRail = isStarRailGame(gameSlugOrId);
   switch (kind) {
     case "characters":
       return "角色";
@@ -30,6 +31,7 @@ type UnknownRecord = Record<string, unknown>;
 
 export function DataBrowser({
   gameId,
+  gameSlug,
   dataKind,
   selectedRevision,
   initialItemId,
@@ -37,6 +39,7 @@ export function DataBrowser({
   onSelectItem,
 }: {
   gameId: string;
+  gameSlug?: string;
   dataKind: DataKind;
   selectedRevision?: string;
   initialItemId?: string;
@@ -49,7 +52,8 @@ export function DataBrowser({
   const [searchQuery, setSearchQuery] = useState("");
   const [activeItemId, setActiveItemId] = useState<string | undefined>(initialItemId);
 
-  const term = getTerm(gameId, dataKind);
+  const isStarRail = isStarRailGame(gameSlug || gameId);
+  const term = getTerm(gameSlug || gameId, dataKind);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -58,17 +62,9 @@ export function DataBrowser({
       const params = new URLSearchParams({ limit: "100" });
       if (selectedRevision) params.set("revisionId", selectedRevision);
 
-      let res: UnknownRecord = {};
-      try {
-        res = (await apiFetch(
-          `/api/games/${encodeURIComponent(gameId)}/codex/${dataKind}?${params.toString()}`,
-        )) as UnknownRecord;
-      } catch {
-        // Fallback to genshin struct route if codex alias is not ready
-        res = (await apiFetch(
-          `/api/games/${encodeURIComponent(gameId)}/genshin/${dataKind}?${params.toString()}`,
-        )) as UnknownRecord;
-      }
+      const res = (await apiFetch(
+        `/api/games/${encodeURIComponent(gameId)}/codex/${dataKind}?${params.toString()}`,
+      )) as UnknownRecord;
 
       let parsed: DataItemSummary[] = [];
       if (dataKind === "characters" && Array.isArray(res.characters)) {
@@ -183,8 +179,8 @@ export function DataBrowser({
   const categoryTabs: { key: DataKind | "materials"; label: string }[] = [
     { key: "characters", label: "角色" },
     { key: "materials", label: "材料" },
-    { key: "weapons", label: getTerm(gameId, "weapons") },
-    { key: "artifacts", label: getTerm(gameId, "artifacts") },
+    { key: "weapons", label: getTerm(gameSlug || gameId, "weapons") },
+    { key: "artifacts", label: getTerm(gameSlug || gameId, "artifacts") },
     { key: "enemies", label: "敌人" },
     { key: "achievements", label: "成就" },
   ];
@@ -294,25 +290,25 @@ export function DataBrowser({
                 <div className="data-article-props">
                   {activeItem.element && (
                     <div className="data-prop-pill">
-                      <span className="data-prop-k">元素/属性</span>
+                      <span className="data-prop-k">{isStarRail ? "战斗属性" : "元素/属性"}</span>
                       <span className="data-prop-v">{activeItem.element}</span>
                     </div>
                   )}
                   {activeItem.weaponType && (
                     <div className="data-prop-pill">
-                      <span className="data-prop-k">类型</span>
+                      <span className="data-prop-k">{isStarRail ? "命途倾向" : "武器类型"}</span>
                       <span className="data-prop-v">{activeItem.weaponType}</span>
                     </div>
                   )}
                   {activeItem.region && (
                     <div className="data-prop-pill">
-                      <span className="data-prop-k">地区/势力</span>
+                      <span className="data-prop-k">{isStarRail ? "所属世界/区域" : "地区/势力"}</span>
                       <span className="data-prop-v">{activeItem.region}</span>
                     </div>
                   )}
                   {activeItem.affiliation && (
                     <div className="data-prop-pill">
-                      <span className="data-prop-k">归属</span>
+                      <span className="data-prop-k">{isStarRail ? "派系归属" : "归属"}</span>
                       <span className="data-prop-v">{activeItem.affiliation}</span>
                     </div>
                   )}

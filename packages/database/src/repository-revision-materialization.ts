@@ -33,6 +33,7 @@ import {
 } from "./schema.js";
 import {
   asRecord,
+  insertInChunks,
   normalize,
   recordLocale,
   recordSegments,
@@ -211,7 +212,9 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       ).values(),
     ];
     if (entityIds.length) {
-      await tx.insert(entityRevisionMaterializations).values(
+      await insertInChunks(
+        tx,
+        entityRevisionMaterializations,
         uniqueCandidates.map((candidateValue) => ({
           revisionId,
           entityId: entityIdBySourceKey.get(candidateValue.sourceKey)!,
@@ -381,7 +384,9 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
             })),
           );
         if (record.quest.dialogueNodes.length)
-          await tx.insert(questDialogueNodes).values(
+          await insertInChunks(
+            tx,
+            questDialogueNodes,
             record.quest.dialogueNodes.map((node, index) => ({
               documentId,
               revisionId,
@@ -418,7 +423,9 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
           });
         }
         if (record.quest.dialogueEdges.length)
-          await tx.insert(questDialogueEdges).values(
+          await insertInChunks(
+            tx,
+            questDialogueEdges,
             [
               ...new Map(
                 record.quest.dialogueEdges.map((edge) => [
@@ -535,7 +542,8 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
     const uniqueTextBindingRows = [
       ...new Map(textBindingRows.map((row) => [row.id ?? "", row])).values(),
     ];
-    if (uniqueTextBindingRows.length) await tx.insert(textBindings).values(uniqueTextBindingRows);
+    if (uniqueTextBindingRows.length)
+      await insertInChunks(tx, textBindings, uniqueTextBindingRows);
 
     const expectedDocuments = records.filter(
       (record) =>

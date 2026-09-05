@@ -26,6 +26,26 @@ try {
       ])
       .onConflictDoNothing();
   }
+
+  const [starRail] = await db
+    .insert(games)
+    .values({ slug: "honkai-star-rail", name: "崩坏：星穹铁道", status: "active" })
+    .onConflictDoUpdate({
+      target: games.slug,
+      set: { name: "崩坏：星穹铁道", status: "active", updatedAt: new Date() },
+    })
+    .returning();
+  if (starRail) {
+    await db
+      .insert(gameCapabilities)
+      .values([
+        { gameId: starRail.id, capability: "entity_search", enabled: true },
+        { gameId: starRail.id, capability: "lore_search", enabled: true },
+        { gameId: starRail.id, capability: "relationships", enabled: true },
+        { gameId: starRail.id, capability: "evidence_qa", enabled: true },
+      ])
+      .onConflictDoNothing();
+  }
   console.log("Seed complete.");
 } finally {
   await pool.end();

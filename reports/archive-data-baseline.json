@@ -1,0 +1,56 @@
+{
+  "generatedAt": "2026-09-04T14:54:49.055Z",
+  "baselineCommit": "8a105e63eddf78c8f35b6f2bc969a99d0d590bda",
+  "environment": {
+    "genshinUpstream": "data/upstream/AnimeGameData-current",
+    "starrailDataDir": "data/fixtures/starrail"
+  },
+  "genshin": {
+    "quests": {
+      "total": 4372,
+      "public": 3636,
+      "withRegion": 800,
+      "withReadableTitle": 4246,
+      "withDialogueNodes": 1225,
+      "withDocumentBody": 4246,
+      "withAnyReadableBody": 4246,
+      "unresolvedRegions": 3572
+    },
+    "materials": {
+      "totalRaw": 10404,
+      "public": 10318,
+      "otherCategory": 4624,
+      "otherCategoryRatio": "44.4%",
+      "withDescription": 9997,
+      "withSources": 0,
+      "withUsedBy": 0,
+      "internalLike": 86,
+      "categoryBreakdown": {
+        "other": 4624,
+        "character_development": 747,
+        "quest_item": 2784,
+        "cooking": 752,
+        "weapon_development": 29,
+        "furnishing": 1468
+      }
+    }
+  },
+  "starrail": {
+    "missions": {
+      "total": 1,
+      "withWorldId": 1,
+      "withChapterId": 0,
+      "withReadableWorld": 1,
+      "withReadableChapter": 0,
+      "withNarrativeText": 1,
+      "objectiveOnly": 0
+    },
+    "materials": {
+      "total": 1,
+      "public": 1,
+      "withDescription": 1,
+      "withSources": 0,
+      "withUsedBy": 0
+    }
+  }
+}

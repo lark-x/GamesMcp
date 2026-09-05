@@ -519,7 +519,14 @@ export function recordSegments(
 
 export function questKeyFromInput(value: string): string {
   const trimmed = value.trim();
-  if (trimmed.startsWith("quest/")) return trimmed.split("/locale/")[0] ?? trimmed;
+  if (
+    trimmed.startsWith("quest/") ||
+    trimmed.startsWith("mission/") ||
+    trimmed.startsWith("story/") ||
+    trimmed.startsWith("sr_")
+  ) {
+    return trimmed.split("/locale/")[0] ?? trimmed;
+  }
   return `quest/${trimmed}`;
 }
 
@@ -568,7 +575,7 @@ export function decodeQuestCursor(value: string | undefined) {
   return undefined;
 }
 
-export function questMetadata(row: typeof documents.$inferSelect): Partial<QuestRecordPayload> & {
+export function questMetadata(row: { metadata: unknown }): Partial<QuestRecordPayload> & {
   completeness?: QuestCompleteness;
 } {
   const metadata = asRecord(row.metadata);
@@ -603,3 +610,18 @@ export function publicDocumentCondition() {
     OR ${publicQuestCondition()}
   )`;
 }
+
+export async function insertInChunks<T>(
+  dbOrTx: { insert: (table: any) => { values: (rows: any[]) => Promise<any> } },
+  table: any,
+  rows: T[],
+  chunkSize = 200,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    if (chunk.length > 0) {
+      await dbOrTx.insert(table).values(chunk);
+    }
+  }
+}
+

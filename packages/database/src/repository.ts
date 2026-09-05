@@ -7,6 +7,7 @@ import type {
   RelationshipPredicate,
   SearchRequest,
   SearchResult,
+  StoryCatalog,
 } from "@gip/contracts";
 import {
   type ArchiveHome,
@@ -349,6 +350,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
 
   async getQuest(gameId: string, request: GetQuestRequest): Promise<QuestDialoguePage | null> {
     return this.readModels.getQuest(gameId, request);
+  }
+
+  async getStoryCatalog(gameId: string, revisionId?: string): Promise<StoryCatalog> {
+    return this.readModels.getStoryCatalog(gameId, revisionId);
   }
 
   async vectorSearch(

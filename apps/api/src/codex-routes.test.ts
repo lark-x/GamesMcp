@@ -162,4 +162,32 @@ describe("Codex materials API", () => {
     expect(body.materials[0].stableId).toBe("material/trace-destiny");
     await app.close();
   });
+
+  it("returns appropriate game terminology for Genshin and StarRail", async () => {
+    const app = createTestApp();
+    const genshinResp = await app.inject({
+      method: "GET",
+      url: `/api/games/${genshinGameId}/codex/terminology`,
+    });
+    expect(genshinResp.statusCode).toBe(200);
+    expect(genshinResp.json().terminology).toEqual({
+      characterLabel: "角色",
+      weaponLabel: "武器",
+      artifactLabel: "圣遗物",
+      materialLabel: "材料",
+    });
+
+    const starRailResp = await app.inject({
+      method: "GET",
+      url: `/api/games/${starRailGameId}/codex/terminology`,
+    });
+    expect(starRailResp.statusCode).toBe(200);
+    expect(starRailResp.json().terminology).toEqual({
+      characterLabel: "角色",
+      weaponLabel: "光锥",
+      artifactLabel: "遗器",
+      materialLabel: "材料",
+    });
+    await app.close();
+  });
 });

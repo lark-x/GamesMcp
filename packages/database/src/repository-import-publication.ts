@@ -39,6 +39,7 @@ import {
   sources,
 } from "./schema.js";
 import {
+  insertInChunks,
   normalize,
   recordLocale,
   recordSegments,
@@ -804,7 +805,9 @@ export async function materializeStructuredRecords(
 ): Promise<void> {
   if (!records) return;
   if (records.characters?.length)
-    await db.insert(genshinCharacters).values(
+    await insertInChunks(
+      db,
+      genshinCharacters,
       records.characters.map((record) => ({
         ...structuredBase(gameId, revisionId, "character", record),
         title: record.title,
@@ -820,7 +823,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.weapons?.length)
-    await db.insert(genshinWeapons).values(
+    await insertInChunks(
+      db,
+      genshinWeapons,
       records.weapons.map((record) => ({
         ...structuredBase(gameId, revisionId, "weapon", record),
         weaponType: record.weaponType,
@@ -834,7 +839,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.artifactSets?.length)
-    await db.insert(genshinArtifactSets).values(
+    await insertInChunks(
+      db,
+      genshinArtifactSets,
       records.artifactSets.map((record) => ({
         ...structuredBase(gameId, revisionId, "artifact-set", record),
         maxRarity: record.maxRarity,
@@ -844,7 +851,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.artifacts?.length)
-    await db.insert(genshinArtifacts).values(
+    await insertInChunks(
+      db,
+      genshinArtifacts,
       records.artifacts.map((record) => ({
         ...structuredBase(gameId, revisionId, "artifact", record),
         setStableId: record.setStableId,
@@ -854,7 +863,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.materials?.length)
-    await db.insert(genshinMaterials).values(
+    await insertInChunks(
+      db,
+      genshinMaterials,
       records.materials.map((record) => ({
         ...structuredBase(gameId, revisionId, "material", record),
         category: record.category,
@@ -865,7 +876,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.achievements?.length)
-    await db.insert(genshinAchievements).values(
+    await insertInChunks(
+      db,
+      genshinAchievements,
       records.achievements.map((record) => ({
         ...structuredBase(gameId, revisionId, "achievement", record),
         category: record.category,
@@ -875,7 +888,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.enemies?.length)
-    await db.insert(genshinEnemies).values(
+    await insertInChunks(
+      db,
+      genshinEnemies,
       records.enemies.map((record) => ({
         ...structuredBase(gameId, revisionId, "enemy", record),
         category: record.category,
@@ -886,7 +901,9 @@ export async function materializeStructuredRecords(
       })),
     );
   if (records.voices?.length)
-    await db.insert(genshinVoiceLines).values(
+    await insertInChunks(
+      db,
+      genshinVoiceLines,
       records.voices.map((record) => ({
         ...structuredBase(gameId, revisionId, "voice", record),
         characterStableId: record.characterStableId,

@@ -201,7 +201,102 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
   }
 
   async listMaterials(options: GenshinStructuredListOptions): Promise<GenshinMaterial[]> {
-    return this.list("material", options) as Promise<GenshinMaterial[]>;
+    const limit = Math.min(Math.max(options.limit, 1), 200);
+    const offset = Math.max(options.offset ?? 0, 0);
+    const query = options.query?.trim() ? `%${escapeLike(normalize(options.query))}%` : undefined;
+    const category = options.category?.trim();
+
+    const rows = rowsFromExecuteResult(
+      await this.db.execute(sql`
+      select * from knowledge.genshin_materials
+      where revision_id = ${options.revisionId}::uuid
+        ${category ? sql`and category = ${category}` : sql``}
+        ${
+          query
+            ? sql`and (
+                normalized_name like ${query}
+                or description ilike ${`%${options.query!.trim()}%`}
+                or sources::text ilike ${`%${options.query!.trim()}%`}
+                or used_by::text ilike ${`%${options.query!.trim()}%`}
+              )`
+            : sql``
+        }
+      order by name asc
+      limit ${limit}
+      offset ${offset}
+    `),
+    );
+    return rows.map((row) => mapRow("material", row)) as GenshinMaterial[];
+  }
+
+  async countMaterials(options: GenshinStructuredListOptions): Promise<number> {
+    const query = options.query?.trim() ? `%${escapeLike(normalize(options.query))}%` : undefined;
+    const category = options.category?.trim();
+
+    const rows = rowsFromExecuteResult(
+      await this.db.execute(sql`
+      select count(*)::int as count from knowledge.genshin_materials
+      where revision_id = ${options.revisionId}::uuid
+        ${category ? sql`and category = ${category}` : sql``}
+        ${
+          query
+            ? sql`and (
+                normalized_name like ${query}
+                or description ilike ${`%${options.query!.trim()}%`}
+                or sources::text ilike ${`%${options.query!.trim()}%`}
+                or used_by::text ilike ${`%${options.query!.trim()}%`}
+              )`
+            : sql``
+        }
+    `),
+    );
+    return Number((rows[0] as unknown as { count?: number })?.count ?? 0);
+  }
+
+  async aggregateMaterialCategories(
+    revisionId: string,
+    rawQuery?: string,
+  ): Promise<Array<{ key: string; label: string; count: number }>> {
+    const query = rawQuery?.trim() ? `%${escapeLike(normalize(rawQuery))}%` : undefined;
+
+    const rows = rowsFromExecuteResult(
+      await this.db.execute(sql`
+      select category, count(*)::int as count
+      from knowledge.genshin_materials
+      where revision_id = ${revisionId}::uuid
+        ${
+          query
+            ? sql`and (
+                normalized_name like ${query}
+                or description ilike ${`%${rawQuery!.trim()}%`}
+                or sources::text ilike ${`%${rawQuery!.trim()}%`}
+                or used_by::text ilike ${`%${rawQuery!.trim()}%`}
+              )`
+            : sql``
+        }
+      group by category
+      order by count desc
+    `),
+    );
+
+    const labels: Record<string, string> = {
+      character_development: "角色培养素材",
+      weapon_development: "武器强化素材",
+      local_specialty: "区域特产",
+      currency: "货币",
+      consumable: "消耗品",
+      quest_item: "任务道具",
+      forging: "锻造材料",
+      cooking: "食材烹饪",
+      furnishing: "摆设素材",
+      other: "其他",
+    };
+
+    return rows.map((r) => ({
+      key: String((r as unknown as { category: string }).category),
+      label: labels[String((r as unknown as { category: string }).category)] ?? String((r as unknown as { category: string }).category),
+      count: Number((r as unknown as { count?: number })?.count ?? 0),
+    }));
   }
 
   async upsertAchievement(input: Omit<GenshinAchievement, "id">): Promise<GenshinAchievement> {

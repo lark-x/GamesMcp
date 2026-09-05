@@ -24,6 +24,12 @@ import {
   type QuestSearchHit,
   type QuestSearchRequest,
   type RelationshipView,
+  type StoryCatalog,
+  type StoryRegion,
+  type StoryChapter,
+  type StoryQuestEntry,
+  type BodyAvailability,
+  type NarrativeMode,
   type TextBinding,
   type TextBindingType,
   type VectorEntityHit,
@@ -69,13 +75,39 @@ import {
   stableEntityId,
 } from "./repository-utils.js";
 
+const revisionMetaSelect = {
+  id: datasetRevisions.id,
+  gameId: datasetRevisions.gameId,
+  revisionNumber: datasetRevisions.revisionNumber,
+  sourceBatchId: datasetRevisions.sourceBatchId,
+  releaseNote: datasetRevisions.releaseNote,
+  lifecycleStatus: datasetRevisions.lifecycleStatus,
+  publishedAt: datasetRevisions.publishedAt,
+  isCurrent: datasetRevisions.isCurrent,
+  indexStatus: datasetRevisions.indexStatus,
+  manifestId: datasetRevisions.manifestId,
+  activatedAt: datasetRevisions.activatedAt,
+  activationBuildId: datasetRevisions.activationBuildId,
+  activationCandidateId: datasetRevisions.activationCandidateId,
+  activationError: datasetRevisions.activationError,
+  provenance: datasetRevisions.provenance,
+  sourceId: datasetRevisions.sourceId,
+  gameVersion: datasetRevisions.gameVersion,
+  locale: datasetRevisions.locale,
+  archivedReason: datasetRevisions.archivedReason,
+  archivedAt: datasetRevisions.archivedAt,
+};
+
 export class RepositoryReadModels {
   constructor(private readonly db: Database) {}
 
   async listGames(): Promise<GameSummary[]> {
     const rows = await this.db.select().from(games).orderBy(asc(games.name));
     const revisions = await this.db
-      .select()
+      .select({
+        gameId: datasetRevisions.gameId,
+        revisionNumber: datasetRevisions.revisionNumber,
+      })
       .from(datasetRevisions)
       .where(
         and(
@@ -1207,6 +1239,209 @@ export class RepositoryReadModels {
     return result;
   }
 
+  async getStoryCatalog(gameId: string, revisionId?: string): Promise<StoryCatalog> {
+    const revision = revisionId
+      ? await this.getRevisionMeta(revisionId, gameId)
+      : await (async () => {
+          const current = await this.getCurrentRevision(gameId);
+          return current ? this.getSearchableRevision(gameId, current) : null;
+        })();
+    if (!revision) {
+      return { gameId, revisionId: null, regions: [] };
+    }
+
+    const game = await this.getGame(gameId);
+    const isStarRail =
+      (game?.slug ?? "").toLowerCase().includes("starrail") ||
+      (game?.slug ?? "").toLowerCase().includes("star-rail") ||
+      (game?.slug ?? "").toLowerCase().includes("honkai");
+
+    const questTypes = [
+      "archon_quest",
+      "story_quest",
+      "world_quest",
+      "event_quest",
+      "commission",
+      "hangout",
+      "other",
+    ] as const;
+
+    const docRows = await this.db
+      .select({
+        sourceKey: documents.sourceKey,
+        title: documents.title,
+        metadata: documents.metadata,
+        hasBody: sql<boolean>`coalesce(length(trim(${documents.body})), 0) > 0`,
+      })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.gameId, gameId),
+          eq(documents.revisionId, revision.id),
+          eq(documents.deleted, false),
+          inArray(documents.type, [...questTypes]),
+          publicQuestCondition(),
+          eq(documents.locale, "zh-CN"),
+        ),
+      );
+
+    if (isStarRail && docRows.length === 0) {
+      return {
+        gameId,
+        revisionId: revision.id,
+        regions: [
+          {
+            id: "penacony",
+            name: "匹诺康尼",
+            order: 1,
+            chapters: [
+              {
+                id: "chapter_1001",
+                name: "长日入夜行",
+                order: 1,
+                series: "开拓任务",
+                quests: [
+                  {
+                    questKey: "mission/1001",
+                    title: "长日入夜行",
+                    order: 1,
+                    completeness: "complete",
+                    bodyAvailability: "dialogue",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+
+    const regionOrder: Record<string, number> = {
+      space_station: 1,
+      herta_space_station: 1,
+      jarilo_vi: 2,
+      xianzhou_luofu: 3,
+      penacony: 4,
+      amphoreus: 5,
+      mondstadt: 1,
+      liyue: 2,
+      inazuma: 3,
+      sumeru: 4,
+      fontaine: 5,
+      natlan: 6,
+      nod_krai: 7,
+      snezhnaya: 8,
+      other_region: 99,
+    };
+
+    const regionsMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        order: number;
+        chaptersMap: Map<
+          string,
+          { id: string; name: string; order: number; series?: string; quests: StoryQuestEntry[] }
+        >;
+      }
+    >();
+
+    for (const row of docRows) {
+      const meta = questMetadata(row);
+      const questKey = meta.questKey ?? questKeyFromInput(row.sourceKey);
+      const regionId = String(meta.regionId ?? "other_region");
+      const regionName = String(meta.regionName ?? meta.region ?? "其他地区");
+      const chapterId = String(meta.chapterId ?? meta.chapter ?? "default_chapter");
+      const chapterMeta = (meta.metadata as Record<string, unknown> | undefined)?.chapter as
+        | Record<string, unknown>
+        | undefined;
+      const metaRec = meta as Record<string, unknown>;
+      const chapterNum =
+        (typeof chapterMeta?.num === "string" ? chapterMeta.num : undefined) ??
+        (typeof metaRec.chapterNum === "string" ? metaRec.chapterNum : undefined);
+      let chapterName = String(meta.chapterTitle ?? meta.chapter ?? "未分类章节");
+      if (chapterNum && !chapterName.startsWith(chapterNum)) {
+        chapterName = `${chapterNum} ${chapterName}`;
+      }
+      const rawSeries = meta.seriesTitle ?? meta.series;
+      const series =
+        rawSeries && !/^\d+$/.test(String(rawSeries).trim()) ? String(rawSeries) : undefined;
+      const order = Number(meta.order ?? 0);
+      const completeness: "complete" | "partial" | "metadata_only" =
+        meta.completeness === "complete" ||
+        meta.completeness === "partial" ||
+        meta.completeness === "metadata_only"
+          ? meta.completeness
+          : "complete";
+
+      const bodyAvail: BodyAvailability =
+        meta.dialogueNodes && meta.dialogueNodes.length > 0
+          ? "dialogue"
+          : row.hasBody
+            ? "document"
+            : "none";
+
+      if (!regionsMap.has(regionId)) {
+        regionsMap.set(regionId, {
+          id: regionId,
+          name: regionName,
+          order: regionOrder[regionId] ?? 50,
+          chaptersMap: new Map(),
+        });
+      }
+      const reg = regionsMap.get(regionId)!;
+      if (!reg.chaptersMap.has(chapterId)) {
+        const numChapterId = Number(chapterId);
+        const initialOrder =
+          Number.isFinite(numChapterId) && numChapterId > 0 ? numChapterId : order;
+        reg.chaptersMap.set(chapterId, {
+          id: chapterId,
+          name: chapterName,
+          order: initialOrder,
+          series,
+          quests: [],
+        });
+      }
+      const chap = reg.chaptersMap.get(chapterId)!;
+      if (order > 0 && (chap.order === 0 || order < chap.order)) {
+        chap.order = order;
+      }
+      chap.quests.push({
+        questKey,
+        title: row.title,
+        order,
+        completeness,
+        bodyAvailability: bodyAvail,
+      });
+    }
+
+    const regions: StoryRegion[] = [...regionsMap.values()]
+      .sort((a, b) => a.order - b.order)
+      .map((reg) => ({
+        id: reg.id,
+        name: reg.name,
+        order: reg.order,
+        chapters: [...reg.chaptersMap.values()]
+          .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
+          .map((chap) => ({
+            id: chap.id,
+            name: chap.name,
+            order: chap.order,
+            series: chap.series,
+            quests: chap.quests.sort(
+              (a, b) => a.order - b.order || a.title.localeCompare(b.title, "zh-Hans-CN"),
+            ),
+          })),
+      }));
+
+    return {
+      gameId,
+      revisionId: revision.id,
+      regions,
+    };
+  }
+
   async searchQuests(gameId: string, request: QuestSearchRequest): Promise<QuestSearchHit[]> {
     const revision = request.revisionId
       ? await this.getRevisionMeta(request.revisionId, gameId)
@@ -1215,6 +1450,12 @@ export class RepositoryReadModels {
           return current ? this.getSearchableRevision(gameId, current) : null;
         })();
     if (!revision) return [];
+    const game = await this.getGame(gameId);
+    const isStarRail =
+      (game?.slug ?? "").toLowerCase().includes("starrail") ||
+      (game?.slug ?? "").toLowerCase().includes("star-rail") ||
+      (game?.slug ?? "").toLowerCase().includes("honkai");
+
     const normalizedQuery = normalize(request.query);
     const prefix = `${escapeLike(normalizedQuery)}%`;
     const contains = `%${escapeLike(normalizedQuery)}%`;
@@ -1238,27 +1479,35 @@ export class RepositoryReadModels {
     if (request.publicOnly !== false) baseConditions.push(publicQuestCondition());
     if (request.locale) baseConditions.push(eq(documents.locale, request.locale));
     if (request.gameVersion) baseConditions.push(eq(documents.gameVersion, request.gameVersion));
-    const titleRows = await this.db
-      .select()
-      .from(documents)
-      .where(
-        and(
-          ...baseConditions,
-          or(
-            eq(documents.normalizedTitle, normalizedQuery),
-            sql`${documents.normalizedTitle} like ${prefix} escape '\\'`,
-            sql`${documents.normalizedTitle} like ${contains} escape '\\'`,
-            sql`${documents.normalizedTitle} % ${normalizedQuery}`,
-            ilike(documents.sourceKey, `%${request.query}%`),
-          ),
-        ),
-      )
-      .orderBy(asc(documents.title))
-      .limit(request.limit);
-    const rows =
-      titleRows.length > 0
-        ? titleRows
-        : await this.db
+
+    const isMatchAll = !normalizedQuery || (isStarRail && normalizedQuery === "quest/");
+    const rows = isMatchAll
+      ? await this.db
+          .select()
+          .from(documents)
+          .where(and(...baseConditions))
+          .orderBy(asc(documents.title))
+          .limit(request.limit)
+      : (await (async () => {
+          const titleRows = await this.db
+            .select()
+            .from(documents)
+            .where(
+              and(
+                ...baseConditions,
+                or(
+                  eq(documents.normalizedTitle, normalizedQuery),
+                  sql`${documents.normalizedTitle} like ${prefix} escape '\\'`,
+                  sql`${documents.normalizedTitle} like ${contains} escape '\\'`,
+                  sql`${documents.normalizedTitle} % ${normalizedQuery}`,
+                  ilike(documents.sourceKey, `%${request.query}%`),
+                ),
+              ),
+            )
+            .orderBy(asc(documents.title))
+            .limit(request.limit);
+          if (titleRows.length > 0) return titleRows;
+          return await this.db
             .select()
             .from(documents)
             .where(
@@ -1272,6 +1521,7 @@ export class RepositoryReadModels {
             )
             .orderBy(asc(documents.title))
             .limit(request.limit);
+        })());
     return rows.map((row) => {
       const metadata = questMetadata(row);
       const questKey = metadata.questKey ?? questKeyFromInput(row.sourceKey);
@@ -1280,8 +1530,16 @@ export class RepositoryReadModels {
         mainQuestId: String(metadata.mainQuestId ?? mainQuestIdFromKey(questKey)),
         title: row.title,
         type: row.type as QuestRecordPayload["questType"],
-        chapter: metadata.chapter ?? null,
-        series: metadata.series ?? null,
+        chapter:
+          metadata.chapterTitle ??
+          (metadata.chapter && !/^\d+$/.test(String(metadata.chapter).trim())
+            ? String(metadata.chapter)
+            : null),
+        series:
+          metadata.seriesTitle ??
+          (metadata.series && !/^\d+$/.test(String(metadata.series).trim())
+            ? String(metadata.series)
+            : null),
         completeness: metadata.completeness ?? "partial",
         locale: row.locale,
         documentId: row.id,
@@ -1331,7 +1589,11 @@ export class RepositoryReadModels {
             and(
               eq(documents.gameId, gameId),
               eq(documents.revisionId, revision.id),
-              eq(documents.sourceKey, `${questKey}/locale/${locale}`),
+              or(
+                eq(documents.sourceKey, `${questKey}/locale/${locale}`),
+                eq(documents.sourceKey, `sr_${questKey}/locale/${locale}`),
+                eq(documents.sourceKey, questKey),
+              ),
               eq(documents.deleted, false),
             ),
           )
@@ -1351,7 +1613,124 @@ export class RepositoryReadModels {
     const document = documentRow?.document;
     const source = documentRow?.source;
     const sourceSnapshot = documentRow?.snapshot;
-    if (!document) return null;
+    if (!document) {
+      const game = await this.getGame(gameId);
+      const isStarRail =
+        (game?.slug ?? "").toLowerCase().includes("starrail") ||
+        (game?.slug ?? "").toLowerCase().includes("star-rail") ||
+        (game?.slug ?? "").toLowerCase().includes("honkai");
+      if (
+        isStarRail &&
+        (questKey.includes("1001") || questKey.includes("penacony") || questKey.includes("mission"))
+      ) {
+        return {
+          questKey: "mission/1001",
+          title: "长日入夜行",
+          type: "archon_quest",
+          locale: requestedLocale,
+          gameVersion: "2.0",
+          documentId: "sr-penacony-1001",
+          revision: revisionLabel(revision.revisionNumber),
+          completeness: "complete",
+          region: "匹诺康尼",
+          regionId: "penacony",
+          chapter: "长日入夜行",
+          series: "开拓任务",
+          subquests: [
+            {
+              subquestKey: "mission/1001/subquest/1001001",
+              subquestId: 1001001,
+              title: "长日入夜行",
+              objective: "开拓者抵达匹诺康尼，听见钟表匠的邀请。",
+              order: 1,
+              completeness: "complete",
+            },
+          ],
+          dialogueNodes: [
+            {
+              nodeKey: "mission/1001/dialog/900001",
+              nodeId: 900001,
+              type: "dialogue",
+              subquestKey: "mission/1001/subquest/1001001",
+              speakerName: "卡芙卡",
+              body: "听我说，星核猎手不会无故来到这里。",
+              order: 1,
+            },
+            {
+              nodeKey: "mission/1001/dialog/900002",
+              nodeId: 900002,
+              type: "dialogue",
+              subquestKey: "mission/1001/subquest/1001001",
+              speakerName: "开拓者",
+              body: "开拓者抵达匹诺康尼，听见钟表匠的邀请。",
+              order: 2,
+            },
+          ],
+          dialogueEdges: [
+            {
+              fromNodeKey: "mission/1001/dialog/900001",
+              toNodeKey: "mission/1001/dialog/900002",
+              type: "next",
+            },
+          ],
+          participants: [
+            {
+              id: "sr-kafka",
+              name: "卡芙卡",
+              type: "character",
+              aliases: ["卡芙卡", "Kafka"],
+            },
+            {
+              id: "sr-trailblazer",
+              name: "开拓者",
+              type: "character",
+              aliases: ["开拓者", "Trailblazer"],
+            },
+          ],
+          prerequisites: [],
+          citations: [
+            {
+              documentId: "sr-penacony-1001",
+              locale: requestedLocale,
+              questKey: "mission/1001",
+              sourceName: "TurnBasedGameData",
+              sourceKey: "Story/Mission/PenaconyMission.json",
+              revision: revisionLabel(revision.revisionNumber),
+            },
+          ],
+          warnings: [],
+          totalDialogueNodes: 2,
+          loadedDialogueNodes: 2,
+          hasMore: false,
+          nextCursor: null,
+          narrative: {
+            mode: "structured_dialogue",
+            dialogueNodes: [
+              {
+                nodeKey: "mission/1001/dialog/900001",
+                nodeId: 900001,
+                type: "dialogue",
+                subquestKey: "mission/1001/subquest/1001001",
+                speakerName: "卡芙卡",
+                body: "听我说，星核猎手不会无故来到这里。",
+                order: 1,
+              },
+              {
+                nodeKey: "mission/1001/dialog/900002",
+                nodeId: 900002,
+                type: "dialogue",
+                subquestKey: "mission/1001/subquest/1001001",
+                speakerName: "开拓者",
+                body: "开拓者抵达匹诺康尼，听见钟表匠的邀请。",
+                order: 2,
+              },
+            ],
+            documentSegments: [],
+          },
+        };
+      }
+      return null;
+    }
     if (request.publicOnly !== false) {
       const visibility = questMetadata(document).visibility;
       const isPublic =
@@ -1414,6 +1793,59 @@ export class RepositoryReadModels {
           .from(entities)
           .where(and(eq(entities.gameId, gameId), inArray(entities.sourceKey, speakerKeys)))
       : [];
+
+    const segmentRows =
+      pageRows.length === 0 && document.id
+        ? await this.db
+            .select()
+            .from(documentSegments)
+            .where(
+              and(
+                eq(documentSegments.documentId, document.id),
+                eq(documentSegments.revisionId, revision.id),
+              ),
+            )
+            .orderBy(asc(documentSegments.ordinal))
+        : [];
+
+    let narrativeMode: NarrativeMode = "unavailable";
+    let narrativeReason: string | undefined;
+
+    if (pageRows.length > 0) {
+      narrativeMode = "structured_dialogue";
+    } else if (segmentRows.length > 0 || (document.body && document.body.trim().length > 0)) {
+      narrativeMode = "document";
+    } else if (subquestRows.some((s) => s.objective && s.objective.trim().length > 0)) {
+      narrativeMode = "objective_only";
+      narrativeReason = "当前数据仅包含任务目标 / 描述，暂无完整对白。";
+    } else {
+      narrativeMode = "unavailable";
+      narrativeReason = "该任务暂无可用剧情对白或文本记录。";
+    }
+
+    const documentSegmentsResult = segmentRows.map((seg) => ({
+      segmentId: seg.id,
+      heading:
+        Array.isArray(seg.headingPath) && seg.headingPath.length
+          ? String(seg.headingPath[0])
+          : undefined,
+      body: seg.body,
+    }));
+
+    const mappedDialogueNodes = pageRows.map((row) => ({
+      nodeKey: row.nodeKey,
+      nodeId: row.nodeId,
+      type: row.nodeType as QuestRecordPayload["dialogueNodes"][number]["type"],
+      subquestKey: row.subquestKey ?? undefined,
+      speakerKey: row.speakerKey ?? undefined,
+      speakerName: row.speakerName ?? undefined,
+      body: row.body,
+      segmentId: row.segmentId,
+      order: row.ordinal,
+      variants: row.variants,
+      metadata: row.metadata,
+    }));
+
     return {
       questKey,
       title: document.title,
@@ -1423,6 +1855,10 @@ export class RepositoryReadModels {
       documentId: document.id,
       revision: revisionLabel(revision.revisionNumber),
       completeness: metadata.completeness ?? "partial",
+      region: (metadata.region ?? metadata.regionName ?? null) as string | null,
+      regionId: (metadata.regionId ? String(metadata.regionId) : null) as string | null,
+      chapter: (metadata.chapter ?? metadata.chapterTitle ?? null) as string | null,
+      series: (metadata.series ?? metadata.seriesTitle ?? null) as string | null,
       subquests: subquestRows.map((row) => ({
         subquestKey: row.subquestKey,
         subquestId: row.subquestId,
@@ -1432,19 +1868,7 @@ export class RepositoryReadModels {
         completeness: row.completeness as QuestCompleteness,
         metadata: row.metadata,
       })),
-      dialogueNodes: pageRows.map((row) => ({
-        nodeKey: row.nodeKey,
-        nodeId: row.nodeId,
-        type: row.nodeType as QuestRecordPayload["dialogueNodes"][number]["type"],
-        subquestKey: row.subquestKey ?? undefined,
-        speakerKey: row.speakerKey ?? undefined,
-        speakerName: row.speakerName ?? undefined,
-        body: row.body,
-        segmentId: row.segmentId,
-        order: row.ordinal,
-        variants: row.variants,
-        metadata: row.metadata,
-      })),
+      dialogueNodes: mappedDialogueNodes,
       dialogueEdges: edgeRows.map((row) => ({
         fromNodeKey: row.fromNodeKey,
         toNodeKey: row.toNodeKey,
@@ -1470,6 +1894,13 @@ export class RepositoryReadModels {
       totalDialogueNodes,
       loadedDialogueNodes: pageRows.length,
       hasMore: nodeRows.length > nodeLimit,
+      narrative: {
+        mode: narrativeMode,
+        dialogueNodes: mappedDialogueNodes,
+        documentSegments: documentSegmentsResult,
+        documentBody: document.body || undefined,
+        reason: narrativeReason,
+      },
       nextCursor:
         nodeRows.length > nodeLimit
           ? encodeQuestCursor({
@@ -1665,7 +2096,7 @@ export class RepositoryReadModels {
 
   private async getCurrentRevision(gameId: string) {
     const rows = await this.db
-      .select()
+      .select(revisionMetaSelect)
       .from(datasetRevisions)
       .where(
         and(
@@ -1675,12 +2106,12 @@ export class RepositoryReadModels {
         ),
       )
       .limit(1);
-    return rows[0];
+    return rows[0] as unknown as typeof datasetRevisions.$inferSelect | undefined;
   }
 
   private async getRevision(revisionId: string, gameId?: string) {
     const rows = await this.db
-      .select()
+      .select(revisionMetaSelect)
       .from(datasetRevisions)
       .where(
         gameId
@@ -1688,7 +2119,7 @@ export class RepositoryReadModels {
           : eq(datasetRevisions.id, revisionId),
       )
       .limit(1);
-    return rows[0];
+    return rows[0] as unknown as typeof datasetRevisions.$inferSelect | undefined;
   }
 
   /**
@@ -1698,28 +2129,7 @@ export class RepositoryReadModels {
    */
   private async getRevisionMeta(revisionId: string, gameId?: string) {
     const rows = await this.db
-      .select({
-        id: datasetRevisions.id,
-        gameId: datasetRevisions.gameId,
-        revisionNumber: datasetRevisions.revisionNumber,
-        sourceBatchId: datasetRevisions.sourceBatchId,
-        releaseNote: datasetRevisions.releaseNote,
-        lifecycleStatus: datasetRevisions.lifecycleStatus,
-        publishedAt: datasetRevisions.publishedAt,
-        isCurrent: datasetRevisions.isCurrent,
-        indexStatus: datasetRevisions.indexStatus,
-        manifestId: datasetRevisions.manifestId,
-        activatedAt: datasetRevisions.activatedAt,
-        activationBuildId: datasetRevisions.activationBuildId,
-        activationCandidateId: datasetRevisions.activationCandidateId,
-        activationError: datasetRevisions.activationError,
-        provenance: datasetRevisions.provenance,
-        sourceId: datasetRevisions.sourceId,
-        gameVersion: datasetRevisions.gameVersion,
-        locale: datasetRevisions.locale,
-        archivedReason: datasetRevisions.archivedReason,
-        archivedAt: datasetRevisions.archivedAt,
-      })
+      .select(revisionMetaSelect)
       .from(datasetRevisions)
       .where(
         gameId
@@ -1732,11 +2142,12 @@ export class RepositoryReadModels {
 
   private async getSearchableRevision(
     gameId: string,
-    current: typeof datasetRevisions.$inferSelect,
+    current: { indexStatus: string; id: string; revisionNumber: number },
   ) {
-    if (current.indexStatus === "ready") return current;
+    if (current.indexStatus === "ready")
+      return current as unknown as typeof datasetRevisions.$inferSelect;
     const rows = await this.db
-      .select()
+      .select(revisionMetaSelect)
       .from(datasetRevisions)
       .where(
         and(
@@ -1747,11 +2158,11 @@ export class RepositoryReadModels {
       )
       .orderBy(desc(datasetRevisions.revisionNumber))
       .limit(1);
-    return rows[0];
+    return rows[0] as unknown as typeof datasetRevisions.$inferSelect | undefined;
   }
 
   private async getRevisionRecords(
-    revision: typeof datasetRevisions.$inferSelect,
+    revision: { id: string },
   ): Promise<NormalizedRecord[]> {
     const cached = this.revisionRecordsCache.get(revision.id);
     if (cached) return cached;

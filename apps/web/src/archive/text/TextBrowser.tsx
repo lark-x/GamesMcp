@@ -6,6 +6,8 @@ import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js"
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
 import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveInspector.js";
+import { isStarRailGame } from "../../shared.js";
+import { formatStoryText } from "../story/story-format.js";
 import type { TextChapterRef } from "./text.types.js";
 
 function chapterEntries(catalog: CodexBookCatalog | null): TextChapterRef[] {
@@ -161,6 +163,8 @@ export function TextBrowser({
       .filter((b): b is NonNullable<typeof b> => b !== null);
   }, [catalog?.books, searchQuery]);
 
+  const isStarRail = isStarRailGame(gameId, gameName);
+
   const sections: GlobalNavSection[] = useMemo(
     () => [
       {
@@ -168,10 +172,15 @@ export function TextBrowser({
         items: [
           { key: "home", label: "首页", onSelect: onHome },
           { key: "story", label: "剧情档案", onSelect: onOpenStory },
-          { key: "materials", label: "材料", onSelect: onOpenMaterials },
+          { key: "materials", label: isStarRail ? "光锥/材料" : "材料", onSelect: onOpenMaterials },
+        ],
+      },
+      {
+        label: "文献分类",
+        items: [
           {
-            key: "text",
-            label: "文本",
+            key: "books",
+            label: "书籍文献",
             active: true,
             onSelect: () => {
               if (window.location.hash !== "#text/books") {
@@ -179,10 +188,40 @@ export function TextBrowser({
               }
             },
           },
+          {
+            key: "character-stories",
+            label: "角色故事",
+            onSelect: () => (window.location.hash = "text/character-stories"),
+          },
+          {
+            key: "voices",
+            label: "角色语音",
+            onSelect: () => (window.location.hash = "text/voices"),
+          },
+          ...(isStarRail
+            ? [
+                {
+                  key: "messages",
+                  label: "星轨短信",
+                  onSelect: () => (window.location.hash = "text/messages"),
+                },
+                {
+                  key: "train-visitors",
+                  label: "列车访客",
+                  onSelect: () => (window.location.hash = "text/train-visitors"),
+                },
+              ]
+            : [
+                {
+                  key: "mechanics",
+                  label: "机制教程",
+                  onSelect: () => (window.location.hash = "text/mechanics"),
+                },
+              ]),
         ],
       },
     ],
-    [onHome, onOpenStory, onOpenMaterials],
+    [onHome, onOpenStory, onOpenMaterials, isStarRail],
   );
 
   function selectVolume(entry: TextChapterRef, mode: "push" | "replace" = "push") {
@@ -250,8 +289,22 @@ export function TextBrowser({
           {textDocument && !documentLoading ? (
             <>
               <header className="text-reader-header">
-                <span className="story-type-pill">书籍</span>
-                <h2>《{textDocument.title}》</h2>
+                <span className="story-type-pill">
+                  {textDocument.type === "book"
+                    ? "书籍"
+                    : textDocument.type === "character_story"
+                      ? "角色故事"
+                      : textDocument.type === "voiceline"
+                        ? "角色语音"
+                        : textDocument.type === "message"
+                          ? "星轨短信"
+                          : textDocument.type === "train_visitor"
+                            ? "列车访客"
+                            : textDocument.type === "item_lore"
+                              ? "物料文本"
+                              : "文献"}
+                </span>
+                <h2>{textDocument.type === "book" ? `《${textDocument.title}》` : textDocument.title}</h2>
                 <p className="story-reader-meta">
                   {textDocument.sourceName} · {textDocument.gameVersion ?? "游戏版本未知"} ·
                   Revision {textDocument.revision || "—"}
@@ -261,12 +314,29 @@ export function TextBrowser({
                 {textDocument.segments.length ? (
                   textDocument.segments.map((segment) => (
                     <div key={segment.id} className="text-segment">
-                      {segment.headingPath?.length ? (
+                      {segment.headingPath?.length &&
+                      segment.headingPath.join(" / ") !== textDocument.title ? (
                         <h3>{segment.headingPath.join(" / ")}</h3>
                       ) : null}
-                      <p>{segment.body}</p>
+                      <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
+                        {formatStoryText(segment.body, {
+                          game: isStarRail ? "starrail" : "genshin",
+                          gender: "female",
+                          nickname: isStarRail ? "开拓者" : "旅行者",
+                        })}
+                      </p>
                     </div>
                   ))
+                ) : textDocument.body ? (
+                  <div className="text-segment">
+                    <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
+                      {formatStoryText(textDocument.body, {
+                        game: isStarRail ? "starrail" : "genshin",
+                        gender: "female",
+                        nickname: isStarRail ? "开拓者" : "旅行者",
+                      })}
+                    </p>
+                  </div>
                 ) : (
                   <p className="muted">本卷暂无内容</p>
                 )}

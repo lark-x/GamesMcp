@@ -59,6 +59,10 @@ export function MaterialBrowser({
   onMaterialIdChange?: (id: string | undefined, mode?: "push" | "replace") => void;
 }) {
   const [materials, setMaterials] = useState<ArchiveMaterial[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [serverCategories, setServerCategories] = useState<
+    Array<{ key: string; label: string; count: number }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -66,7 +70,7 @@ export function MaterialBrowser({
   const [selected, setSelected] = useState<ArchiveMaterial | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [offset, setOffset] = useState(0);
-  const limit = 100;
+  const limit = 50;
 
   const loadMaterials = useCallback(async () => {
     setLoading(true);
@@ -75,42 +79,38 @@ export function MaterialBrowser({
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
       if (selectedRevision) params.set("revisionId", selectedRevision);
       if (query.trim()) params.set("q", query.trim());
-      const result = await apiFetch<{ materials: ArchiveMaterial[] }>(
-        `/api/games/${gameId}/codex/materials?${params.toString()}`,
-      );
+      if (activeCategory) params.set("category", activeCategory);
+      const result = await apiFetch<{
+        materials: ArchiveMaterial[];
+        total?: number;
+        categories?: Array<{ key: string; label: string; count: number }>;
+      }>(`/api/games/${gameId}/codex/materials?${params.toString()}`);
       setMaterials(result.materials ?? []);
+      setTotal(result.total ?? result.materials?.length ?? 0);
+      if (result.categories) {
+        setServerCategories(result.categories);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "材料列表加载失败");
     } finally {
       setLoading(false);
     }
-  }, [gameId, selectedRevision, limit, offset, query]);
+  }, [gameId, selectedRevision, limit, offset, query, activeCategory]);
 
   useEffect(() => {
     void loadMaterials();
   }, [loadMaterials]);
 
   const categories = useMemo(() => {
+    if (serverCategories.length > 0) {
+      return serverCategories.map((c) => [c.key, c.count] as [string, number]);
+    }
     const counts = new Map<string, number>();
     for (const material of materials) {
       counts.set(material.category, (counts.get(material.category) ?? 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [materials]);
-
-  // Full-field search: name, description, sources, usedBy
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return materials.filter((material) => {
-      if (activeCategory && material.category !== activeCategory) return false;
-      if (!keyword) return true;
-      const matchName = material.name.toLowerCase().includes(keyword);
-      const matchDesc = (material.description ?? "").toLowerCase().includes(keyword);
-      const matchSources = (material.sources ?? []).some((s) => s.toLowerCase().includes(keyword));
-      const matchUsedBy = (material.usedBy ?? []).some((u) => u.toLowerCase().includes(keyword));
-      return matchName || matchDesc || matchSources || matchUsedBy;
-    });
-  }, [materials, query, activeCategory]);
+  }, [serverCategories, materials]);
 
   const loadMaterialDetail = useCallback(
     async (id: string) => {
@@ -222,10 +222,10 @@ export function MaterialBrowser({
           ) : null}
           {loading ? (
             <ArchiveLoading label="材料加载中" />
-          ) : filtered.length ? (
+          ) : materials.length ? (
             <>
               <div className="material-list" role="list">
-                {filtered.map((material) => (
+                {materials.map((material) => (
                   <button
                     type="button"
                     role="listitem"
@@ -258,7 +258,7 @@ export function MaterialBrowser({
               <ArchivePagination
                 current={Math.floor(offset / limit) + 1}
                 limit={limit}
-                hasMore={materials.length === limit}
+                hasMore={offset + materials.length < total}
                 disabled={loading}
                 onPrev={() => setOffset((prev) => Math.max(0, prev - limit))}
                 onNext={() => setOffset((prev) => prev + limit)}
@@ -331,7 +331,10 @@ export function MaterialBrowser({
                 )}
               </InspectorSection>
               <InspectorSection title="来源">
-                <InspectorField label="数据来源" value="TurnBasedGameData" />
+                <InspectorField
+                  label="数据来源"
+                  value={selected.sourceName ?? "来源未解析"}
+                />
                 <InspectorField label="Stable ID" value={<code>{selected.stableId}</code>} />
                 <InspectorField
                   label="Revision"

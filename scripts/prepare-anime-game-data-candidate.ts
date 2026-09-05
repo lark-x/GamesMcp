@@ -6,7 +6,13 @@ import {
 } from "../packages/database/src/index.ts";
 import { runStoragePreflight } from "./check-data-storage.js";
 
-const categories = ["book", "character_story", "item_description", "quest"] as const;
+const categories = [
+  "book",
+  "character_story",
+  "item_description",
+  "quest",
+  "structured",
+] as const;
 type Category = (typeof categories)[number];
 
 function flag(name: string): string | undefined {
@@ -37,7 +43,7 @@ try {
     const parserType = sourceById.get(batch.sourceId)?.parserType;
     const category = parserType?.replace(/^anime-game-data:/, "") as Category | undefined;
     if (!category || !categories.includes(category) || selected.has(category)) continue;
-    if (!batch.stagedRecords) continue;
+    if (!batch.stagedRecords && !batch.structuredRecords) continue;
     selected.set(category, batch);
   }
   const missing = categories.filter((category) => !selected.has(category));

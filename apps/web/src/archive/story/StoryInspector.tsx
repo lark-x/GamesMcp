@@ -70,7 +70,7 @@ export function StoryInspector({
       <InspectorSection title="来源">
         <InspectorField
           label="数据来源"
-          value={quest.citations[0]?.sourceName ?? "TurnBasedGameData"}
+          value={quest.citations[0]?.sourceName ?? "来源未解析"}
         />
         <InspectorField label="Document ID" value={<code>{quest.documentId || "—"}</code>} />
         <InspectorField label="Revision" value={<code>{quest.revision || "—"}</code>} />
@@ -101,7 +101,7 @@ export function StoryInspector({
                       citation.dialogueNodeKey && onSelectCitation?.(citation.dialogueNodeKey)
                     }
                   >
-                    <strong>{citation.sourceName ?? "TurnBasedGameData"}</strong>
+                    <strong>{citation.sourceName ?? "来源未解析"}</strong>
                     <small>
                       文档: {citation.documentId} · 版本: {citation.revision}
                     </small>

@@ -16,6 +16,8 @@ import type {
   GenshinEnemy,
   GenshinMaterial,
   GenshinWeapon,
+  NarrativeMode,
+  StoryCatalog,
 } from "@gip/contracts";
 
 export type {
@@ -32,7 +34,23 @@ export type {
   GenshinWeapon,
   GenshinWeaponType,
   StructuredBinding,
+  StoryCatalog,
+  StoryRegion,
+  StoryChapter,
+  StoryQuestEntry,
+  BodyAvailability,
+  NarrativeMode,
+  MaterialSource,
+  MaterialUsage,
+  CodexMaterialCategoryAggregation,
+  GameTerminology,
 } from "@gip/contracts";
+
+export {
+  type GameArchiveAdapter,
+  GenshinArchiveAdapter,
+  StarRailArchiveAdapter,
+} from "./archive-adapter.js";
 
 export type Id = string;
 
@@ -158,6 +176,11 @@ export type QuestRecordPayload = {
   chapterTitle?: string;
   seriesId?: string | number;
   seriesTitle?: string;
+  regionId?: string | number;
+  region?: string;
+  regionName?: string;
+  worldId?: string | number;
+  worldName?: string;
   chapter?: string;
   series?: string;
   order?: number;
@@ -625,6 +648,7 @@ export type ReleaseCandidateReadiness = PublishReadiness & {
 export type GenshinStructuredListOptions = {
   revisionId: Id;
   query?: string;
+  category?: string;
   limit: number;
   offset?: number;
 };
@@ -680,6 +704,11 @@ export interface GenshinStructuredRepository {
   listMaterials(
     options: GenshinStructuredListOptions,
   ): Promise<import("@gip/contracts").CodexMaterial[]>;
+  countMaterials?(options: GenshinStructuredListOptions): Promise<number>;
+  aggregateMaterialCategories?(
+    revisionId: Id,
+    query?: string,
+  ): Promise<import("@gip/contracts").CodexMaterialCategoryAggregation[]>;
   upsertAchievement(
     input: Omit<import("@gip/contracts").GenshinAchievement, "id">,
   ): Promise<import("@gip/contracts").GenshinAchievement>;
@@ -877,6 +906,17 @@ export type QuestDialoguePage = {
   loadedDialogueNodes?: number;
   hasMore?: boolean;
   nextCursor?: string | null;
+  region?: string | null;
+  regionId?: string | null;
+  chapter?: string | null;
+  series?: string | null;
+  narrative?: {
+    mode: NarrativeMode;
+    dialogueNodes: Array<QuestDialogueNodePayload & { segmentId?: Id | null }>;
+    documentSegments?: Array<{ segmentId: string; heading?: string; body: string }>;
+    documentBody?: string;
+    reason?: string;
+  };
 };
 
 export type GetQuestRequest = {
@@ -977,6 +1017,7 @@ export interface KnowledgeRepository {
   searchQuests?(gameId: Id, request: QuestSearchRequest): Promise<QuestSearchHit[]>;
   searchDialogue?(gameId: Id, request: DialogueSearchRequest): Promise<DialogueSearchHit[]>;
   getQuest?(gameId: Id, request: GetQuestRequest): Promise<QuestDialoguePage | null>;
+  getStoryCatalog?(gameId: Id, revisionId?: Id): Promise<StoryCatalog>;
   createSource(input: Omit<Source, "id">): Promise<Source>;
   listSources(gameId?: Id): Promise<Source[]>;
   getSource(sourceId: Id): Promise<Source | null>;
@@ -1651,6 +1692,17 @@ export class GameDomainService {
     return game;
   }
 
+  async getArchiveAdapter(gameId: Id): Promise<import("./archive-adapter.js").GameArchiveAdapter> {
+    const game = await this.requireGame(gameId);
+    const slug = (game.slug || "").toLowerCase();
+    if (slug.includes("starrail") || slug.includes("star-rail")) {
+      const { StarRailArchiveAdapter } = await import("./archive-adapter.js");
+      return new StarRailArchiveAdapter(this.repository);
+    }
+    const { GenshinArchiveAdapter } = await import("./archive-adapter.js");
+    return new GenshinArchiveAdapter(this.repository);
+  }
+
   async requireCapability(gameId: Id, capability: Capability): Promise<void> {
     await this.requireGame(gameId);
     const capabilities = await this.cached(`capabilities:${gameId}`, () =>
@@ -1780,16 +1832,46 @@ export class GameDomainService {
   async listMaterials(
     gameId: Id,
     revisionId?: Id,
-    options: { query?: string; limit?: number; offset?: number } = {},
+    options: { query?: string; category?: string; limit?: number; offset?: number } = {},
   ): Promise<import("@gip/contracts").CodexMaterial[]> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     return this.repository.genshin.listMaterials({
       revisionId: revision,
       query: options.query,
+      category: options.category,
       limit: Math.min(Math.max(options.limit ?? 20, 1), 200),
       offset: options.offset ?? 0,
     });
+  }
+
+  async countMaterials(
+    gameId: Id,
+    revisionId?: Id,
+    options: { query?: string; category?: string } = {},
+  ): Promise<number> {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.countMaterials
+      ? this.repository.genshin.countMaterials({
+          revisionId: revision,
+          query: options.query,
+          category: options.category,
+          limit: 1,
+        })
+      : 0;
+  }
+
+  async aggregateMaterialCategories(
+    gameId: Id,
+    revisionId?: Id,
+    query?: string,
+  ): Promise<import("@gip/contracts").CodexMaterialCategoryAggregation[]> {
+    await this.requireCapability(gameId, "entity_search");
+    const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    return this.repository.genshin.aggregateMaterialCategories
+      ? this.repository.genshin.aggregateMaterialCategories(revision, query)
+      : [];
   }
 
   async getMaterial(

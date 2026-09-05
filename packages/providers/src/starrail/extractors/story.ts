@@ -82,7 +82,8 @@ export async function extractStoryDocuments(input: ExtractorInput): Promise<Extr
           identity: item.path,
         });
 
-      const title = `剧情片段：${rawDigits || basename(item.path, ".json")}`;
+      const snippet = lines[0] ? ` · ${lines[0].replace(/^[^\s：:]+[：:]/u, "").slice(0, 16).trim()}` : "";
+      const title = `剧情片段 ${rawDigits || basename(item.path, ".json")}${snippet}`;
       const fullContent = normalizeStarRailText([`# ${title}`, "", ...lines].join("\n"));
 
       if (!hasLikelyNarrativeText(fullContent) || lines.length === 0) {

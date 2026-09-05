@@ -35,6 +35,96 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
       }
     }
 
+    // Load talk sentences for dialogue resolution if available
+    const talkItem = input.inventory.items.find(
+      (i) => i.path === "ExcelOutput/TalkSentenceConfig.json",
+    );
+    const sentenceMap = new Map<number, { speaker: string; text: string }>();
+    if (talkItem) {
+      const talkSentences = await readSafeJsonFile<Array<Record<string, unknown>>>(
+        resolve(input.dataDir, talkItem.path),
+      );
+      if (Array.isArray(talkSentences)) {
+        for (const s of talkSentences) {
+          const sId = Number(s.TalkSentenceID);
+          if (!Number.isInteger(sId)) continue;
+          const resolveHash = (val: unknown): string | null => {
+            if (!val || typeof val !== "object") return null;
+            const hash = (val as Record<string, unknown>).Hash;
+            return hash ? input.resolver.resolve(hash as string | number) : null;
+          };
+          const speaker = resolveHash(s.TextmapTalkSentenceName) ?? "";
+          const text = resolveHash(s.TalkSentenceText) ?? "";
+          if (text) {
+            sentenceMap.set(sId, { speaker, text });
+          }
+        }
+      }
+    }
+
+    // Index story mission dialogue files
+    const storyMissionFiles = input.inventory.items.filter(
+      (i) =>
+        i.path.startsWith("Story/Mission/") &&
+        i.path.endsWith(".json") &&
+        !i.path.includes(".layout."),
+    );
+    const missionDialogMap = new Map<number, string[]>();
+    const missionStoryFiles = new Map<number, string[]>();
+
+    for (const sFile of storyMissionFiles) {
+      // Determine MainMissionID from path e.g. Story/Mission/1000101/... or digits
+      const match = sFile.path.match(/Story\/Mission\/(\d+)/u);
+      let guessedMainId = match ? Number(match[1]) : undefined;
+
+      const parsed = await readSafeJsonFile<unknown>(resolve(input.dataDir, sFile.path));
+      if (!parsed) continue;
+
+      const lines: string[] = [];
+      const walk = (obj: unknown): void => {
+        if (!obj || typeof obj !== "object") return;
+        if (Array.isArray(obj)) {
+          for (const it of obj) walk(it);
+          return;
+        }
+        const record = obj as Record<string, unknown>;
+        if (record.MainMissionID && !guessedMainId) {
+          guessedMainId = Number(record.MainMissionID);
+        }
+        if (record.TalkSentenceID) {
+          const sId = Number(record.TalkSentenceID);
+          const entry = sentenceMap.get(sId);
+          if (entry) {
+            lines.push(entry.speaker ? `${entry.speaker}：${entry.text}` : entry.text);
+          }
+        }
+        if (record.Options && Array.isArray(record.Options)) {
+          for (const opt of record.Options) {
+            if (typeof opt === "object" && opt !== null) {
+              const optHash = (opt as Record<string, unknown>).TextMapHash;
+              const optText = optHash ? input.resolver.resolve(optHash as string | number) : null;
+              if (optText) lines.push(`[选项] ${optText}`);
+            }
+          }
+        }
+        for (const val of Object.values(record)) {
+          walk(val);
+        }
+      };
+
+      walk(parsed);
+
+      if (guessedMainId && lines.length > 0) {
+        const existing = missionDialogMap.get(guessedMainId) ?? [];
+        existing.push(...lines);
+        missionDialogMap.set(guessedMainId, existing);
+
+        const existingFiles = missionStoryFiles.get(guessedMainId) ?? [];
+        existingFiles.push(sFile.path);
+        missionStoryFiles.set(guessedMainId, existingFiles);
+      }
+    }
+
     const mainMissions = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(input.dataDir, mainMissionItem.path),
     );
@@ -74,6 +164,13 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
           }
         }
 
+        const dialogues = missionDialogMap.get(id);
+        if (dialogues && dialogues.length > 0) {
+          lines.push("## 剧情对白", "");
+          lines.push(...dialogues);
+          lines.push("");
+        }
+
         const content = normalizeStarRailText(lines.join("\n"));
         if (!hasLikelyNarrativeText(content)) {
           result.issues.push({
@@ -87,6 +184,9 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
 
         const sourceFiles = [mainMissionItem.path];
         if (subMissionItem) sourceFiles.push(subMissionItem.path);
+        if (talkItem && dialogues && dialogues.length > 0) sourceFiles.push(talkItem.path);
+        const storyFiles = missionStoryFiles.get(id);
+        if (storyFiles) sourceFiles.push(...storyFiles);
 
         result.documents.push({
           category: "sr_mission",

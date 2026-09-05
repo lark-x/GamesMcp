@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameSummary } from "@gip/contracts";
 import { ArchiveAvatar } from "./ArchiveAvatar.js";
+import { isStarRailGame } from "../shared.js";
 
 export function ArchiveHome({
+  currentGame,
   gameName,
   selectedRevisionLabel,
 }: {
@@ -10,6 +12,7 @@ export function ArchiveHome({
   gameName?: string;
   selectedRevisionLabel?: string;
 }) {
+  const isStarRail = isStarRailGame(currentGame?.slug || currentGame?.id, gameName);
   const [keyword, setKeyword] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,20 +108,22 @@ export function ArchiveHome({
             连续剧情正文排版，摒弃气泡式碎化阅读；按系列、章节与任务组织通用多级树，支持台词证据链定位与出处高亮。
           </p>
 
-          <div className="archive-bento-preview-story">
-            <div className="archive-bento-story-line">
-              <span className="archive-bento-speaker">留云借风真君</span>
-              <span className="archive-bento-dialogue">
-                “帝君遇刺之事，本仙早已算知七八，璃月七星所行之举，实在荒谬之极！”
-              </span>
-            </div>
-          </div>
-
           <div className="archive-portal-tags">
-            <span>连续叙事流</span>
-            <span>任务分层树</span>
-            <span>出场人物与出处</span>
-            <span>真机原文比照</span>
+            {isStarRail ? (
+              <>
+                <span>开拓任务</span>
+                <span>同行任务</span>
+                <span>开拓续闻</span>
+                <span>散篇切片</span>
+              </>
+            ) : (
+              <>
+                <span>魔神任务</span>
+                <span>传说任务</span>
+                <span>世界任务</span>
+                <span>邀约事件</span>
+              </>
+            )}
           </div>
           <button
             type="button"
@@ -146,7 +151,9 @@ export function ArchiveHome({
           </div>
           <h2>游戏资料 (Data Codex)</h2>
           <p>
-            结构化游戏百科，包含角色、材料、武器/光锥、圣遗物/遗器、敌人与成就。提供跨字段搜索与无图占位回退。
+            {isStarRail
+              ? "结构化游戏百科，包含角色、材料、光锥图鉴、遗器套装、敌人与成就。提供跨字段搜索与无图占位回退。"
+              : "结构化游戏百科，包含角色、材料、武器装备、圣遗物、敌人与成就。提供跨字段搜索与无图占位回退。"}
           </p>
           <div className="archive-portal-sublinks">
             <a href="#archive/characters" onClick={(e) => e.stopPropagation()}>
@@ -156,10 +163,10 @@ export function ArchiveHome({
               材料
             </a>
             <a href="#archive/weapons" onClick={(e) => e.stopPropagation()}>
-              武器/光锥
+              {isStarRail ? "光锥" : "武器"}
             </a>
             <a href="#archive/artifacts" onClick={(e) => e.stopPropagation()}>
-              圣遗物/遗器
+              {isStarRail ? "遗器" : "圣遗物"}
             </a>
             <a href="#archive/enemies" onClick={(e) => e.stopPropagation()}>
               敌人
@@ -194,14 +201,13 @@ export function ArchiveHome({
           </div>
           <h2>文本档案 (Text Browser)</h2>
           <p>
-            沉浸式文献与长篇文档阅读器，多卷书籍分卷浏览，物品设定与角色故事统一归档，保持阅读上下文与章节导航。
+            {isStarRail
+              ? "沉浸式文献与长篇文档阅读器，多卷书籍分卷浏览，星轨短信、列车访客与角色故事统一归档，保持阅读上下文与章节导航。"
+              : "沉浸式文献与长篇文档阅读器，多卷书籍分卷浏览，物品设定与角色故事统一归档，保持阅读上下文与章节导航。"}
           </p>
           <div className="archive-portal-sublinks">
             <a href="#text/books" onClick={(e) => e.stopPropagation()}>
               书籍文献
-            </a>
-            <a href="#text/items" onClick={(e) => e.stopPropagation()}>
-              物品文本
             </a>
             <a href="#text/character-stories" onClick={(e) => e.stopPropagation()}>
               角色故事
@@ -209,9 +215,28 @@ export function ArchiveHome({
             <a href="#text/voices" onClick={(e) => e.stopPropagation()}>
               角色语音
             </a>
-            <a href="#text/mechanics" onClick={(e) => e.stopPropagation()}>
-              机制与教程
-            </a>
+            {isStarRail ? (
+              <>
+                <a href="#text/messages" onClick={(e) => e.stopPropagation()}>
+                  星轨短信
+                </a>
+                <a href="#text/train-visitors" onClick={(e) => e.stopPropagation()}>
+                  列车访客
+                </a>
+                <a href="#text/items" onClick={(e) => e.stopPropagation()}>
+                  光锥遗器
+                </a>
+              </>
+            ) : (
+              <>
+                <a href="#text/items" onClick={(e) => e.stopPropagation()}>
+                  物品文本
+                </a>
+                <a href="#text/mechanics" onClick={(e) => e.stopPropagation()}>
+                  机制教程
+                </a>
+              </>
+            )}
           </div>
           <button
             type="button"
