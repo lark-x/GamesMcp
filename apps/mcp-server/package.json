@@ -5,7 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "dev": "node --import tsx src/http.ts",
+    "dev:http": "node --import tsx src/http.ts",
+    "dev:stdio": "node --import tsx src/stdio.ts",
+    "start": "node dist/index.js",
+    "start:stdio": "node dist/stdio.js",
+    "start:http": "node dist/http.js"
   },
   "dependencies": {
     "@gip/config": "workspace:*",

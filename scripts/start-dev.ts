@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 const preferred = {
   api: Number(process.env.API_PORT ?? 4100),
   web: Number(process.env.WEB_PORT ?? 4173),
+  mcp: Number(process.env.MCP_PORT ?? 4200),
 };
 
 async function isFree(port: number): Promise<boolean> {
@@ -23,15 +24,26 @@ async function nextFree(port: number): Promise<number> {
 
 const apiPort = await nextFree(preferred.api);
 const webPort = await nextFree(preferred.web);
-const env = { ...process.env, API_PORT: String(apiPort), WEB_PORT: String(webPort) };
+const mcpPort = await nextFree(preferred.mcp);
+const env = {
+  ...process.env,
+  API_PORT: String(apiPort),
+  WEB_PORT: String(webPort),
+  MCP_PORT: String(mcpPort),
+  MCP_HTTP_ENABLED: process.env.MCP_HTTP_ENABLED ?? "true",
+};
 const apiChanged = apiPort !== preferred.api;
 const webChanged = webPort !== preferred.web;
+const mcpChanged = mcpPort !== preferred.mcp;
 console.log("开发环境启动配置：");
 console.log(
   `  API 服务：${apiChanged ? "默认端口被占用，已自动切换" : "使用默认端口"} http://127.0.0.1:${apiPort}`,
 );
 console.log(
   `  Web 页面：${webChanged ? "默认端口被占用，已自动切换" : "使用默认端口"} http://127.0.0.1:${webPort}`,
+);
+console.log(
+  `  MCP 服务：${mcpChanged ? "默认端口被占用，已自动切换" : "使用默认端口"} http://127.0.0.1:${mcpPort}/mcp`,
 );
 console.log("  Worker：将与 API 一起启动");
 
@@ -43,6 +55,8 @@ const pnpmArgs = [
   "@gip/web",
   "--filter",
   "@gip/worker",
+  "--filter",
+  "@gip/mcp-server",
   "dev",
 ];
 const child = spawn(

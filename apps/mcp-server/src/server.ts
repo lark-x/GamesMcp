@@ -77,14 +77,16 @@ function materialCandidatesForItemDocument(
 }
 
 async function materialForItemDocument(
-  repository: KnowledgeRepository,
-  revisionId: string,
+  gameDomain: GameDomainService,
+  gameId: string,
   document: DocumentSummary & { provenance?: Record<string, unknown> },
 ) {
   for (const stableId of materialCandidatesForItemDocument(document)) {
     try {
-      const material = await repository.genshin.getMaterial(revisionId, stableId);
-      if (material) return material;
+      // Routed through the game-aware archive adapter: structured enrichment
+      // must follow the caller's game, never a hardcoded Genshin table.
+      const material = await gameDomain.getMaterial(gameId, stableId);
+      return material;
     } catch {
       // Item text search should not fail when optional structured enrichment is absent.
     }
@@ -93,11 +95,12 @@ async function materialForItemDocument(
 }
 
 async function shapeItemDocument(
-  repository: KnowledgeRepository,
+  gameDomain: GameDomainService,
+  gameId: string,
   revisionId: string,
   document: DocumentSummary & { body?: string; provenance?: Record<string, unknown> },
 ) {
-  const material = await materialForItemDocument(repository, revisionId, document);
+  const material = await materialForItemDocument(gameDomain, gameId, document);
   return {
     id: document.id,
     stableId: document.id,
@@ -214,7 +217,7 @@ export function createMcpServer(
 
   server.tool(
     "get_character",
-    "Get one Genshin character by display name with structured facts.",
+    "Get one playable character by display name with structured facts.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
@@ -231,7 +234,7 @@ export function createMcpServer(
 
   server.tool(
     "get_material",
-    "Get one Genshin material by display name, including usage and sources.",
+    "Get one material by display name, including usage and sources.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
@@ -246,8 +249,25 @@ export function createMcpServer(
   );
 
   server.tool(
+    "get_equipment",
+    "Get one signature equipment (Genshin weapon or StarRail light cone) by display name with structured facts.",
+    { game_id: optionalGameId, name: nameInput },
+    async ({ game_id: gameIdInput, name }) => {
+      try {
+        const game_id = await resolveGameId(gameIdInput);
+        const equipment = await gameDomain.findStructuredByName(game_id, "weapon", name);
+        if (!equipment)
+          return errorResult("equipment_not_found", `Equipment was not found: ${name}`);
+        return textResult({ equipment });
+      } catch (error) {
+        return errorResultFrom(error, "get_equipment_failed", "Equipment could not be loaded");
+      }
+    },
+  );
+
+  server.tool(
     "get_weapon",
-    "Get one Genshin weapon by display name with structured facts.",
+    "[Alias of get_equipment] Get one weapon (Genshin) or light cone (StarRail) by display name with structured facts.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
@@ -263,7 +283,7 @@ export function createMcpServer(
 
   server.tool(
     "get_enemy",
-    "Get one Genshin enemy by display name with structured facts.",
+    "Get one enemy or boss by display name with structured facts.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
@@ -693,7 +713,8 @@ export function createMcpServer(
         const itemTexts = await Promise.all(
           result.documents.map(async (document) =>
             shapeItemDocument(
-              repository,
+              gameDomain,
+              game_id,
               revisionId,
               await hydrateItemDocument(repository, game_id, revisionId, document),
             ),
@@ -730,7 +751,7 @@ export function createMcpServer(
           : null;
         if (document?.type === "item_description") {
           return textResult({
-            item: await shapeItemDocument(repository, revisionId, document),
+            item: await shapeItemDocument(gameDomain, game_id, revisionId, document),
           });
         }
         const material = await gameDomain.getMaterial(game_id, item_id);

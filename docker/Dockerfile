@@ -69,6 +69,17 @@ FROM web-source AS web-build
 WORKDIR /app
 RUN pnpm --filter @gip/web... build
 
+# 7b. MCP build stage (targeted source, build & pruned prod dependencies)
+FROM pkg-source AS mcp-source
+WORKDIR /app
+COPY apps/mcp-server/ ./apps/mcp-server/
+
+FROM mcp-source AS mcp-build
+WORKDIR /app
+RUN pnpm --filter @gip/mcp-server... build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm --filter @gip/mcp-server deploy --legacy --prod /prod/mcp
+
 # 8. API Runtime stage
 FROM node:22-bookworm-slim AS api-runtime
 WORKDIR /app
@@ -83,6 +94,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=worker-build /prod/worker /app
 CMD ["node", "dist/index.js"]
+
+# 9b. MCP Runtime stage (Streamable HTTP transport)
+FROM node:22-bookworm-slim AS mcp-runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=mcp-build /prod/mcp /app
+EXPOSE 4200
+CMD ["node", "dist/http.js"]
 
 # 10. Web Runtime stage
 FROM nginx:1.27-alpine AS web-runtime

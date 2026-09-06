@@ -61,6 +61,21 @@ const environmentSchema = z.object({
     .transform((value) => value === "true" || value === "1"),
   GAMESMCP_STARRAIL_DATA_DIR: optionalString,
   GAMESMCP_STARRAIL_ISTAROTH_URL: optionalString,
+  MCP_HTTP_ENABLED: z
+    .enum(["true", "false", "1", "0"])
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  MCP_HOST: z.string().trim().min(1).default("127.0.0.1"),
+  MCP_PORT: z.coerce.number().int().min(1).max(65535).default(4200),
+  MCP_PATH: z
+    .string()
+    .trim()
+    .regex(/^\//u, "MCP_PATH must start with /")
+    .default("/mcp"),
+  MCP_AUTH_TOKEN: optionalString,
+  MCP_SESSION_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
+  MCP_MAX_SESSIONS: z.coerce.number().int().positive().default(100),
+  MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 export type GameProviderRuntimeEntry =
@@ -92,6 +107,16 @@ export type RuntimeConfig = {
   dataDir: string;
   corsOrigins: string[];
   adminToken?: string;
+  mcp: {
+    httpEnabled: boolean;
+    host: string;
+    port: number;
+    path: string;
+    authToken?: string;
+    sessionIdleTimeoutMs: number;
+    maxSessions: number;
+    requestTimeoutMs: number;
+  };
   llm: {
     baseUrl?: string;
     apiKey?: string;
@@ -164,6 +189,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (!existsSync(starRailDataDir))
       throw new Error(`GAMESMCP_STARRAIL_DATA_DIR does not exist: ${starRailDataDir}`);
   }
+  // Production safety gate: an HTTP MCP reachable beyond loopback must never run
+  // without a bearer token, otherwise remote agents could query the knowledge
+  // base unauthenticated.
+  const mcpHostIsLoopback = ["127.0.0.1", "localhost", "::1"].includes(parsed.MCP_HOST);
+  if (parsed.NODE_ENV === "production" && parsed.MCP_HTTP_ENABLED && !mcpHostIsLoopback) {
+    if (!parsed.MCP_AUTH_TOKEN)
+      throw new Error(
+        "MCP_AUTH_TOKEN is required when the HTTP MCP binds to a non-loopback host in production",
+      );
+  }
   const istarothProvider: Extract<GameProviderRuntimeEntry, { id: "istaroth" }> = {
     id: "istaroth",
     game: "genshin",
@@ -206,6 +241,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       .map((origin) => origin.trim())
       .filter(Boolean),
     adminToken: parsed.ADMIN_TOKEN,
+    mcp: {
+      httpEnabled: parsed.MCP_HTTP_ENABLED,
+      host: parsed.MCP_HOST,
+      port: parsed.MCP_PORT,
+      path: parsed.MCP_PATH,
+      authToken: parsed.MCP_AUTH_TOKEN,
+      sessionIdleTimeoutMs: parsed.MCP_SESSION_IDLE_TIMEOUT_MS,
+      maxSessions: parsed.MCP_MAX_SESSIONS,
+      requestTimeoutMs: parsed.MCP_REQUEST_TIMEOUT_MS,
+    },
     llm: {
       baseUrl: parsed.LLM_BASE_URL,
       apiKey: parsed.LLM_API_KEY,
@@ -247,9 +292,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
 export function redactConfig(config: RuntimeConfig): Omit<RuntimeConfig, "llm"> & {
   llm: Omit<RuntimeConfig["llm"], "apiKey"> & { apiKey?: string };
+  mcp: Omit<RuntimeConfig["mcp"], "authToken"> & { authToken?: string };
 } {
   return {
     ...config,
     llm: { ...config.llm, apiKey: config.llm.apiKey ? "[redacted]" : undefined },
+    mcp: { ...config.mcp, authToken: config.mcp.authToken ? "[redacted]" : undefined },
   };
 }

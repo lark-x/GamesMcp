@@ -216,6 +216,7 @@ describe("MCP server", () => {
       "get_enemy",
       "get_entity",
       "get_entity_texts",
+      "get_equipment",
       "get_game_capabilities",
       "get_game_document",
       "get_game_document_hierarchy",
