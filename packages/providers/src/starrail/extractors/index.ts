@@ -6,3 +6,4 @@ export * from "./book.js";
 export * from "./character-story.js";
 export * from "./voiceline.js";
 export * from "./item-lore.js";
+export * from "./story-atlas.js";

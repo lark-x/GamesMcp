@@ -8,6 +8,8 @@ import type {
   SearchRequest,
   SearchResult,
   StoryCatalog,
+  TextCatalogResponse,
+  TextKind,
 } from "@gip/contracts";
 import {
   type ArchiveHome,
@@ -167,6 +169,21 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     options: { locale?: string; revisionId?: string; limit?: number } = {},
   ): Promise<ArchiveHome> {
     return this.readModels.getArchiveHome(gameId, options);
+  }
+
+  async listTextCatalog(
+    gameId: string,
+    options: {
+      kind: TextKind;
+      locale?: string;
+      revisionId?: string;
+      group?: string;
+      q?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ): Promise<TextCatalogResponse> {
+    return this.readModels.listTextCatalog(gameId, options);
   }
 
   async listEntities(

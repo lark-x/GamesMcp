@@ -8,6 +8,10 @@ import type {
   RelationshipPredicate,
   SearchRequest,
   SearchResult,
+  TextCatalogEntry,
+  TextCatalogGroup,
+  TextCatalogResponse,
+  TextKind,
 } from "@gip/contracts";
 import type { GameSummary } from "@gip/contracts";
 import {
@@ -2287,6 +2291,452 @@ export class RepositoryReadModels {
       })
       .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
       .slice(0, request.limit ?? defaultLimit);
+  }
+
+  async listTextCatalog(
+    gameId: string,
+    options: {
+      kind: TextKind;
+      locale?: string;
+      revisionId?: string;
+      group?: string;
+      q?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ): Promise<TextCatalogResponse> {
+    const current = await this.getCurrentRevision(gameId);
+    const revision = options.revisionId
+      ? await this.getRevision(options.revisionId, gameId)
+      : current
+        ? await this.getSearchableRevision(gameId, current)
+        : null;
+
+    if (!revision) {
+      return {
+        gameId,
+        revisionId: "",
+        locale: options.locale ?? "zh-CN",
+        kind: options.kind,
+        groups: [],
+        entries: [],
+        total: 0,
+        offset: options.offset ?? 0,
+        limit: options.limit ?? 50,
+        nextOffset: null,
+      };
+    }
+
+    const locale = options.locale ?? "zh-CN";
+    const offset = Math.max(options.offset ?? 0, 0);
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    const game = await this.getGame(gameId);
+    const isGenshin = Boolean((game?.slug || "").includes("genshin"));
+
+    if (options.kind === "voices" && isGenshin) {
+      return this.listGenshinVoiceCatalog(gameId, revision, locale, options.group, options.q, offset, limit);
+    }
+
+    return this.listDocumentsTextCatalog(gameId, revision, locale, options.kind, isGenshin, options.group, options.q, offset, limit);
+  }
+
+  private async listGenshinVoiceCatalog(
+    gameId: string,
+    revision: { id: string },
+    locale: string,
+    requestedGroup: string | undefined,
+    q: string | undefined,
+    offset: number,
+    limit: number,
+  ): Promise<TextCatalogResponse> {
+    const groupResult = await this.db.execute(sql`
+      SELECT 
+        v.character_stable_id as id,
+        coalesce(e.canonical_name, v.character_stable_id) as name,
+        count(*)::int as count
+      FROM knowledge.genshin_voice_lines v
+      LEFT JOIN knowledge.entities e ON (
+        e.game_id = ${gameId} AND e.type = 'character' AND (
+          e.source_key = replace(v.character_stable_id, 'genshin:character:', 'character/')
+          OR ('genshin:character:' || (e.properties->>'avatarId')) = v.character_stable_id
+        )
+      )
+      WHERE v.game_id = ${gameId} AND v.revision_id = ${revision.id} AND v.locale = ${locale}
+        AND v.title <> '' AND v.title NOT LIKE '%#{%'
+      GROUP BY v.character_stable_id, e.canonical_name
+      ORDER BY coalesce(e.canonical_name, v.character_stable_id) ASC
+    `);
+
+    const groupRows = Array.isArray(groupResult)
+      ? groupResult
+      : (groupResult && typeof groupResult === "object" && "rows" in groupResult)
+        ? (groupResult as { rows: any[] }).rows
+        : [];
+
+    const groups: TextCatalogGroup[] = groupRows.map((row: any, index: number) => ({
+      id: String(row.id),
+      name: String(row.name),
+      count: Number(row.count ?? 0),
+      subtitle: `${row.count} 条语音`,
+      order: index + 1,
+    }));
+
+    const firstGroup = groups[0];
+    if (!firstGroup) {
+      return {
+        gameId,
+        revisionId: revision.id,
+        locale,
+        kind: "voices",
+        groups: [],
+        entries: [],
+        total: 0,
+        offset,
+        limit,
+        nextOffset: null,
+      };
+    }
+
+    const activeGroupId = requestedGroup ?? firstGroup.id;
+    const activeGroup = groups.find((g) => g.id === activeGroupId) ?? firstGroup;
+
+    const filterConditions = [
+      sql`v.game_id = ${gameId}`,
+      sql`v.revision_id = ${revision.id}`,
+      sql`v.locale = ${locale}`,
+      sql`v.title <> ''`,
+      sql`v.title NOT LIKE '%#{%'`,
+    ];
+
+    if (requestedGroup !== "all") {
+      filterConditions.push(sql`v.character_stable_id = ${activeGroup.id}`);
+    }
+
+    if (q && q.trim()) {
+      const escaped = `%${q.trim()}%`;
+      filterConditions.push(sql`(v.title ILIKE ${escaped} OR v.body ILIKE ${escaped})`);
+    }
+
+    const whereClause = sql.join(filterConditions, sql` AND `);
+
+    const countRes = await this.db.execute(sql`
+      SELECT count(*)::int as total
+      FROM knowledge.genshin_voice_lines v
+      WHERE ${whereClause}
+    `);
+    const countRows = Array.isArray(countRes)
+      ? countRes
+      : (countRes && typeof countRes === "object" && "rows" in countRes)
+        ? (countRes as { rows: any[] }).rows
+        : [];
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const entryRes = await this.db.execute(sql`
+      SELECT 
+        v.id,
+        v.stable_id,
+        v.title,
+        substring(v.body from 1 for 80) as preview,
+        v.game_version,
+        v.locale,
+        v.provenance,
+        v.source_key
+      FROM knowledge.genshin_voice_lines v
+      WHERE ${whereClause}
+      ORDER BY v.title ASC, v.stable_id ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `);
+
+    const entryRows = Array.isArray(entryRes)
+      ? entryRes
+      : (entryRes && typeof entryRes === "object" && "rows" in entryRes)
+        ? (entryRes as { rows: any[] }).rows
+        : [];
+
+    const entries: TextCatalogEntry[] = entryRows.map((row: any, idx: number) => ({
+      documentId: String(row.id),
+      stableId: String(row.stable_id),
+      kind: "voices",
+      title: String(row.title),
+      subtitle: `角色语音 · ${activeGroup.name}`,
+      preview: row.preview ? String(row.preview).replace(/\s+/g, " ").trim() : null,
+      groupId: activeGroup.id,
+      groupName: activeGroup.name,
+      order: offset + idx + 1,
+      gameVersion: row.game_version ?? null,
+      locale: String(row.locale ?? locale),
+      provenance: {
+        sourceKey: row.source_key ?? null,
+        sourceType: "genshin_voice_lines",
+      },
+    }));
+
+    return {
+      gameId,
+      revisionId: revision.id,
+      locale,
+      kind: "voices",
+      groups,
+      entries,
+      total,
+      offset,
+      limit,
+      nextOffset: offset + entries.length < total ? offset + entries.length : null,
+    };
+  }
+
+  private async listDocumentsTextCatalog(
+    gameId: string,
+    revision: { id: string },
+    locale: string,
+    kind: TextKind,
+    isGenshin: boolean,
+    requestedGroup: string | undefined,
+    q: string | undefined,
+    offset: number,
+    limit: number,
+  ): Promise<TextCatalogResponse> {
+    const docTypes = this.docTypesForKind(kind, isGenshin);
+    const docTypesSql =
+      docTypes.length > 0
+        ? sql`d.type IN (${sql.join(
+            docTypes.map((t) => sql`${t}`),
+            sql`, `,
+          )})`
+        : sql`false`;
+
+    const groupResult = await this.db.execute(sql`
+      SELECT 
+        coalesce(
+          d.metadata->>'groupId',
+          CASE 
+            WHEN d.type IN ('voiceline', 'message', 'train_visitor') THEN split_part(d.title, '：', 1)
+            WHEN d.type = 'character_story' AND ${isGenshin} THEN split_part(d.title, ' · ', 1)
+            WHEN d.type = 'character_story' THEN split_part(d.title, '：', 1)
+            WHEN d.type = 'book' THEN coalesce(d.metadata->>'bookStableId', split_part(d.title, '·', 1))
+            ELSE 'all'
+          END
+        ) as id,
+        coalesce(
+          d.metadata->>'groupName',
+          CASE 
+            WHEN d.type IN ('voiceline', 'message', 'train_visitor') THEN split_part(d.title, '：', 1)
+            WHEN d.type = 'character_story' AND ${isGenshin} THEN split_part(d.title, ' · ', 1)
+            WHEN d.type = 'character_story' THEN split_part(d.title, '：', 1)
+            WHEN d.type = 'book' THEN coalesce(d.metadata->>'bookSeriesTitle', split_part(d.title, '·', 1))
+            ELSE '全部'
+          END
+        ) as name,
+        count(*)::int as count
+      FROM knowledge.documents d
+      WHERE d.game_id = ${gameId}
+        AND d.revision_id = ${revision.id}
+        AND d.locale = ${locale}
+        AND d.deleted = false
+        AND (${docTypesSql} OR d.metadata->>'textKind' = ${kind})
+      GROUP BY 1, 2
+      ORDER BY 2 ASC
+    `);
+
+    const groupRows = Array.isArray(groupResult)
+      ? groupResult
+      : (groupResult && typeof groupResult === "object" && "rows" in groupResult)
+        ? (groupResult as { rows: any[] }).rows
+        : [];
+
+    const groups: TextCatalogGroup[] = groupRows
+      .filter((row: any) => row.name && String(row.name).trim().length > 0)
+      .map((row: any, index: number) => ({
+        id: String(row.id),
+        name: String(row.name),
+        count: Number(row.count ?? 0),
+        subtitle: `${row.count} 个条目`,
+        order: index + 1,
+      }));
+
+    const firstGroup = groups[0];
+    if (!firstGroup) {
+      return {
+        gameId,
+        revisionId: revision.id,
+        locale,
+        kind,
+        groups: [],
+        entries: [],
+        total: 0,
+        offset,
+        limit,
+        nextOffset: null,
+      };
+    }
+
+    const activeGroupId = requestedGroup ?? firstGroup.id;
+    const activeGroup = groups.find((g) => g.id === activeGroupId) ?? firstGroup;
+
+    const filterConditions = [
+      sql`d.game_id = ${gameId}`,
+      sql`d.revision_id = ${revision.id}`,
+      sql`d.locale = ${locale}`,
+      sql`d.deleted = false`,
+      sql`(${docTypesSql} OR d.metadata->>'textKind' = ${kind})`,
+    ];
+
+    if (requestedGroup !== "all" && groups.length > 1) {
+      filterConditions.push(sql`
+        coalesce(
+          d.metadata->>'groupId',
+          CASE 
+            WHEN d.type IN ('voiceline', 'message', 'train_visitor') THEN split_part(d.title, '：', 1)
+            WHEN d.type = 'character_story' AND ${isGenshin} THEN split_part(d.title, ' · ', 1)
+            WHEN d.type = 'character_story' THEN split_part(d.title, '：', 1)
+            WHEN d.type = 'book' THEN coalesce(d.metadata->>'bookStableId', split_part(d.title, '·', 1))
+            ELSE 'all'
+          END
+        ) = ${activeGroup.id}
+      `);
+    }
+
+    if (q && q.trim()) {
+      const escaped = `%${q.trim()}%`;
+      filterConditions.push(sql`(d.title ILIKE ${escaped} OR d.body ILIKE ${escaped})`);
+    }
+
+    const whereClause = sql.join(filterConditions, sql` AND `);
+
+    const countRes = await this.db.execute(sql`
+      SELECT count(*)::int as total
+      FROM knowledge.documents d
+      WHERE ${whereClause}
+    `);
+    const countRows = Array.isArray(countRes)
+      ? countRes
+      : (countRes && typeof countRes === "object" && "rows" in countRes)
+        ? (countRes as { rows: any[] }).rows
+        : [];
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const entryRes = await this.db.execute(sql`
+      SELECT 
+        d.id,
+        d.source_key,
+        d.title,
+        substring(d.body from 1 for 100) as preview,
+        d.game_version,
+        d.locale,
+        d.metadata
+      FROM knowledge.documents d
+      WHERE ${whereClause}
+      ORDER BY (d.metadata->>'order')::int NULLS LAST, d.title ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `);
+
+    const entryRows = Array.isArray(entryRes)
+      ? entryRes
+      : (entryRes && typeof entryRes === "object" && "rows" in entryRes)
+        ? (entryRes as { rows: any[] }).rows
+        : [];
+
+    const cleanPreview = (text: string | null | undefined): string | null => {
+      if (!text) return null;
+      return (
+        text
+          .replace(/^#+\s+[^\n]+/gm, "")
+          .replace(/<[^>]+>/g, "")
+          .replace(/[*_~`]/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120) || null
+      );
+    };
+
+    const entries: TextCatalogEntry[] = entryRows.map((row: any, idx: number) => {
+      const rawTitle = String(row.title ?? "");
+      let cleanTitle = rawTitle;
+      const gname = activeGroup.name;
+
+      if (kind === "train-visitors") {
+        const speaker = rawTitle.split(/[:：]/)[0]?.trim();
+        cleanTitle = speaker ? `${speaker} · 来访留言` : rawTitle;
+      } else if (rawTitle.startsWith(`${gname}：`)) {
+        cleanTitle = rawTitle.slice(gname.length + 1).trim() || rawTitle;
+      } else if (rawTitle.startsWith(`${gname} · `)) {
+        cleanTitle = rawTitle.slice(gname.length + 3).trim() || rawTitle;
+      }
+
+      return {
+        documentId: String(row.id),
+        stableId: String(row.source_key),
+        kind,
+        title: cleanTitle,
+        subtitle: groups.length > 1 ? `${activeGroup.name}` : null,
+        preview: cleanPreview(row.preview),
+        groupId: activeGroup.id,
+        groupName: activeGroup.name,
+        order: offset + idx + 1,
+        gameVersion: row.game_version ?? null,
+        locale: String(row.locale ?? locale),
+        provenance: {
+          sourceKey: row.source_key ?? null,
+          sourceType: row.metadata?.category ?? row.metadata?.sourceType ?? null,
+        },
+      };
+    });
+
+    return {
+      gameId,
+      revisionId: revision.id,
+      locale,
+      kind,
+      groups,
+      entries,
+      total,
+      offset,
+      limit,
+      nextOffset: offset + entries.length < total ? offset + entries.length : null,
+    };
+  }
+
+  private docTypesForKind(kind: TextKind, isGenshin: boolean): string[] {
+    switch (kind) {
+      case "books":
+        return ["book"];
+      case "character-stories":
+        return ["character_story"];
+      case "voices":
+        return ["voiceline"];
+      case "item-texts":
+        return isGenshin ? ["item_description"] : ["item_lore"];
+      case "tutorials":
+        return ["tutorial"];
+      case "guides":
+        return ["guide"];
+      case "exploration-tips":
+        return ["exploration_tip"];
+      case "system-tips":
+        return ["system_tip"];
+      case "loading-tips":
+        return ["loading_tips"];
+      case "gcg":
+        return ["gcg"];
+      case "activity-tutorials":
+        return ["activity_tutorial"];
+      case "mechanics":
+        return ["mechanism"];
+      case "messages":
+        return ["message"];
+      case "train-visitors":
+        return ["train_visitor"];
+      case "story-atlas":
+        return ["story_atlas"];
+      case "discussion":
+        return ["discussion"];
+      case "lightcone-lore":
+        return ["lightcone_lore"];
+      case "relic-lore":
+        return ["relic_lore"];
+      default:
+        return [];
+    }
   }
 }
 

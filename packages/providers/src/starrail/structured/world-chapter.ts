@@ -6,11 +6,13 @@ import { readSafeJsonFile } from "../extractors/shared.js";
 export interface WorldChapterResolverOptions {
   dataDir: string;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailWorldChapterResolver {
   private readonly dataDir: string;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
   private worlds: Map<number, StarRailWorld> = new Map();
   private chapters: Map<number, StarRailChapter> = new Map();
   private initialized = false;
@@ -18,6 +20,7 @@ export class StarRailWorldChapterResolver {
   constructor(options: WorldChapterResolverOptions) {
     this.dataDir = options.dataDir;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -67,7 +70,7 @@ export class StarRailWorldChapterResolver {
       }
     }
 
-    if (this.worlds.size === 0) {
+    if (this.worlds.size === 0 && this.fixture) {
       this.populateBaselineWorlds();
     }
 
@@ -116,7 +119,7 @@ export class StarRailWorldChapterResolver {
       }
     }
 
-    if (this.chapters.size === 0) {
+    if (this.chapters.size === 0 && this.fixture) {
       this.populateBaselineChapters();
     }
 

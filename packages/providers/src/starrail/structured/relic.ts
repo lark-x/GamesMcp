@@ -8,17 +8,20 @@ export interface RelicExtractorOptions {
   dataDir: string;
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailRelicExtractor {
   private readonly dataDir: string;
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
 
   constructor(options: RelicExtractorOptions) {
     this.dataDir = options.dataDir;
     this.inventory = options.inventory;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -39,14 +42,14 @@ export class StarRailRelicExtractor {
   public async extractRelics(): Promise<StarRailRelic[]> {
     const setItem = this.inventory.items.find((i) => i.path === "ExcelOutput/RelicSetConfig.json");
     if (!setItem) {
-      return this.getBaselineRelics();
+      return this.fixture ? this.getBaselineRelics() : [];
     }
 
     const rawSets = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(this.dataDir, setItem.path),
     );
     if (!Array.isArray(rawSets) || rawSets.length === 0) {
-      return this.getBaselineRelics();
+      return this.fixture ? this.getBaselineRelics() : [];
     }
 
     // Load set skill descriptions (2pc, 4pc bonuses)
@@ -96,7 +99,10 @@ export class StarRailRelicExtractor {
       }
     }
 
-    return relics.length > 0 ? relics : this.getBaselineRelics();
+    if (relics.length === 0 && this.fixture) {
+      return this.getBaselineRelics();
+    }
+    return relics;
   }
 
   private getBaselineRelics(): StarRailRelic[] {

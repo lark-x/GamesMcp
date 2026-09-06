@@ -112,7 +112,6 @@
 }
 
 .archive-globalnav,
-.archive-catalog,
 .archive-inspector {
   position: sticky;
   top: 68px;
@@ -122,6 +121,20 @@
   border-radius: 12px;
   background: var(--archive-surface);
   box-shadow: var(--archive-card-glow);
+}
+
+.archive-catalog {
+  position: sticky;
+  top: 68px;
+  height: calc(100vh - 84px);
+  max-height: calc(100vh - 84px);
+  overflow: hidden;
+  border: 1px solid var(--archive-border);
+  border-radius: 12px;
+  background: var(--archive-surface);
+  box-shadow: var(--archive-card-glow);
+  display: flex;
+  flex-direction: column;
 }
 
 .archive-globalnav {
@@ -202,7 +215,7 @@
 }
 
 .archive-catalog {
-  padding: 14px 12px;
+  padding: 0;
 }
 
 .archive-inspector {
@@ -755,6 +768,10 @@
 .story-catalog {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  padding: 14px 12px;
+  box-sizing: border-box;
+  overflow: hidden;
   gap: 10px;
 }
 
@@ -762,6 +779,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .story-catalog-form input {
@@ -784,6 +802,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .story-tree-series {
@@ -1980,6 +2001,10 @@ ruby.story-ruby rt.story-rt {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100%;
+  padding: 14px 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .material-catalog input {
@@ -2689,4 +2714,336 @@ ruby.story-ruby rt.story-rt {
 .starrail-action-btn.primary:hover {
   background: #0369a1;
 }
+
+/* ==========================================================================
+   14. Text Catalog & Document Browser
+   ========================================================================== */
+.text-catalog-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--archive-surface);
+  color: var(--archive-text);
+  overflow: hidden;
+}
+
+.text-catalog-search {
+  padding: 12px;
+  border-bottom: 1px solid var(--archive-border);
+  flex-shrink: 0;
+}
+
+.text-catalog-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.text-catalog-search-input {
+  width: 100%;
+  padding: 7px 28px 7px 10px;
+  font-size: 12.5px;
+  background: var(--archive-surface-alt);
+  border: 1px solid var(--archive-border);
+  border-radius: 6px;
+  color: var(--archive-text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.text-catalog-search-input:focus {
+  border-color: var(--archive-border-hover);
+  box-shadow: 0 0 0 2px var(--archive-accent-subtle);
+}
+
+.text-catalog-search-input::placeholder {
+  color: var(--archive-muted);
+}
+
+.text-catalog-search-clear {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--archive-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.text-catalog-search-clear:hover {
+  color: var(--archive-text);
+}
+
+/* Group Selector */
+.text-group-selector-container {
+  padding: 10px 12px 6px 12px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.text-group-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.text-group-selector-label {
+  font-size: 12px;
+  color: var(--archive-muted);
+  font-weight: 500;
+}
+
+.text-group-selector-count {
+  font-size: 11px;
+  color: var(--archive-muted);
+}
+
+.text-group-trigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 10px;
+  background: var(--archive-surface-alt);
+  border: 1px solid var(--archive-border);
+  border-radius: 6px;
+  color: var(--archive-text);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.text-group-trigger:hover {
+  border-color: var(--archive-border-hover);
+  background: var(--archive-surface-hover);
+}
+
+.text-group-trigger-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.text-group-trigger-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-group-trigger-badge {
+  font-size: 11px;
+  background: var(--archive-surface-hover);
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: var(--archive-muted);
+}
+
+.text-group-trigger-arrow {
+  font-size: 10px;
+  color: var(--archive-muted);
+  margin-left: 8px;
+}
+
+.text-group-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  right: 12px;
+  z-index: 100;
+  margin-top: 4px;
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-border);
+  border-radius: 8px;
+  box-shadow: var(--archive-card-glow-hover);
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.text-group-dropdown-filter {
+  padding: 8px;
+  border-bottom: 1px solid var(--archive-border);
+  flex-shrink: 0;
+}
+
+.text-group-dropdown-input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--archive-surface-alt);
+  border: 1px solid var(--archive-border);
+  border-radius: 4px;
+  color: var(--archive-text);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.text-group-dropdown-input:focus {
+  border-color: var(--archive-border-hover);
+}
+
+.text-group-dropdown-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.text-group-dropdown-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  color: var(--archive-text);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.12s ease;
+  box-sizing: border-box;
+}
+
+.text-group-dropdown-item:hover {
+  background: var(--archive-surface-hover);
+}
+
+.text-group-dropdown-item.is-selected {
+  background: var(--badge-5star-bg);
+  color: var(--badge-5star);
+  font-weight: 600;
+}
+
+/* Scrollable Entries List */
+.text-catalog-entries-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+  min-height: 0;
+}
+
+.text-catalog-empty,
+.text-catalog-loading {
+  padding: 36px 12px;
+  text-align: center;
+  color: var(--archive-muted);
+  font-size: 13px;
+}
+
+/* Catalog Entry Item */
+.text-catalog-entry {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 10px;
+  min-height: 48px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  margin-bottom: 2px;
+  box-sizing: border-box;
+}
+
+.text-catalog-entry:hover {
+  background: var(--archive-surface-alt);
+}
+
+.text-catalog-entry.is-active {
+  background: var(--badge-5star-bg);
+  border-color: var(--archive-border-subtle);
+  border-left-color: var(--badge-5star);
+}
+
+.text-catalog-entry-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--archive-text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.text-catalog-entry.is-active .text-catalog-entry-title {
+  color: var(--badge-5star);
+  font-weight: 600;
+}
+
+.text-catalog-entry-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  font-size: 11.5px;
+  color: var(--archive-muted);
+  line-height: 1.2;
+}
+
+.text-catalog-entry-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80%;
+}
+
+.text-catalog-entry-version {
+  font-size: 10.5px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* Pagination Footer */
+.text-catalog-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid var(--archive-border);
+  font-size: 12px;
+  color: var(--archive-muted);
+  background: var(--archive-surface-alt);
+  flex-shrink: 0;
+}
+
+.text-catalog-page-btn {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-border);
+  border-radius: 4px;
+  color: var(--archive-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.text-catalog-page-btn:hover:not(:disabled) {
+  background: var(--archive-surface-hover);
+  border-color: var(--archive-border-hover);
+}
+
+.text-catalog-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: var(--archive-muted);
+}
+
 

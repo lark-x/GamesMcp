@@ -53,10 +53,11 @@ describe("StarRail Structured Story Pipeline (Phase 3)", () => {
   });
 
   describe("StarRailWorldChapterResolver", () => {
-    it("falls back to the real WorldDataConfig ID space when config files are absent", async () => {
+    it("falls back to the real WorldDataConfig ID space when in fixture mode and config files are absent", async () => {
       const resolver = new StarRailWorldChapterResolver({
         dataDir: "data/fixtures/starrail",
         resolver: mockResolver,
+        fixture: true,
       });
 
       await resolver.initialize();
@@ -69,6 +70,18 @@ describe("StarRail Structured Story Pipeline (Phase 3)", () => {
       expect(chapter).toBeDefined();
       expect(chapter?.name).toBe("序幕•第一节");
       expect(chapter?.worldId).toBe(101);
+    });
+
+    it("does not populate baseline worlds when in production mode and files are absent", async () => {
+      const resolver = new StarRailWorldChapterResolver({
+        dataDir: "data/fixtures/starrail",
+        resolver: mockResolver,
+        fixture: false,
+      });
+
+      await resolver.initialize();
+      expect(resolver.getWorld(101)).toBeUndefined();
+      expect(resolver.getChapter(100001)).toBeUndefined();
     });
   });
 });

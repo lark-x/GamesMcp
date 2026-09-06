@@ -40,6 +40,17 @@ export const documentTypeSchema = z.enum([
   "message",
   "train_visitor",
   "item_lore",
+  // 扩展可读文本类型（教程/提示/七圣/活动/剧情回顾/散篇/光锥与遗器背景）
+  "loading_tips",
+  "gcg",
+  "activity_tutorial",
+  "guide",
+  "exploration_tip",
+  "system_tip",
+  "story_atlas",
+  "discussion",
+  "lightcone_lore",
+  "relic_lore",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
@@ -557,4 +568,6 @@ export const gameTerminologySchema = z.object({
   materialLabel: z.string().default("材料"),
 });
 export type GameTerminology = z.infer<typeof gameTerminologySchema>;
+
+export * from "./text.js";
 

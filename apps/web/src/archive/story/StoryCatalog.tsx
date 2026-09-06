@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { ArchiveEmpty, ArchiveLoading } from "../ArchiveStates.js";
 import { getQuestTypeOptions, questTypeLabel, questTypeOptions } from "../../shared.js";
@@ -237,12 +237,21 @@ export function StoryCatalog({
     });
   }, [activeQuestKey, tree]);
 
-  // Default expand first region if empty and no active quest
+  const hasInitializedExpansionRef = useRef(false);
+
+  // Reset expansion initialization when game or catalog changes
   useEffect(() => {
-    if (!activeQuestKey && tree.length > 0 && expandedIds.size === 0 && !isSearching) {
+    hasInitializedExpansionRef.current = false;
+  }, [isStarRail, catalog]);
+
+  // Default expand first region ONCE when tree is first ready and no active quest
+  useEffect(() => {
+    if (hasInitializedExpansionRef.current) return;
+    if (!activeQuestKey && tree.length > 0 && !isSearching) {
       setExpandedIds(new Set([tree[0].id]));
+      hasInitializedExpansionRef.current = true;
     }
-  }, [activeQuestKey, tree, expandedIds.size, isSearching]);
+  }, [activeQuestKey, tree, isSearching]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -326,7 +335,18 @@ export function StoryCatalog({
                               type="button"
                               className="story-tree-header story-tree-chapter-header"
                               aria-expanded={isChapterExpanded}
-                              onClick={() => toggleExpand(child.id)}
+                              onClick={() => {
+                                toggleExpand(child.id);
+                                if (!isChapterExpanded && child.children?.length) {
+                                  const firstQuest = child.children[0];
+                                  if (firstQuest?.questKey) {
+                                    onSelect({
+                                      questKey: firstQuest.questKey,
+                                      title: firstQuest.title,
+                                    });
+                                  }
+                                }
+                              }}
                             >
                               <span className="story-tree-toggle-icon" aria-hidden="true">
                                 {isChapterExpanded ? "▾" : "▸"}

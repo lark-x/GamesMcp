@@ -8,6 +8,7 @@ import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js"
 import { ArchivePagination } from "../ArchivePagination.js";
 import type { ArchiveMaterial } from "./material.types.js";
 import { isInternalEntry } from "../data/data.types.js";
+import { isStarRailGame } from "../../shared.js";
 
 const CATEGORY_LABELS: Record<string, string> = {
   character_development: "角色培养素材",
@@ -151,13 +152,18 @@ export function MaterialBrowser({
     void loadMaterialDetail(initialMaterialId);
   }, [initialMaterialId, loadMaterialDetail]);
 
+  const isStarRail = isStarRailGame(gameId, gameName);
+
   const sections: GlobalNavSection[] = useMemo(
     () => [
       {
-        label: "浏览",
+        label: "游戏资料",
         items: [
-          { key: "home", label: "首页", onSelect: onHome },
-          { key: "story", label: "剧情档案", onSelect: onOpenStory },
+          {
+            key: "characters",
+            label: "角色",
+            onSelect: () => (window.location.hash = "archive/characters"),
+          },
           {
             key: "materials",
             label: "材料",
@@ -168,11 +174,30 @@ export function MaterialBrowser({
               }
             },
           },
-          { key: "text", label: "文本", onSelect: onOpenText },
+          {
+            key: "weapons",
+            label: isStarRail ? "光锥" : "武器",
+            onSelect: () => (window.location.hash = "archive/weapons"),
+          },
+          {
+            key: "artifacts",
+            label: isStarRail ? "遗器" : "圣遗物",
+            onSelect: () => (window.location.hash = "archive/artifacts"),
+          },
+          {
+            key: "enemies",
+            label: "敌人",
+            onSelect: () => (window.location.hash = "archive/enemies"),
+          },
+          {
+            key: "achievements",
+            label: "成就",
+            onSelect: () => (window.location.hash = "archive/achievements"),
+          },
         ],
       },
     ],
-    [onHome, onOpenStory, onOpenText],
+    [isStarRail],
   );
 
   return (

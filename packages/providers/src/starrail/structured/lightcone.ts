@@ -8,17 +8,20 @@ export interface LightConeExtractorOptions {
   dataDir: string;
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailLightConeExtractor {
   private readonly dataDir: string;
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
 
   constructor(options: LightConeExtractorOptions) {
     this.dataDir = options.dataDir;
     this.inventory = options.inventory;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -39,14 +42,14 @@ export class StarRailLightConeExtractor {
   public async extractLightCones(): Promise<StarRailLightCone[]> {
     const equipItem = this.inventory.items.find((i) => i.path === "ExcelOutput/EquipmentConfig.json");
     if (!equipItem) {
-      return this.getBaselineLightCones();
+      return this.fixture ? this.getBaselineLightCones() : [];
     }
 
     const rawEquips = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(this.dataDir, equipItem.path),
     );
     if (!Array.isArray(rawEquips) || rawEquips.length === 0) {
-      return this.getBaselineLightCones();
+      return this.fixture ? this.getBaselineLightCones() : [];
     }
 
     // Load skills
@@ -100,7 +103,10 @@ export class StarRailLightConeExtractor {
       });
     }
 
-    return cones.length > 0 ? cones : this.getBaselineLightCones();
+    if (cones.length === 0 && this.fixture) {
+      return this.getBaselineLightCones();
+    }
+    return cones;
   }
 
   private getBaselineLightCones(): StarRailLightCone[] {

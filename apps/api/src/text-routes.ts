@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { DocumentSummary } from "@gip/contracts";
-import { documentIdSchema, gameIdSchema, revisionIdSchema } from "@gip/contracts";
+import { documentIdSchema, gameIdSchema, revisionIdSchema, textKindSchema } from "@gip/contracts";
 import type { DocumentDetail, GameDomainService, TextBindingType } from "@gip/domain";
 import type { KnowledgeRepository } from "@gip/domain";
 import { DEFAULT_MCP_RESPONSE_BUDGET, shapeForBudget } from "@gip/search";
@@ -41,6 +41,16 @@ const textDocumentListQuerySchema = z.object({
   locale: z.string().trim().min(1).max(40).default("zh-CN"),
   limit: z.coerce.number().int().min(1).max(10000).default(100),
   offset: z.coerce.number().int().min(0).default(0),
+  revisionId: revisionIdSchema.optional(),
+});
+
+const textCatalogQuerySchema = z.object({
+  kind: textKindSchema.default("books"),
+  locale: z.string().trim().min(1).max(40).default("zh-CN"),
+  group: z.string().trim().max(200).optional(),
+  q: z.string().trim().max(200).optional(),
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
   revisionId: revisionIdSchema.optional(),
 });
 
@@ -515,6 +525,21 @@ export function registerTextRoutes(
       count,
       voices: category?.entries ?? [],
     };
+  });
+
+  app.get("/api/games/:gameId/text/catalog", async (request) => {
+    const params = z.object({ gameId: gameIdSchema }).parse(request.params);
+    const query = textCatalogQuerySchema.parse(parseQuery(request));
+    const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
+    return gameDomain.listTextCatalog(params.gameId, {
+      kind: query.kind,
+      locale: query.locale,
+      revisionId,
+      group: query.group,
+      q: query.q,
+      offset: query.offset,
+      limit: query.limit,
+    });
   });
 
   app.get("/api/games/:gameId/text/documents/:documentId/section", async (request) => {

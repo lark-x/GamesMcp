@@ -27,17 +27,20 @@ export interface CharacterExtractorOptions {
   dataDir: string;
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailCharacterExtractor {
   private readonly dataDir: string;
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
 
   constructor(options: CharacterExtractorOptions) {
     this.dataDir = options.dataDir;
     this.inventory = options.inventory;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -58,14 +61,14 @@ export class StarRailCharacterExtractor {
   public async extractCharacters(): Promise<StarRailCharacter[]> {
     const avatarItem = this.inventory.items.find((i) => i.path === "ExcelOutput/AvatarConfig.json");
     if (!avatarItem) {
-      return this.getBaselineCharacters();
+      return this.fixture ? this.getBaselineCharacters() : [];
     }
 
     const rawAvatars = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(this.dataDir, avatarItem.path),
     );
     if (!Array.isArray(rawAvatars) || rawAvatars.length === 0) {
-      return this.getBaselineCharacters();
+      return this.fixture ? this.getBaselineCharacters() : [];
     }
 
     // Load skills
@@ -181,7 +184,10 @@ export class StarRailCharacterExtractor {
       });
     }
 
-    return characters.length > 0 ? characters : this.getBaselineCharacters();
+    if (characters.length === 0 && this.fixture) {
+      return this.getBaselineCharacters();
+    }
+    return characters;
   }
 
   private getBaselineCharacters(): StarRailCharacter[] {

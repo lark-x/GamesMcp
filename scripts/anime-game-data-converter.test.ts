@@ -4,6 +4,7 @@ import type { NormalizedRecord } from "@gip/domain";
 import { validateNormalizedRecords } from "@gip/domain";
 import {
   bookStableId,
+  classifyMechanismDocument,
   convertAnimeGameData,
   documentStableId,
   segmentBookBody,
@@ -192,5 +193,50 @@ describe("AnimeGameData converter", () => {
     expect(
       validateNormalizedRecords(records).filter((issue) => issue.severity === "error"),
     ).toEqual([]);
+  });
+
+  it("correctly classifies mechanism stable IDs into granular document types and groups", () => {
+    expect(classifyMechanismDocument("mechanism/Tutorial/101")).toEqual({
+      documentType: "tutorial",
+      textKind: "tutorials",
+      groupId: "tutorial/basic",
+      groupName: "基础教程",
+    });
+    expect(classifyMechanismDocument("mechanism/GuideV2/201")).toEqual({
+      documentType: "guide",
+      textKind: "guides",
+      groupId: "guide/gameplay",
+      groupName: "引导指南",
+    });
+    expect(classifyMechanismDocument("mechanism/PushTips/301")).toEqual({
+      documentType: "exploration_tip",
+      textKind: "exploration-tips",
+      groupId: "push_tips/exploration",
+      groupName: "探索提示",
+    });
+    expect(classifyMechanismDocument("mechanism/LoadingTips/401")).toEqual({
+      documentType: "loading_tips",
+      textKind: "loading-tips",
+      groupId: "loading_tips/system",
+      groupName: "加载提示",
+    });
+    expect(classifyMechanismDocument("mechanism/GCGTutorialText/501")).toEqual({
+      documentType: "gcg",
+      textKind: "gcg",
+      groupId: "gcg/card",
+      groupName: "七圣召唤",
+    });
+    expect(classifyMechanismDocument("mechanism/ActivitySnowRaceHideTutorial/601")).toEqual({
+      documentType: "activity_tutorial",
+      textKind: "activity-tutorials",
+      groupId: "activity_tutorial/event",
+      groupName: "活动教程",
+    });
+    expect(classifyMechanismDocument("mechanism/OtherTable/701")).toEqual({
+      documentType: "mechanism",
+      textKind: "mechanics",
+      groupId: "mechanism/gameplay",
+      groupName: "玩法机制",
+    });
   });
 });

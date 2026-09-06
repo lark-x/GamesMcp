@@ -92,6 +92,10 @@ export function StoryBrowser({
     });
   }
 
+  const handleFiltersChange = useCallback((next: Partial<StoryCatalogFilters>) => {
+    setFilters((current) => ({ ...current, ...next }));
+  }, []);
+
   const loadCatalog = useCallback(
     async (nextFilters: StoryCatalogFilters) => {
       abortRef.current?.abort();
@@ -213,25 +217,71 @@ export function StoryBrowser({
   const sections: GlobalNavSection[] = useMemo(
     () => [
       {
-        label: "浏览",
+        label: "剧情档案",
         items: [
-          { key: "home", label: "首页", onSelect: onHome },
           {
-            key: "story",
-            label: "剧情档案",
-            active: true,
-            onSelect: () => {
-              if (window.location.hash !== "#story") {
-                window.location.hash = "story";
-              }
-            },
+            key: "all",
+            label: "全部剧情",
+            active: !filters.type,
+            onSelect: () => handleFiltersChange({ type: "" }),
           },
-          { key: "materials", label: "材料", onSelect: onOpenMaterials },
-          { key: "text", label: "文本", onSelect: onOpenText },
+          ...(isStarRail
+            ? [
+                {
+                  key: "main",
+                  label: "开拓任务",
+                  active: filters.type === "main",
+                  onSelect: () => handleFiltersChange({ type: "main" }),
+                },
+                {
+                  key: "companion",
+                  label: "同行任务",
+                  active: filters.type === "companion",
+                  onSelect: () => handleFiltersChange({ type: "companion" }),
+                },
+                {
+                  key: "continuation",
+                  label: "开拓续闻",
+                  active: filters.type === "continuation",
+                  onSelect: () => handleFiltersChange({ type: "continuation" }),
+                },
+                {
+                  key: "world",
+                  label: "冒险任务",
+                  active: filters.type === "world",
+                  onSelect: () => handleFiltersChange({ type: "world" }),
+                },
+              ]
+            : [
+                {
+                  key: "archon",
+                  label: "魔神任务",
+                  active: filters.type === "archon_quest" || filters.type === "archon",
+                  onSelect: () => handleFiltersChange({ type: "archon_quest" }),
+                },
+                {
+                  key: "story",
+                  label: "传说任务",
+                  active: filters.type === "story_quest" || filters.type === "story",
+                  onSelect: () => handleFiltersChange({ type: "story_quest" }),
+                },
+                {
+                  key: "world",
+                  label: "世界任务",
+                  active: filters.type === "world_quest" || filters.type === "world",
+                  onSelect: () => handleFiltersChange({ type: "world_quest" }),
+                },
+                {
+                  key: "event",
+                  label: "活动任务",
+                  active: filters.type === "event_quest" || filters.type === "event",
+                  onSelect: () => handleFiltersChange({ type: "event_quest" }),
+                },
+              ]),
         ],
       },
     ],
-    [onHome, onOpenMaterials, onOpenText],
+    [isStarRail, filters.type, handleFiltersChange],
   );
 
   function selectEntry(entry: { questKey: string; title: string }) {

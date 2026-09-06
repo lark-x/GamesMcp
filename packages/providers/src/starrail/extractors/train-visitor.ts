@@ -59,12 +59,7 @@ export async function extractTrainVisitorDocuments(
         const leaveText = resolveHash(v.MessageLeave);
         const residentText = resolveHash(v.MessageResident);
 
-        // 标题带首条留言预览，区分同一访客的多次来访记录。
-        const preview = (comeText ?? residentText ?? leaveText ?? "")
-          .replace(/\s+/gu, " ")
-          .trim()
-          .slice(0, 24);
-        const title = preview ? `${avatarName}：${preview}` : `${avatarName}：列车来访留言`;
+        const title = `${avatarName} · 列车来访留言`;
 
         const lines: string[] = [];
         if (comeText) {

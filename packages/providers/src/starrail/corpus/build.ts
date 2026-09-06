@@ -10,6 +10,7 @@ import {
   extractStoryDocuments,
   extractTrainVisitorDocuments,
   extractVoiceLineDocuments,
+  extractStoryAtlasDocuments,
 } from "../extractors/index.js";
 import { writeStarRailIstarothCorpus } from "./writer.js";
 import type { StarRailCorpusBuildResult, StarRailCorpusDocument } from "./types.js";
@@ -48,6 +49,7 @@ export async function buildStarRailIstarothCorpus(input: {
     extractCharacterStoryDocuments(extractorInput),
     extractVoiceLineDocuments(extractorInput),
     extractItemLoreDocuments(extractorInput),
+    extractStoryAtlasDocuments(extractorInput),
   ]);
   const documents = dedupeByPath(extracted.flatMap((result) => result.documents));
   return await writeStarRailIstarothCorpus({

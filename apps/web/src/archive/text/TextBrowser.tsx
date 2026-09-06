@@ -1,122 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentDetail } from "@gip/domain";
+import type { TextCatalogEntry as EntryModel, TextCatalogResponse, TextKind } from "@gip/contracts";
 import { apiFetch } from "../../api.js";
-import { mapBookListResponse, type CodexBookCatalog, type CodexBookVolume } from "../../codex/mappers.js";
 import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
 import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveInspector.js";
 import { isStarRailGame } from "../../shared.js";
 import { formatStoryText } from "../story/story-format.js";
-import type { TextChapterRef } from "./text.types.js";
-
-type UnknownRecord = Record<string, unknown>;
-
-type TextKindConfig = {
-  navLabel: string;
-  itemNoun: string;
-  searchLabel: string;
-  emptyTitle: string;
-  /** 上游条目名直接是正文标题，目录按平铺列表分组。 */
-  flatGroupTitle?: string;
-};
-
-const TEXT_KINDS: Record<string, TextKindConfig> = {
-  books: {
-    navLabel: "书籍文献",
-    itemNoun: "书籍",
-    searchLabel: "搜索书籍",
-    emptyTitle: "暂无已发布书籍文本",
-  },
-  "character-stories": {
-    navLabel: "角色故事",
-    itemNoun: "角色故事",
-    searchLabel: "搜索角色故事",
-    emptyTitle: "暂无角色故事文本",
-  },
-  voices: {
-    navLabel: "角色语音",
-    itemNoun: "语音",
-    searchLabel: "搜索角色语音",
-    emptyTitle: "暂无角色语音文本",
-    flatGroupTitle: "角色语音",
-  },
-  messages: {
-    navLabel: "星轨短信",
-    itemNoun: "短信",
-    searchLabel: "搜索星轨短信",
-    emptyTitle: "暂无星轨短信文本",
-    flatGroupTitle: "星轨短信",
-  },
-  "train-visitors": {
-    navLabel: "列车访客",
-    itemNoun: "访客",
-    searchLabel: "搜索列车访客",
-    emptyTitle: "暂无列车访客文本",
-    flatGroupTitle: "列车访客",
-  },
-  items: {
-    navLabel: "物品文本",
-    itemNoun: "物品",
-    searchLabel: "搜索物品文本",
-    emptyTitle: "暂无物品文本",
-    flatGroupTitle: "物品文本",
-  },
-  mechanics: {
-    navLabel: "机制教程",
-    itemNoun: "教程",
-    searchLabel: "搜索机制教程",
-    emptyTitle: "暂无机制教程文本",
-  },
-};
-
-function chapterEntries(catalog: CodexBookCatalog | null): TextChapterRef[] {
-  return catalog?.books.flatMap((book) => book.volumes.map((volume) => ({ book, volume }))) ?? [];
-}
-
-function kindFor(kind: string | undefined): TextKindConfig {
-  const config = kind ? TEXT_KINDS[kind] : undefined;
-  return config ?? TEXT_KINDS.books;
-}
-
-/** 这些星铁语料的标题形如「角色名：条目名」，目录按角色/联系人分组展示。 */
-const GROUPED_KINDS = new Set(["voices", "messages", "train-visitors"]);
-
-/** 将「角色名：条目名」条目按前缀分组；无法拆分的条目进入平铺组。 */
-function groupEntriesByPrefix(
-  entries: CodexBookVolume[],
-  flatGroupTitle: string,
-): CodexBookCatalog["books"] {
-  const groups = new Map<string, CodexBookVolume[]>();
-  const flat: CodexBookVolume[] = [];
-  for (const volume of entries) {
-    const separatorIndex = volume.title.indexOf("：");
-    if (separatorIndex > 0) {
-      const groupName = volume.title.slice(0, separatorIndex).trim();
-      const label = volume.title.slice(separatorIndex + 1).trim() || volume.title;
-      const list = groups.get(groupName) ?? [];
-      list.push({ ...volume, bookStableId: groupName, title: label });
-      groups.set(groupName, list);
-    } else {
-      flat.push(volume);
-    }
-  }
-  const books: CodexBookCatalog["books"] = [...groups.entries()].map(([name, volumes]) => ({
-    stableId: name,
-    bookStableId: name,
-    title: name,
-    volumes,
-  }));
-  if (flat.length) {
-    books.push({
-      stableId: "flat",
-      bookStableId: "flat",
-      title: flatGroupTitle,
-      volumes: flat,
-    });
-  }
-  return books;
-}
+import { TextCatalog } from "./TextCatalog.js";
+import { getAvailableKinds, getKindConfig } from "./text-kind-registry.js";
 
 /** 短信/访客留言正文按「说话人：文本」解析为聊天行。 */
 type ChatBlock =
@@ -144,11 +37,24 @@ function parseChatBody(body: string): ChatBlock[] {
   return blocks;
 }
 
-/**
- * Text browser for readable corpus (books, character stories, voice lines,
- * item texts, star rail messages...). Each text kind maps to its dedicated
- * API; genshin and star rail use different upstream endpoints per kind.
- */
+export interface TextBrowserProps {
+  gameId: string;
+  gameName: string;
+  revisionLabel: string;
+  selectedRevision?: string;
+  textKind?: string;
+  initialBookId?: string;
+  initialChapterId?: string;
+  onHome: () => void;
+  onOpenStory: () => void;
+  onOpenMaterials: () => void;
+  onRouteChange?: (
+    groupId: string | undefined,
+    documentId: string | undefined,
+    mode?: "push" | "replace",
+  ) => void;
+}
+
 export function TextBrowser({
   gameId,
   gameName,
@@ -161,248 +67,116 @@ export function TextBrowser({
   onOpenStory,
   onOpenMaterials,
   onRouteChange,
-}: {
-  gameId: string;
-  gameName: string;
-  revisionLabel: string;
-  selectedRevision?: string;
-  textKind?: string;
-  initialBookId?: string;
-  initialChapterId?: string;
-  onHome: () => void;
-  onOpenStory: () => void;
-  onOpenMaterials: () => void;
-  onRouteChange?: (
-    bookStableId: string | undefined,
-    volumeStableId: string | undefined,
-    mode?: "push" | "replace",
-  ) => void;
-}) {
-  const [catalog, setCatalog] = useState<CodexBookCatalog | null>(null);
+}: TextBrowserProps) {
+  const [catalog, setCatalog] = useState<TextCatalogResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeVolumeId, setActiveVolumeId] = useState(initialChapterId ?? "");
-  const [activeBookId, setActiveBookId] = useState(initialBookId ?? "");
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(initialBookId ?? null);
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(initialChapterId ?? null);
+  const [activeEntry, setActiveEntry] = useState<EntryModel | null>(null);
+  const [offset, setOffset] = useState(0);
+
   const [textDocument, setTextDocument] = useState<DocumentDetail | null>(null);
   const [documentLoading, setDocumentLoading] = useState(false);
-  // 语音等平铺语料的正文随目录下发，避免逐条二次请求。
-  const inlineBodiesRef = useRef<Map<string, string>>(new Map());
 
   const isStarRail = isStarRailGame(gameId, gameName);
-  const kindConfig = kindFor(textKind);
+  const kindConfig = getKindConfig(textKind);
+  const availableKinds = useMemo(() => getAvailableKinds(isStarRail), [isStarRail]);
 
+  // Reset pagination, search, and group on kind change
+  useEffect(() => {
+    setSearchQuery("");
+    setOffset(0);
+    setActiveGroupId(initialBookId ?? null);
+    setActiveEntryId(initialChapterId ?? null);
+    setActiveEntry(null);
+    setTextDocument(null);
+  }, [textKind]);
+
+  // Load catalog list
   const loadCatalog = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      // 星铁语料目录全量拉取（语音 5300+ / 书籍 1100+ 条），按游戏内默认顺序返回。
-      const isStarRailCorpusKind =
-        isStarRail && ["voices", "items", "messages", "train-visitors", "books"].includes(textKind);
-      const fullQuery = new URLSearchParams({
+      const params = new URLSearchParams({
+        kind: textKind,
         locale: "zh-CN",
-        limit: isStarRailCorpusKind ? "10000" : "200",
+        offset: String(offset),
+        limit: "100",
       });
-      if (selectedRevision) fullQuery.set("revisionId", selectedRevision);
-      const query = fullQuery.toString();
-      const inlineBodies = new Map<string, string>();
-      // 原神语音端点上限 100、物品端点上限 50。
-      const voicesQuery = new URLSearchParams({ locale: "zh-CN", limit: "100" });
-      if (selectedRevision) voicesQuery.set("revisionId", selectedRevision);
-      const voicesQueryText = voicesQuery.toString();
-      const itemsQuery = new URLSearchParams({ locale: "zh-CN", limit: "50" });
-      if (selectedRevision) itemsQuery.set("revisionId", selectedRevision);
-      const itemsQueryText = itemsQuery.toString();
-
-      // 原神与星铁的上游不同：语音/物品在原神走专用语料端点，星铁走
-      // documents 语料端点；书籍与角色故事两端结构一致。
-      let endpoint: string;
-      if (textKind === "voices") {
-        endpoint = isStarRail ? `documents?type=voiceline&${query}` : `voices?${voicesQueryText}`;
-      } else if (textKind === "items") {
-        endpoint = isStarRail ? `documents?type=item_lore&${query}` : `items?${itemsQueryText}`;
-      } else if (textKind === "messages") {
-        endpoint = `documents?type=message&${query}`;
-      } else if (textKind === "train-visitors") {
-        endpoint = `documents?type=train_visitor&${query}`;
-      } else if (textKind === "character-stories") {
-        endpoint = `character-stories?${query}`;
-      } else if (textKind === "mechanics") {
-        // 机制教程按关键词检索，无列表语料。
-        setCatalog({
-          gameId,
-          locale: "zh-CN",
-          books: [],
-          totalVolumes: 0,
-          truncated: false,
-        });
-        setLoading(false);
-        return;
-      } else {
-        endpoint = `books?${query}`;
+      if (activeGroupId && activeGroupId !== "all") {
+        params.set("group", activeGroupId);
+      }
+      if (searchQuery.trim()) {
+        params.set("q", searchQuery.trim());
+      }
+      if (selectedRevision) {
+        params.set("revisionId", selectedRevision);
       }
 
-      const value = await apiFetch<unknown>(`/api/games/${gameId}/text/${endpoint}`);
+      const res = await apiFetch<TextCatalogResponse>(
+        `/api/games/${gameId}/text/catalog?${params.toString()}`,
+      );
+      setCatalog(res);
 
-      if (textKind === "character-stories") {
-        const raw = value as UnknownRecord;
-        const characters = Array.isArray(raw.characters) ? (raw.characters as UnknownRecord[]) : [];
-        const books = characters
-          .map((character) => {
-            const characterName = String(character.characterName ?? "未知角色");
-            const characterStableId = String(character.characterStableId ?? characterName);
-            const stories = Array.isArray(character.stories) ? (character.stories as UnknownRecord[]) : [];
-            const volumes: CodexBookVolume[] = stories.map((story, index) => ({
-              stableId: String(story.storyStableId ?? story.documentId ?? index),
-              bookStableId: characterStableId,
-              documentId: String(story.documentId),
-              title: String(story.title ?? story.displayTitle ?? `故事 ${index + 1}`),
-              volume: null,
-              order: index + 1,
-              segmentCount: 1,
-            }));
-            return { stableId: characterStableId, bookStableId: characterStableId, title: characterName, volumes };
-          })
-          .filter((book) => book.volumes.length > 0);
-        setCatalog({
-          gameId: String(raw.gameId ?? gameId),
-          revisionId: typeof raw.revisionId === "string" ? raw.revisionId : undefined,
-          locale: "zh-CN",
-          books,
-          totalVolumes: books.reduce((sum, book) => sum + book.volumes.length, 0),
-          truncated: false,
-        });
-      } else if (
-        textKind === "voices" ||
-        textKind === "items" ||
-        textKind === "messages" ||
-        textKind === "train-visitors"
-      ) {
-        const raw = value as UnknownRecord;
-        const listKey = ["voices", "items", "entries"].find((key) => Array.isArray(raw[key]));
-        // 上游个别条目名带未解析模板占位（如 #{REALNAME[..]}），不进入目录。
-        const entries = (listKey ? (raw[listKey] as UnknownRecord[]) : [])
-          .filter((entry) => !/\#\{|\}\s*锛|锛.{0,3}$/.test(String(entry.name ?? entry.title ?? "")))
-          .map((entry, index): CodexBookVolume => {
-            const documentId = String(entry.documentId ?? entry.id ?? index);
-            const title = String(entry.title ?? entry.name ?? `条目 ${index + 1}`);
-            // 语音语料的正文随目录下发，无需二次请求。
-            const body = typeof entry.body === "string" ? entry.body : undefined;
-            if (body) inlineBodies.set(documentId, body);
-            return {
-              stableId: documentId,
-              bookStableId: "flat",
-              documentId,
-              title,
-              volume: null,
-              order: index + 1,
-              segmentCount: 1,
-            };
-          });
-        inlineBodiesRef.current = inlineBodies;
-        const volumes = entries;
-        const books =
-          GROUPED_KINDS.has(textKind) && volumes.some((volume) => volume.title.includes("："))
-            ? groupEntriesByPrefix(volumes, kindConfig.flatGroupTitle ?? kindConfig.navLabel)
-            : volumes.length
-              ? [
-                  {
-                    stableId: "flat",
-                    bookStableId: "flat",
-                    title: kindConfig.flatGroupTitle ?? kindConfig.navLabel,
-                    volumes,
-                  },
-                ]
-              : [];
-        setCatalog({
-          gameId: String(raw.gameId ?? gameId),
-          revisionId: typeof raw.revisionId === "string" ? raw.revisionId : undefined,
-          locale: "zh-CN",
-          books,
-          totalVolumes: volumes.length,
-          truncated: false,
-        });
-      } else {
-        setCatalog(mapBookListResponse(value));
+      // Auto select group if none selected
+      if (!activeGroupId && res.groups.length > 0 && res.groups[0]) {
+        setActiveGroupId(res.groups[0].id);
       }
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "文献目录加载失败");
+
+      // Auto select first entry if none selected or if activeEntry is not in current list
+      const entries = res.entries;
+      if (entries.length > 0) {
+        const found = activeEntryId
+          ? entries.find((e) => e.documentId === activeEntryId || e.stableId === activeEntryId)
+          : undefined;
+        const target = found ?? entries[0];
+        if (target) {
+          setActiveEntryId(target.documentId);
+          setActiveEntry(target);
+        }
+      } else {
+        setActiveEntry(null);
+        setTextDocument(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "文献目录加载失败");
     } finally {
       setLoading(false);
     }
-  }, [gameId, selectedRevision, textKind, isStarRail, kindConfig.flatGroupTitle, kindConfig.navLabel]);
+  }, [gameId, textKind, selectedRevision, activeGroupId, searchQuery, offset]);
 
   useEffect(() => {
     void loadCatalog();
   }, [loadCatalog]);
 
-  // Priority: bookId + chapterId exact match -> bookId first volume -> entire catalog first volume
-  useEffect(() => {
-    if (!catalog) return;
-    const entries = chapterEntries(catalog);
-    if (!entries.length) return;
-
-    const exact =
-      initialBookId && initialChapterId
-        ? entries.find(
-            (item) =>
-              item.book.bookStableId === initialBookId && item.volume.stableId === initialChapterId,
-          )
-        : undefined;
-
-    const firstOfBook =
-      !exact && initialBookId
-        ? entries.find((item) => item.book.bookStableId === initialBookId)
-        : undefined;
-
-    const preferred = exact ?? firstOfBook ?? entries[0];
-    if (preferred) {
-      setActiveVolumeId(preferred.volume.stableId);
-      setActiveBookId(preferred.book.bookStableId);
-    }
-  }, [catalog, initialBookId, initialChapterId]);
-
-  const activeEntry = useMemo(
-    () =>
-      chapterEntries(catalog).find(
-        (entry) =>
-          entry.volume.stableId === activeVolumeId &&
-          (!activeBookId || entry.book.bookStableId === activeBookId),
-      ),
-    [catalog, activeVolumeId, activeBookId],
-  );
-
+  // Load document content
   const loadDocument = useCallback(
-    async (documentId: string, entryTitle?: string) => {
-      // 语音等目录内嵌正文：直接合成文档，跳过 documents 查询。
-      const inlineBody = inlineBodiesRef.current.get(documentId);
-      if (inlineBody !== undefined) {
-        setTextDocument({
-          id: documentId,
-          title: entryTitle ?? documentId,
-          type: "voiceline",
-          locale: "zh-CN",
-          body: inlineBody,
-          sourceName: gameName,
-          sourceId: documentId,
-          segments: [],
-          gameVersion: null,
-          revision: selectedRevision ?? undefined,
-        });
-        setDocumentLoading(false);
-        return;
-      }
+    async (entry: EntryModel) => {
       setDocumentLoading(true);
       try {
         const suffix = selectedRevision
           ? "?revisionId=" + encodeURIComponent(selectedRevision)
           : "";
         const result = await apiFetch<{ document: DocumentDetail }>(
-          `/api/games/${gameId}/documents/${encodeURIComponent(documentId)}${suffix}`,
+          `/api/games/${gameId}/documents/${encodeURIComponent(entry.documentId)}${suffix}`,
         );
         setTextDocument(result.document);
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "文献正文加载失败");
+      } catch {
+        // Fallback for voice lines or items that might live in dedicated tables
+        setTextDocument({
+          id: entry.documentId,
+          title: entry.title,
+          type: entry.kind,
+          locale: entry.locale,
+          body: entry.preview ?? "",
+          sourceName: gameName,
+          sourceId: entry.documentId,
+          segments: [],
+          gameVersion: entry.gameVersion ?? null,
+          revision: selectedRevision ?? undefined,
+        });
       } finally {
         setDocumentLoading(false);
       }
@@ -411,141 +185,62 @@ export function TextBrowser({
   );
 
   useEffect(() => {
-    if (!activeEntry) {
-      setTextDocument(null);
-      return;
+    if (activeEntry) {
+      void loadDocument(activeEntry);
     }
-    void loadDocument(activeEntry.volume.documentId, activeEntry.volume.title);
-  }, [activeEntry?.volume.documentId, activeEntry?.volume.title, loadDocument]);
+  }, [activeEntry, loadDocument]);
 
-  const entries = chapterEntries(catalog);
-  const activeIndex = entries.findIndex(
-    (entry) => entry.volume.stableId === activeEntry?.volume.stableId,
+  const selectEntry = useCallback(
+    (entry: EntryModel, mode: "push" | "replace" = "push") => {
+      setActiveEntryId(entry.documentId);
+      setActiveEntry(entry);
+      onRouteChange?.(entry.groupId ?? activeGroupId ?? undefined, entry.documentId, mode);
+    },
+    [activeGroupId, onRouteChange],
   );
-  const prevChapter = activeIndex > 0 ? entries[activeIndex - 1] : undefined;
-  const nextChapter =
+
+  const selectGroup = useCallback(
+    (groupId: string) => {
+      setActiveGroupId(groupId);
+      setOffset(0);
+      onRouteChange?.(groupId, undefined, "push");
+    },
+    [onRouteChange],
+  );
+
+  // Previous & Next navigation
+  const entries = catalog?.entries ?? [];
+  const activeIndex = entries.findIndex(
+    (entry) => entry.documentId === activeEntryId || entry.stableId === activeEntryId,
+  );
+  const prevEntry = activeIndex > 0 ? entries[activeIndex - 1] : undefined;
+  const nextEntry =
     activeIndex >= 0 && activeIndex < entries.length - 1 ? entries[activeIndex + 1] : undefined;
 
-  const filteredBooks = useMemo(() => {
-    if (!catalog?.books) return [];
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return catalog.books;
-    return catalog.books
-      .map((book) => {
-        const bookMatches = book.title.toLowerCase().includes(q);
-        const matchedVolumes = book.volumes.filter(
-          (vol) => bookMatches || vol.title.toLowerCase().includes(q),
-        );
-        if (matchedVolumes.length === 0) return null;
-        return { ...book, volumes: matchedVolumes };
-      })
-      .filter((b): b is NonNullable<typeof b> => b !== null);
-  }, [catalog?.books, searchQuery]);
-
+  // Global navigation sections
   const sections: GlobalNavSection[] = useMemo(
     () => [
       {
-        label: "浏览",
-        items: [
-          { key: "home", label: "首页", onSelect: onHome },
-          { key: "story", label: "剧情档案", onSelect: onOpenStory },
-          { key: "materials", label: isStarRail ? "光锥/材料" : "材料", onSelect: onOpenMaterials },
-        ],
-      },
-      {
         label: "文献分类",
-        items: [
-          {
-            key: "books",
-            label: "书籍文献",
-            active: textKind === "books",
-            onSelect: () => {
-              if (window.location.hash !== "#text/books") {
-                window.location.hash = "text/books";
-              }
-            },
+        items: availableKinds.map((k) => ({
+          key: k.id,
+          label: k.navLabel,
+          active: textKind === k.id,
+          onSelect: () => {
+            window.location.hash = `text/${k.id}`;
           },
-          {
-            key: "character-stories",
-            label: "角色故事",
-            active: textKind === "character-stories",
-            onSelect: () => (window.location.hash = "text/character-stories"),
-          },
-          {
-            key: "voices",
-            label: "角色语音",
-            active: textKind === "voices",
-            onSelect: () => (window.location.hash = "text/voices"),
-          },
-          ...(isStarRail
-            ? [
-                {
-                  key: "messages",
-                  label: "星轨短信",
-                  active: textKind === "messages",
-                  onSelect: () => (window.location.hash = "text/messages"),
-                },
-                {
-                  key: "train-visitors",
-                  label: "列车访客",
-                  active: textKind === "train-visitors",
-                  onSelect: () => (window.location.hash = "text/train-visitors"),
-                },
-                {
-                  key: "items",
-                  label: "物品文本",
-                  active: textKind === "items",
-                  onSelect: () => (window.location.hash = "text/items"),
-                },
-              ]
-            : [
-                {
-                  key: "items",
-                  label: "物品文本",
-                  active: textKind === "items",
-                  onSelect: () => (window.location.hash = "text/items"),
-                },
-                {
-                  key: "mechanics",
-                  label: "机制教程",
-                  active: textKind === "mechanics",
-                  onSelect: () => (window.location.hash = "text/mechanics"),
-                },
-              ]),
-        ],
+        })),
       },
     ],
-    [onHome, onOpenStory, onOpenMaterials, isStarRail, textKind],
+    [availableKinds, textKind],
   );
 
-  function selectVolume(entry: TextChapterRef, mode: "push" | "replace" = "push") {
-    setActiveVolumeId(entry.volume.stableId);
-    setActiveBookId(entry.book.bookStableId);
-    onRouteChange?.(entry.book.bookStableId, entry.volume.stableId, mode);
-  }
-
-  const typeLabel =
-    textDocument?.type === "book"
-      ? "书籍"
-      : textDocument?.type === "character_story"
-        ? "角色故事"
-        : textDocument?.type === "voiceline"
-          ? "角色语音"
-          : textDocument?.type === "message"
-            ? "星轨短信"
-            : textDocument?.type === "train_visitor"
-              ? "列车访客"
-              : textDocument?.type === "item_lore" || textDocument?.type === "item_description"
-                ? "物品文本"
-                : "文献";
-
-  // 短信/访客留言以聊天形式呈现（说话人徽章 + 台词行），与原神主线对白观感一致。
   const isChatDocument =
     textDocument?.type === "message" ||
     textDocument?.type === "train_visitor" ||
-    (!textDocument && ["messages", "train-visitors"].includes(textKind));
+    ["messages", "train-visitors"].includes(textKind);
 
-  function renderChatBody(body: string) {
+  function renderChat(body: string) {
     const blocks = parseChatBody(body);
     return blocks.map((block, index) => {
       if (block.kind === "heading") {
@@ -615,40 +310,23 @@ export function TextBrowser({
         <ArchiveGlobalNav gameLabel={gameName} revisionLabel={revisionLabel} sections={sections} />
       }
       catalog={
-        <div className="text-catalog">
-          <input
-            aria-label={kindConfig.searchLabel}
-            placeholder={`搜索${kindConfig.itemNoun}…`}
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-          {loading ? (
-            <ArchiveLoading label={`${kindConfig.navLabel}目录加载中`} />
-          ) : filteredBooks.length ? (
-            filteredBooks.map((book) => (
-              <section key={book.stableId} className="text-catalog-book">
-                {filteredBooks.length > 1 || book.stableId !== "flat" ? <h3>{book.title}</h3> : null}
-                {book.volumes.map((volume) => (
-                  <button
-                    type="button"
-                    key={volume.stableId}
-                    className={volume.stableId === activeVolumeId ? "is-active" : ""}
-                    aria-current={volume.stableId === activeVolumeId ? "true" : undefined}
-                    onClick={() => selectVolume({ book, volume }, "push")}
-                  >
-                    <strong>{volume.title}</strong>
-                    {volume.segmentCount > 1 ? <small>{volume.segmentCount} 个片段</small> : null}
-                  </button>
-                ))}
-              </section>
-            ))
-          ) : (
-            <ArchiveEmpty
-              title={searchQuery ? "未找到相关内容" : kindConfig.emptyTitle}
-              detail={searchQuery ? "尝试更换搜索词" : undefined}
-            />
-          )}
-        </div>
+        <TextCatalog
+          kindConfig={kindConfig}
+          catalog={catalog}
+          loading={loading}
+          activeGroupId={activeGroupId}
+          activeEntryId={activeEntryId}
+          searchQuery={searchQuery}
+          onSelectGroup={selectGroup}
+          onSelectEntry={(entry) => selectEntry(entry, "push")}
+          onSearchChange={(q) => {
+            setSearchQuery(q);
+            setOffset(0);
+          }}
+          onPageChange={(newOffset) => {
+            setOffset(newOffset);
+          }}
+        />
       }
       main={
         <article className="text-reader" aria-busy={documentLoading}>
@@ -658,7 +336,7 @@ export function TextBrowser({
               detail={error}
               onRetry={() => {
                 void loadCatalog();
-                if (activeEntry) void loadDocument(activeEntry.volume.documentId);
+                if (activeEntry) void loadDocument(activeEntry);
               }}
             />
           ) : null}
@@ -672,10 +350,15 @@ export function TextBrowser({
           {textDocument && !documentLoading ? (
             <>
               <header className="text-reader-header">
-                <span className="story-type-pill">{typeLabel}</span>
+                <span className="story-type-pill">{kindConfig.navLabel}</span>
                 <h2>{textDocument.type === "book" ? `《${textDocument.title}》` : textDocument.title}</h2>
                 <p className="story-reader-meta">
-                  {[gameName, textDocument.gameVersion, textDocument.revision ? `Revision ${textDocument.revision}` : ""]
+                  {[
+                    gameName,
+                    activeEntry?.groupName ? `所属: ${activeEntry.groupName}` : null,
+                    textDocument.gameVersion ? `v${textDocument.gameVersion}` : null,
+                    textDocument.revision ? `Revision ${textDocument.revision}` : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
@@ -683,7 +366,7 @@ export function TextBrowser({
               <div className="text-prose">
                 {isChatDocument ? (
                   textDocument.body ? (
-                    renderChatBody(textDocument.body)
+                    renderChat(textDocument.body)
                   ) : (
                     <p className="muted">本篇暂无内容</p>
                   )
@@ -720,20 +403,20 @@ export function TextBrowser({
               <footer className="story-reader-footer text-chapter-nav">
                 <button
                   type="button"
-                  disabled={!prevChapter}
-                  onClick={() => prevChapter && selectVolume(prevChapter, "push")}
+                  disabled={!prevEntry}
+                  onClick={() => prevEntry && selectEntry(prevEntry, "push")}
                 >
-                  ← 上一章
+                  ← 上一篇
                 </button>
                 <span role="status">
                   {activeIndex >= 0 ? `${activeIndex + 1} / ${entries.length}` : "—"}
                 </span>
                 <button
                   type="button"
-                  disabled={!nextChapter}
-                  onClick={() => nextChapter && selectVolume(nextChapter, "push")}
+                  disabled={!nextEntry}
+                  onClick={() => nextEntry && selectEntry(nextEntry, "push")}
                 >
-                  下一章 →
+                  下一篇 →
                 </button>
               </footer>
             </>
@@ -747,16 +430,25 @@ export function TextBrowser({
           ) : (
             <>
               <InspectorSection title="基本信息">
-                <InspectorField
-                  label="标题"
-                  value={activeEntry?.book.title ?? textDocument.title}
-                />
-                <InspectorField label="分类" value={typeLabel} />
-                <InspectorField label="片段数" value={textDocument.segments.length} />
+                <InspectorField label="标题" value={activeEntry?.title ?? textDocument.title} />
+                <InspectorField label="文献分类" value={kindConfig.navLabel} />
+                {activeEntry?.groupName && (
+                  <InspectorField label={kindConfig.groupLabel} value={activeEntry.groupName} />
+                )}
+                {activeEntry?.order !== undefined && (
+                  <InspectorField label="条目序号" value={String(activeEntry.order)} />
+                )}
+                <InspectorField label="片段数" value={textDocument.segments.length || 1} />
               </InspectorSection>
               <InspectorSection title="版本与来源">
-                <InspectorField label="当前版本" value={textDocument.gameVersion ?? "—"} />
-                <InspectorField label="Revision" value={<code>{textDocument.revision}</code>} />
+                <InspectorField label="游戏版本" value={textDocument.gameVersion ?? activeEntry?.gameVersion ?? "—"} />
+                <InspectorField label="语言" value={textDocument.locale || "zh-CN"} />
+                {textDocument.revision && (
+                  <InspectorField label="Revision" value={<code>{textDocument.revision}</code>} />
+                )}
+                {activeEntry?.provenance?.sourceType && (
+                  <InspectorField label="来源类型" value={activeEntry.provenance.sourceType} />
+                )}
               </InspectorSection>
             </>
           )}

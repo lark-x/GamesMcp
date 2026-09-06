@@ -1,6 +1,7 @@
-import type {
-  Capability,
-  ClaimStatus,
+import {
+  documentTypeSchema,
+  type Capability,
+  type ClaimStatus,
   DocumentSummary,
   DocumentType,
   EntitySummary,
@@ -18,6 +19,10 @@ import type {
   GenshinWeapon,
   NarrativeMode,
   StoryCatalog,
+  TextCatalogEntry,
+  TextCatalogGroup,
+  TextCatalogResponse,
+  TextKind,
 } from "@gip/contracts";
 
 export type {
@@ -44,6 +49,10 @@ export type {
   MaterialUsage,
   CodexMaterialCategoryAggregation,
   GameTerminology,
+  TextKind,
+  TextCatalogGroup,
+  TextCatalogEntry,
+  TextCatalogResponse,
 } from "@gip/contracts";
 
 export {
@@ -945,6 +954,18 @@ export interface KnowledgeRepository {
     gameId: Id,
     options: { locale?: string; revisionId?: Id; limit?: number },
   ): Promise<ArchiveHome>;
+  listTextCatalog?(
+    gameId: Id,
+    options: {
+      kind: TextKind;
+      locale?: string;
+      revisionId?: Id;
+      group?: string;
+      q?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ): Promise<TextCatalogResponse>;
   listEntities(
     gameId: Id,
     options: {
@@ -1234,22 +1255,7 @@ export function validateNormalizedRecords(
     "book",
     "npc",
   ]);
-  const documentTypes = new Set([
-    "archon_quest",
-    "story_quest",
-    "world_quest",
-    "event_quest",
-    "commission",
-    "hangout",
-    "other",
-    "book",
-    "character_story",
-    "item_description",
-    "official_notice",
-    "mechanism",
-    "tutorial",
-    "lore",
-  ]);
+  const documentTypes = new Set<string>(documentTypeSchema.options);
   const predicates = new Set([
     "member_of",
     "located_in",
@@ -1739,6 +1745,30 @@ export class GameDomainService {
         503,
       );
     return revision.id;
+  }
+
+  async listTextCatalog(
+    gameId: Id,
+    options: {
+      kind: TextKind;
+      locale?: string;
+      revisionId?: Id;
+      group?: string;
+      q?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ): Promise<TextCatalogResponse> {
+    await this.requireGame(gameId);
+    if (!this.repository.listTextCatalog) {
+      throw new DomainError(
+        "not_supported",
+        "listTextCatalog is not supported by repository",
+        undefined,
+        501,
+      );
+    }
+    return this.repository.listTextCatalog(gameId, options);
   }
 
   private async cached<T>(key: string, load: () => Promise<T>, ttlMs = 2_000): Promise<T> {

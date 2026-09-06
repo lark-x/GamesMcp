@@ -8,17 +8,20 @@ export interface EnemyExtractorOptions {
   dataDir: string;
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailEnemyExtractor {
   private readonly dataDir: string;
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
 
   constructor(options: EnemyExtractorOptions) {
     this.dataDir = options.dataDir;
     this.inventory = options.inventory;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -39,14 +42,14 @@ export class StarRailEnemyExtractor {
   public async extractEnemies(): Promise<StarRailEnemy[]> {
     const monsterItem = this.inventory.items.find((i) => i.path === "ExcelOutput/MonsterConfig.json");
     if (!monsterItem) {
-      return this.getBaselineEnemies();
+      return this.fixture ? this.getBaselineEnemies() : [];
     }
 
     const rawMonsters = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(this.dataDir, monsterItem.path),
     );
     if (!Array.isArray(rawMonsters) || rawMonsters.length === 0) {
-      return this.getBaselineEnemies();
+      return this.fixture ? this.getBaselineEnemies() : [];
     }
 
     const enemies: StarRailEnemy[] = [];
@@ -83,7 +86,10 @@ export class StarRailEnemyExtractor {
       });
     }
 
-    return enemies.length > 0 ? enemies : this.getBaselineEnemies();
+    if (enemies.length === 0 && this.fixture) {
+      return this.getBaselineEnemies();
+    }
+    return enemies;
   }
 
   private getBaselineEnemies(): StarRailEnemy[] {

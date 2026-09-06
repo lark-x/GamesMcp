@@ -156,7 +156,13 @@ export interface MaterialSource {
 }
 
 export interface MaterialUsage {
-  type: "character_ascension" | "character_trace" | "lightcone_ascension" | "synthesis";
+  type:
+    | "character_ascension"
+    | "character_trace"
+    | "lightcone_ascension"
+    | "character_exp"
+    | "relic_exp"
+    | "synthesis";
   targetId: string | number;
   targetName?: string;
   count?: number;

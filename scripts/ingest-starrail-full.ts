@@ -15,6 +15,7 @@ import {
   extractStoryDocuments,
   extractTrainVisitorDocuments,
   extractVoiceLineDocuments,
+  extractStoryAtlasDocuments,
 } from "../packages/providers/src/starrail/extractors/index.js";
 import { normalizeStarRailText, normalizeStarRailLabel } from "../packages/providers/src/starrail/corpus/normalizer.js";
 import type { StarRailCorpusDocument } from "../packages/providers/src/starrail/corpus/types.js";
@@ -530,7 +531,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       locale: "CHS",
     };
 
-    console.log("Extracting 8 categories with upgraded extractors...");
+    console.log("Extracting 9 categories with upgraded extractors...");
     const [
       missions,
       stories,
@@ -540,6 +541,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       characterStories,
       voicelines,
       itemLores,
+      storyAtlas,
     ] = await Promise.all([
       extractMissionDocuments(extractorInput),
       extractStoryDocuments(extractorInput),
@@ -549,6 +551,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       extractCharacterStoryDocuments(extractorInput),
       extractVoiceLineDocuments(extractorInput),
       extractItemLoreDocuments(extractorInput),
+      extractStoryAtlasDocuments(extractorInput),
     ]);
 
     allDocuments.push(
@@ -560,6 +563,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       ...characterStories.documents,
       ...voicelines.documents,
       ...itemLores.documents,
+      ...storyAtlas.documents,
     );
 
     console.log("Extracting structured codex data...");
@@ -758,7 +762,13 @@ export async function runStarRailIngestion(options: IngestOptions) {
                     ? "message"
                     : doc.category === "sr_train_visitor"
                       ? "train_visitor"
-                      : "item_lore";
+                      : doc.category === "sr_story_atlas"
+                        ? "story_atlas"
+                        : doc.metadata?.itemType === "Equipment"
+                          ? "lightcone_lore"
+                          : doc.metadata?.itemType === "Relic"
+                            ? "relic_lore"
+                            : "item_lore";
 
       const questKey = isQuest
         ? doc.category === "sr_mission"
@@ -770,7 +780,40 @@ export async function runStarRailIngestion(options: IngestOptions) {
         category: doc.category,
         order: doc.hierarchy?.order ?? doc.id,
         sourceFiles: doc.sourceFiles,
+        ...(doc.metadata ?? {}),
       };
+
+      if (docType === "character_story") {
+        metadata.groupId ??= `character/${doc.id}`;
+        metadata.groupName ??= doc.title.split("：")[0];
+        metadata.textKind ??= "character-stories";
+      } else if (docType === "voiceline") {
+        metadata.groupId ??= doc.hierarchy?.parentId ?? "character_voice";
+        metadata.groupName ??= doc.title.split("：")[0];
+        metadata.textKind ??= "voices";
+      } else if (docType === "message") {
+        metadata.groupId ??= doc.hierarchy?.parentId ?? "message";
+        metadata.groupName ??= doc.title.split("：")[0];
+        metadata.textKind ??= "messages";
+      } else if (docType === "train_visitor") {
+        metadata.groupId ??= "visitor";
+        metadata.groupName ??= "车厢访客";
+        metadata.textKind ??= "train-visitors";
+      } else if (docType === "lightcone_lore") {
+        metadata.groupId ??= "lightcone";
+        metadata.groupName ??= "光锥背景";
+        metadata.textKind ??= "lightcone-lore";
+      } else if (docType === "relic_lore") {
+        metadata.groupId ??= "relic";
+        metadata.groupName ??= "遗器背景";
+        metadata.textKind ??= "relic-lore";
+      } else if (docType === "item_lore") {
+        metadata.groupId ??= "item";
+        metadata.groupName ??= "道具背景";
+        metadata.textKind ??= "item-texts";
+      } else if (docType === "story_atlas") {
+        metadata.textKind ??= "story-atlas";
+      }
 
       if (questKey) {
         // sr_story fragments live under Story/Discussion/Mission/<mainMissionId>/;

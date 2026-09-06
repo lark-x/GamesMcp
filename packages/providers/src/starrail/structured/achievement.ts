@@ -8,17 +8,20 @@ export interface AchievementExtractorOptions {
   dataDir: string;
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailAchievementExtractor {
   private readonly dataDir: string;
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
 
   constructor(options: AchievementExtractorOptions) {
     this.dataDir = options.dataDir;
     this.inventory = options.inventory;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -39,14 +42,14 @@ export class StarRailAchievementExtractor {
   public async extractAchievements(): Promise<StarRailAchievement[]> {
     const achItem = this.inventory.items.find((i) => i.path === "ExcelOutput/AchievementData.json");
     if (!achItem) {
-      return this.getBaselineAchievements();
+      return this.fixture ? this.getBaselineAchievements() : [];
     }
 
     const rawAchs = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(this.dataDir, achItem.path),
     );
     if (!Array.isArray(rawAchs) || rawAchs.length === 0) {
-      return this.getBaselineAchievements();
+      return this.fixture ? this.getBaselineAchievements() : [];
     }
 
     // Load series titles
@@ -92,7 +95,10 @@ export class StarRailAchievementExtractor {
       });
     }
 
-    return achievements.length > 0 ? achievements : this.getBaselineAchievements();
+    if (achievements.length === 0 && this.fixture) {
+      return this.getBaselineAchievements();
+    }
+    return achievements;
   }
 
   private getBaselineAchievements(): StarRailAchievement[] {

@@ -178,6 +178,31 @@ function makeRepository(overrides: Record<string, unknown> = {}) {
       getMaterial: async (_revision: string, stableId: string) =>
         stableId === material.stableId || stableId === "material/nichang" ? material : null,
     },
+    listTextCatalog: async () => ({
+      gameId,
+      revisionId,
+      locale: "zh-CN",
+      kind: "books" as const,
+      groups: [{ id: "book/1", name: "书目一", count: 1, subtitle: "1 卷", order: 1 }],
+      entries: [
+        {
+          documentId,
+          stableId: "book/7001",
+          kind: "books" as const,
+          title: "卷一",
+          subtitle: "书目一",
+          preview: "卷一正文",
+          groupId: "book/1",
+          groupName: "书目一",
+          order: 1,
+          locale: "zh-CN",
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+      nextOffset: null,
+    }),
     ...overrides,
   } as unknown as KnowledgeRepository;
   return repository;
@@ -495,6 +520,26 @@ describe("Text API contracts", () => {
     expect(invalid.json().error.code).toBe("invalid_request");
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.code).toBe("game_not_found");
+    await app.close();
+  });
+
+  it("serves unified text catalog endpoint", async () => {
+    const app = appWith();
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/text/catalog?kind=books&locale=zh-CN`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      gameId,
+      kind: "books",
+      locale: "zh-CN",
+      groups: [{ id: "book/1", name: "书目一", count: 1 }],
+      entries: [{ documentId, title: "卷一", groupId: "book/1" }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
     await app.close();
   });
 });

@@ -7,6 +7,7 @@ import {
   extractMechanisms,
 } from "../packages/ingestion/src/anime-game-data/index.ts";
 import type { MechanismRecord } from "../packages/ingestion/src/anime-game-data/index.ts";
+import type { DocumentType, TextKind } from "../packages/contracts/src/index.ts";
 
 /**
  * The converter deliberately lives in a side-effect-free module.  The CLI in
@@ -73,7 +74,7 @@ export type AnimeGameRecord = {
   sourceKey: string;
   recordType: "document";
   title: string;
-  documentType: "book" | "character_story" | "item_description" | "mechanism" | "tutorial";
+  documentType: DocumentType;
   gameVersion: string;
   body: string;
   segments?: AnimeGameSegment[];
@@ -872,6 +873,75 @@ function mechanismSourcePath(record: MechanismRecord, inputHashes: Record<string
   return Object.keys(inputHashes).sort()[0] ?? "ExcelBinOutput/MechanismUnknownSource.json";
 }
 
+export function classifyMechanismDocument(stableId: string): {
+  documentType: DocumentType;
+  textKind: TextKind;
+  groupId: string;
+  groupName: string;
+} {
+  const parts = stableId.split("/");
+  const sourceTable = parts[1] ?? "";
+
+  if (sourceTable.startsWith("Tutorial")) {
+    return {
+      documentType: "tutorial",
+      textKind: "tutorials",
+      groupId: "tutorial/basic",
+      groupName: "基础教程",
+    };
+  }
+  if (sourceTable.startsWith("GuideV2") || sourceTable.startsWith("HandbookQuestGuide")) {
+    return {
+      documentType: "guide",
+      textKind: "guides",
+      groupId: "guide/gameplay",
+      groupName: "引导指南",
+    };
+  }
+  if (sourceTable.startsWith("PushTips")) {
+    return {
+      documentType: "exploration_tip",
+      textKind: "exploration-tips",
+      groupId: "push_tips/exploration",
+      groupName: "探索提示",
+    };
+  }
+  if (sourceTable.startsWith("LoadingTips")) {
+    return {
+      documentType: "loading_tips",
+      textKind: "loading-tips",
+      groupId: "loading_tips/system",
+      groupName: "加载提示",
+    };
+  }
+  if (sourceTable.startsWith("GCGTutorialText")) {
+    return {
+      documentType: "gcg",
+      textKind: "gcg",
+      groupId: "gcg/card",
+      groupName: "七圣召唤",
+    };
+  }
+  if (
+    sourceTable.startsWith("Activity") ||
+    sourceTable.startsWith("Alchemy") ||
+    sourceTable.startsWith("Ugc")
+  ) {
+    return {
+      documentType: "activity_tutorial",
+      textKind: "activity-tutorials",
+      groupId: "activity_tutorial/event",
+      groupName: "活动教程",
+    };
+  }
+  return {
+    documentType: "mechanism",
+    textKind: "mechanics",
+    groupId: "mechanism/gameplay",
+    groupName: "玩法机制",
+  };
+}
+
 function mechanismDocumentFromRecord(
   context: ConverterContext,
   record: MechanismRecord,
@@ -880,13 +950,14 @@ function mechanismDocumentFromRecord(
   const sourceFile = mechanismSourcePath(record, inputHashes);
   const sourceFileHash = inputHashes[sourceFile] ?? rawHashFor(record);
   const rawContentHash = rawHashFor(record);
+  const classification = classifyMechanismDocument(record.mechanismStableId);
   return makeRecord(
     context,
     {
       sourceKey: record.mechanismStableId,
       recordType: "document",
       title: record.title,
-      documentType: record.documentType,
+      documentType: classification.documentType,
       gameVersion: context.gameVersion,
       body: record.body,
       segments: [
@@ -901,6 +972,9 @@ function mechanismDocumentFromRecord(
             segmentStableId: `${record.mechanismStableId}/segment/1`,
             documentStableId: record.mechanismStableId,
             mechanismStableId: record.mechanismStableId,
+            groupId: classification.groupId,
+            groupName: classification.groupName,
+            textKind: classification.textKind,
           },
         },
       ],
@@ -918,6 +992,9 @@ function mechanismDocumentFromRecord(
       textResolution: record.textResolution,
       relatedEntities: record.relatedEntities ?? [],
       sourceFiles: Object.keys(inputHashes).sort(),
+      groupId: classification.groupId,
+      groupName: classification.groupName,
+      textKind: classification.textKind,
     },
   );
 }

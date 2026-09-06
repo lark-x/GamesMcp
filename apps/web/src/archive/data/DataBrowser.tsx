@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api.js";
 import { isStarRailGame } from "../../shared.js";
 import { ArchiveAvatar } from "../ArchiveAvatar.js";
-import { ArchiveGlobalNav } from "../ArchiveGlobalNav.js";
+import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
 import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveInspector.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js";
@@ -248,9 +248,56 @@ export function DataBrowser({
     { key: "achievements", label: "成就" },
   ];
 
+  const dataNavSections: GlobalNavSection[] = useMemo(
+    () => [
+      {
+        label: "游戏资料",
+        items: [
+          {
+            key: "characters",
+            label: "角色",
+            active: dataKind === "characters",
+            onSelect: () => onSelectKind("characters"),
+          },
+          {
+            key: "materials",
+            label: "材料",
+            active: false,
+            onSelect: () => (window.location.hash = "archive/materials"),
+          },
+          {
+            key: "weapons",
+            label: isStarRail ? "光锥" : "武器",
+            active: dataKind === "weapons",
+            onSelect: () => onSelectKind("weapons"),
+          },
+          {
+            key: "artifacts",
+            label: isStarRail ? "遗器" : "圣遗物",
+            active: dataKind === "artifacts",
+            onSelect: () => onSelectKind("artifacts"),
+          },
+          {
+            key: "enemies",
+            label: "敌人",
+            active: dataKind === "enemies",
+            onSelect: () => onSelectKind("enemies"),
+          },
+          {
+            key: "achievements",
+            label: "成就",
+            active: dataKind === "achievements",
+            onSelect: () => onSelectKind("achievements"),
+          },
+        ],
+      },
+    ],
+    [dataKind, onSelectKind, isStarRail],
+  );
+
   return (
     <ArchiveLayout
-      globalNav={<ArchiveGlobalNav activeSection="data" />}
+      globalNav={<ArchiveGlobalNav sections={dataNavSections} activeSection="data" />}
       catalog={
         <div className="data-catalog" role="region" aria-label={`${term}目录`}>
           <div className="data-catalog-header">

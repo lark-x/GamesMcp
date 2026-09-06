@@ -10,6 +10,7 @@ export interface MaterialExtractorOptions {
   sourceRef: string;
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
+  fixture?: boolean;
 }
 
 export class StarRailMaterialExtractor {
@@ -17,12 +18,14 @@ export class StarRailMaterialExtractor {
   private readonly sourceRef: string;
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
+  private readonly fixture: boolean;
 
   constructor(options: MaterialExtractorOptions) {
     this.dataDir = options.dataDir;
     this.sourceRef = options.sourceRef;
     this.inventory = options.inventory;
     this.resolver = options.resolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -43,14 +46,14 @@ export class StarRailMaterialExtractor {
   public async extractMaterials(): Promise<StarRailMaterial[]> {
     const itemConfig = this.inventory.items.find((i) => i.path === "ExcelOutput/ItemConfig.json");
     if (!itemConfig) {
-      return this.getBaselineMaterials();
+      return this.fixture ? this.getBaselineMaterials() : [];
     }
 
     const rawItems = await readSafeJsonFile<Array<Record<string, unknown>>>(
       resolve(this.dataDir, itemConfig.path),
     );
     if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      return this.getBaselineMaterials();
+      return this.fixture ? this.getBaselineMaterials() : [];
     }
 
     // Load ItemPurpose for usage classification
@@ -163,7 +166,7 @@ export class StarRailMaterialExtractor {
 
       if (category === "character_ascension") {
         sources.push({ type: "stagnant_shadow", description: "凝滞虚影挑战获得" });
-      } else if (category === "trace" || category === "lightcone_ascension") {
+      } else if (category === "trace") {
         sources.push({ type: "calyx", description: "拟造花萼（赤）挑战获得" });
       } else if (category === "weekly_boss") {
         sources.push({ type: "echo_of_war", description: "历战余响挑战获得" });
@@ -183,7 +186,7 @@ export class StarRailMaterialExtractor {
         usages.push({ type: "character_ascension", targetId: "avatar_general", targetName: "角色等级晋阶突破" });
       } else if (category === "trace") {
         usages.push({ type: "character_trace", targetId: "trace_general", targetName: "角色行迹技能升级" });
-      } else if (category === "lightcone_ascension" || category === "lightcone_exp") {
+      } else if (category === "lightcone_exp") {
         usages.push({ type: "lightcone_ascension", targetId: "lightcone_general", targetName: "光锥等级晋阶突破" });
       } else if (category === "exp_material") {
         usages.push({ type: "character_exp", targetId: "avatar_exp", targetName: "角色等级提升" });
@@ -212,7 +215,10 @@ export class StarRailMaterialExtractor {
       });
     }
 
-    return materials.length > 0 ? materials : this.getBaselineMaterials();
+    if (materials.length === 0 && this.fixture) {
+      return this.getBaselineMaterials();
+    }
+    return materials;
   }
 
   private getBaselineMaterials(): StarRailMaterial[] {

@@ -18,6 +18,7 @@ export interface StoryResolverOptions {
   inventory: StarRailSourceInventory;
   resolver: StarRailTextMapResolver;
   worldChapterResolver: StarRailWorldChapterResolver;
+  fixture?: boolean;
 }
 
 export interface StoryResolverResult {
@@ -43,6 +44,7 @@ export class StarRailStoryResolver {
   private readonly inventory: StarRailSourceInventory;
   private readonly resolver: StarRailTextMapResolver;
   private readonly worldChapterResolver: StarRailWorldChapterResolver;
+  private readonly fixture: boolean;
 
   constructor(options: StoryResolverOptions) {
     this.dataDir = options.dataDir;
@@ -50,6 +52,7 @@ export class StarRailStoryResolver {
     this.inventory = options.inventory;
     this.resolver = options.resolver;
     this.worldChapterResolver = options.worldChapterResolver;
+    this.fixture = options.fixture ?? false;
   }
 
   private resolveHash(val: unknown): string | null {
@@ -334,7 +337,7 @@ export class StarRailStoryResolver {
       });
     }
 
-    if (quests.length === 0) {
+    if (quests.length === 0 && this.fixture) {
       quests.push(
         {
           mainMissionId: 1000101,

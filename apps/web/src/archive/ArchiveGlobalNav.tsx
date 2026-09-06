@@ -16,11 +16,13 @@ export function ArchiveGlobalNav({
   revisionLabel = "published",
   sections,
   activeSection,
+  showBrand = false,
 }: {
   gameLabel?: string;
   revisionLabel?: string;
   sections?: GlobalNavSection[];
   activeSection?: ArchiveSection;
+  showBrand?: boolean;
 }) {
   const defaultSections: GlobalNavSection[] = [
     {
@@ -81,19 +83,21 @@ export function ArchiveGlobalNav({
 
   return (
     <div className="archive-nav-inner" role="navigation" aria-label="全局导航">
-      <div
-        className="archive-nav-brand"
-        onClick={() => (window.location.hash = "")}
-        style={{ cursor: "pointer" }}
-      >
-        <ArchiveAvatar fallbackText="G" label="GamesMcp" size={34} />
-        <div>
-          <strong>GamesMcp</strong>
-          <small>
-            {gameLabel} · {revisionLabel}
-          </small>
+      {showBrand && (
+        <div
+          className="archive-nav-brand"
+          onClick={() => (window.location.hash = "")}
+          style={{ cursor: "pointer" }}
+        >
+          <ArchiveAvatar fallbackText="G" label="GamesMcp" size={34} />
+          <div>
+            <strong>GamesMcp</strong>
+            <small>
+              {gameLabel} · {revisionLabel}
+            </small>
+          </div>
         </div>
-      </div>
+      )}
       {renderSections.map((section) => (
         <section key={section.label}>
           <h3>{section.label}</h3>
