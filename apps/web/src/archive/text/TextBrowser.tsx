@@ -75,7 +75,73 @@ function chapterEntries(catalog: CodexBookCatalog | null): TextChapterRef[] {
 }
 
 function kindFor(kind: string | undefined): TextKindConfig {
-  return (kind && TEXT_KINDS[kind]) || TEXT_KINDS.books;
+  const config = kind ? TEXT_KINDS[kind] : undefined;
+  return config ?? TEXT_KINDS.books;
+}
+
+/** 这些星铁语料的标题形如「角色名：条目名」，目录按角色/联系人分组展示。 */
+const GROUPED_KINDS = new Set(["voices", "messages", "train-visitors"]);
+
+/** 将「角色名：条目名」条目按前缀分组；无法拆分的条目进入平铺组。 */
+function groupEntriesByPrefix(
+  entries: CodexBookVolume[],
+  flatGroupTitle: string,
+): CodexBookCatalog["books"] {
+  const groups = new Map<string, CodexBookVolume[]>();
+  const flat: CodexBookVolume[] = [];
+  for (const volume of entries) {
+    const separatorIndex = volume.title.indexOf("：");
+    if (separatorIndex > 0) {
+      const groupName = volume.title.slice(0, separatorIndex).trim();
+      const label = volume.title.slice(separatorIndex + 1).trim() || volume.title;
+      const list = groups.get(groupName) ?? [];
+      list.push({ ...volume, bookStableId: groupName, title: label });
+      groups.set(groupName, list);
+    } else {
+      flat.push(volume);
+    }
+  }
+  const books: CodexBookCatalog["books"] = [...groups.entries()].map(([name, volumes]) => ({
+    stableId: name,
+    bookStableId: name,
+    title: name,
+    volumes,
+  }));
+  if (flat.length) {
+    books.push({
+      stableId: "flat",
+      bookStableId: "flat",
+      title: flatGroupTitle,
+      volumes: flat,
+    });
+  }
+  return books;
+}
+
+/** 短信/访客留言正文按「说话人：文本」解析为聊天行。 */
+type ChatBlock =
+  | { kind: "heading"; text: string }
+  | { kind: "chat"; speaker: string; text: string }
+  | { kind: "note"; text: string };
+
+function parseChatBody(body: string): ChatBlock[] {
+  const blocks: ChatBlock[] = [];
+  for (const rawLine of body.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith("##")) {
+      blocks.push({ kind: "heading", text: line.replace(/^#+\s*/u, "") });
+      continue;
+    }
+    if (line.startsWith("#")) continue;
+    const match = /^(.{1,24}?)：\s*(.+)$/su.exec(line);
+    if (match && match[1] && match[2]) {
+      blocks.push({ kind: "chat", speaker: match[1], text: match[2] });
+    } else {
+      blocks.push({ kind: "note", text: line });
+    }
+  }
+  return blocks;
 }
 
 /**
@@ -130,9 +196,15 @@ export function TextBrowser({
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ locale: "zh-CN", limit: "200" });
-      if (selectedRevision) params.set("revisionId", selectedRevision);
-      const query = params.toString();
+      // 星铁语料目录全量拉取（语音 5300+ / 书籍 1100+ 条），按游戏内默认顺序返回。
+      const isStarRailCorpusKind =
+        isStarRail && ["voices", "items", "messages", "train-visitors", "books"].includes(textKind);
+      const fullQuery = new URLSearchParams({
+        locale: "zh-CN",
+        limit: isStarRailCorpusKind ? "10000" : "200",
+      });
+      if (selectedRevision) fullQuery.set("revisionId", selectedRevision);
+      const query = fullQuery.toString();
       const inlineBodies = new Map<string, string>();
       // 原神语音端点上限 100、物品端点上限 50。
       const voicesQuery = new URLSearchParams({ locale: "zh-CN", limit: "100" });
@@ -228,14 +300,26 @@ export function TextBrowser({
             };
           });
         inlineBodiesRef.current = inlineBodies;
+        const volumes = entries;
+        const books =
+          GROUPED_KINDS.has(textKind) && volumes.some((volume) => volume.title.includes("："))
+            ? groupEntriesByPrefix(volumes, kindConfig.flatGroupTitle ?? kindConfig.navLabel)
+            : volumes.length
+              ? [
+                  {
+                    stableId: "flat",
+                    bookStableId: "flat",
+                    title: kindConfig.flatGroupTitle ?? kindConfig.navLabel,
+                    volumes,
+                  },
+                ]
+              : [];
         setCatalog({
           gameId: String(raw.gameId ?? gameId),
           revisionId: typeof raw.revisionId === "string" ? raw.revisionId : undefined,
           locale: "zh-CN",
-          books: entries.length
-            ? [{ stableId: "flat", bookStableId: "flat", title: kindConfig.flatGroupTitle ?? kindConfig.navLabel, volumes: entries }]
-            : [],
-          totalVolumes: entries.length,
+          books,
+          totalVolumes: volumes.length,
           truncated: false,
         });
       } else {
@@ -455,6 +539,76 @@ export function TextBrowser({
                 ? "物品文本"
                 : "文献";
 
+  // 短信/访客留言以聊天形式呈现（说话人徽章 + 台词行），与原神主线对白观感一致。
+  const isChatDocument =
+    textDocument?.type === "message" ||
+    textDocument?.type === "train_visitor" ||
+    (!textDocument && ["messages", "train-visitors"].includes(textKind));
+
+  function renderChatBody(body: string) {
+    const blocks = parseChatBody(body);
+    return blocks.map((block, index) => {
+      if (block.kind === "heading") {
+        return (
+          <h3 key={index} style={{ margin: "18px 0 8px" }}>
+            {block.text}
+          </h3>
+        );
+      }
+      if (block.kind === "note") {
+        return (
+          <div className="story-script-narration" key={index}>
+            <span className="story-narration-glyph" aria-hidden="true">❖</span>
+            <div className="story-narration-content">
+              <p className="story-narration-text">
+                {formatStoryText(block.text, {
+                  game: isStarRail ? "starrail" : "genshin",
+                  gender: "female",
+                  nickname: isStarRail ? "开拓者" : "旅行者",
+                })}
+              </p>
+            </div>
+          </div>
+        );
+      }
+      const isTrailblazer = block.speaker === "开拓者" || block.speaker === "系统提示";
+      const badgeClass = isTrailblazer
+        ? "story-speaker-badge speaker-trailblazer"
+        : "story-speaker-badge";
+      const isSystem = block.speaker === "系统提示";
+      if (isSystem) {
+        return (
+          <div className="story-script-system" key={index}>
+            <span className="story-system-icon" aria-hidden="true">ⓘ</span>
+            <span className="story-system-text">
+              {formatStoryText(block.text, {
+                game: isStarRail ? "starrail" : "genshin",
+                gender: "female",
+                nickname: isStarRail ? "开拓者" : "旅行者",
+              })}
+            </span>
+          </div>
+        );
+      }
+      return (
+        <div className="story-script-row" key={index}>
+          <div className="story-script-speaker-col">
+            <span className={badgeClass}>{block.speaker}</span>
+          </div>
+          <div className="story-script-body-col">
+            <p className="story-script-text">
+              {formatStoryText(block.text, {
+                game: isStarRail ? "starrail" : "genshin",
+                gender: "female",
+                nickname: isStarRail ? "开拓者" : "旅行者",
+              })}
+            </p>
+          </div>
+        </div>
+      );
+    });
+  }
+
   return (
     <ArchiveLayout
       globalNav={
@@ -527,7 +681,13 @@ export function TextBrowser({
                 </p>
               </header>
               <div className="text-prose">
-                {textDocument.segments.length ? (
+                {isChatDocument ? (
+                  textDocument.body ? (
+                    renderChatBody(textDocument.body)
+                  ) : (
+                    <p className="muted">本篇暂无内容</p>
+                  )
+                ) : textDocument.segments.length ? (
                   textDocument.segments.map((segment) => (
                     <div key={segment.id} className="text-segment">
                       {segment.headingPath?.length &&

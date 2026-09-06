@@ -477,6 +477,7 @@ export type DocumentProvenance = {
   bookStableId?: string;
   volumeStableId?: string;
   documentStableId?: string;
+  bookSeriesTitle?: string;
   bookSuitId?: string | number;
   volumeId?: string | number;
   sortOrder?: number;
@@ -1857,7 +1858,7 @@ export class GameDomainService {
     const materials = await adapter.listMaterials(revision, {
       query: options.query,
       category: options.category,
-      limit: 1000,
+      limit: 5000,
     });
     return materials.length;
   }
@@ -1870,7 +1871,7 @@ export class GameDomainService {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     const adapter = await this.getArchiveAdapter(gameId);
-    const materials = await adapter.listMaterials(revision, { query, limit: 1000 });
+    const materials = await adapter.listMaterials(revision, { query, limit: 5000 });
     const counts = new Map<string, { label: string; count: number }>();
     for (const m of materials) {
       const key = m.category;

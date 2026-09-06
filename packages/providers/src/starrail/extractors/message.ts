@@ -89,15 +89,10 @@ export async function extractMessageDocuments(input: ExtractorInput): Promise<Ex
 
         const contactInfo = sectionContactMap.get(id);
         const contactName = contactInfo?.contactName ?? "未知联系人";
-        const title = `${contactName}：短信会话`;
-
-        const lines = [`# ${title}`, "", `MessageSectionID：${id}`];
-        if (contactInfo?.contactId) {
-          lines.push(`ContactID：${contactInfo.contactId}`);
-        }
-        lines.push("");
 
         const items = sectionItemsMap.get(id) ?? [];
+        const chatLines: string[] = [];
+        let preview = "";
         for (const it of items) {
           const textCandidate = it.MainText;
           const text =
@@ -110,10 +105,17 @@ export async function extractMessageDocuments(input: ExtractorInput): Promise<Ex
 
           const sender =
             it.Sender === "Player" ? "开拓者" : it.Sender === "System" ? "系统提示" : contactName;
-          lines.push(`${sender}：${text}`);
+          chatLines.push(`${sender}：${text}`);
+          if (!preview) {
+            preview = text.replace(/\s+/gu, " ").trim().slice(0, 24);
+          }
         }
 
-        const content = normalizeStarRailText(lines.join("\n"));
+        // 标题与游戏手机短信一致：联系人 + 首条消息预览，避免“短信会话”
+        // 这类占位后缀造成的大量重名条目。
+        const title = preview ? `${contactName}：${preview}` : `${contactName}：会话 ${id}`;
+
+        const content = normalizeStarRailText(chatLines.join("\n"));
         if (!hasLikelyNarrativeText(content)) {
           result.issues.push({
             code: "empty_or_non_narrative_document",

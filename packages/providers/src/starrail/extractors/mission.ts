@@ -40,6 +40,9 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
       (i) => i.path === "ExcelOutput/TalkSentenceConfig.json",
     );
     const sentenceMap = new Map<number, { speaker: string; text: string }>();
+    // 台词按演出块分组：floor(TalkSentenceID / 100) 同属一段演出对白。
+    // 性能脚本只显式引用其中的选项句，其余台词是时间线正文，需整块提取。
+    const blockSentences = new Map<number, Array<{ id: number; speaker: string; text: string }>>();
     if (talkItem) {
       const talkSentences = await readSafeJsonFile<Array<Record<string, unknown>>>(
         resolve(input.dataDir, talkItem.path),
@@ -57,30 +60,39 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
           const text = resolveHash(s.TalkSentenceText) ?? "";
           if (text) {
             sentenceMap.set(sId, { speaker, text });
+            const block = Math.floor(sId / 100);
+            const list = blockSentences.get(block) ?? [];
+            list.push({ id: sId, speaker, text });
+            blockSentences.set(block, list);
           }
         }
       }
     }
 
-    // Index story mission dialogue files
+    // Index story mission dialogue files (cinematic Story/Mission scripts plus
+    // branching Story/Discussion/Mission performances, both named by mission id)
     const storyMissionFiles = input.inventory.items.filter(
       (i) =>
-        i.path.startsWith("Story/Mission/") &&
+        (i.path.startsWith("Story/Mission/") || i.path.startsWith("Story/Discussion/Mission/")) &&
         i.path.endsWith(".json") &&
         !i.path.includes(".layout."),
     );
     const missionDialogMap = new Map<number, string[]>();
     const missionStoryFiles = new Map<number, string[]>();
+    // 演出块 -> 所属任务；被引用的块整体归属首次引用它的任务
+    const blockOwners = new Map<number, number>();
+    const missionOptionIds = new Map<number, Set<number>>();
 
     for (const sFile of storyMissionFiles) {
-      // Determine MainMissionID from path e.g. Story/Mission/1000101/... or digits
-      const match = sFile.path.match(/Story\/Mission\/(\d+)/u);
+      // Determine MainMissionID from path e.g. Story/Mission/1000101/...
+      const match = sFile.path.match(/Story\/(?:Discussion\/)?Mission\/(\d+)/u);
       let guessedMainId = match ? Number(match[1]) : undefined;
 
       const parsed = await readSafeJsonFile<unknown>(resolve(input.dataDir, sFile.path));
       if (!parsed) continue;
 
-      const lines: string[] = [];
+      const blockIds = new Set<number>();
+      const optionIds = new Set<number>();
       const walk = (obj: unknown): void => {
         if (!obj || typeof obj !== "object") return;
         if (Array.isArray(obj)) {
@@ -93,19 +105,11 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
         }
         if (record.TalkSentenceID) {
           const sId = Number(record.TalkSentenceID);
-          const entry = sentenceMap.get(sId);
-          if (entry) {
-            lines.push(entry.speaker ? `${entry.speaker}：${entry.text}` : entry.text);
-          }
-        }
-        if (record.Options && Array.isArray(record.Options)) {
-          for (const opt of record.Options) {
-            if (typeof opt === "object" && opt !== null) {
-              const optHash = (opt as Record<string, unknown>).TextMapHash;
-              const optText = optHash ? input.resolver.resolve(optHash as string | number) : null;
-              if (optText) lines.push(`[选项] ${optText}`);
-            }
-          }
+          blockIds.add(Math.floor(sId / 100));
+          const isOption =
+            String(record.$type ?? "").includes("OptionTalkInfo") ||
+            record.OptionIconType !== undefined;
+          if (isOption) optionIds.add(sId);
         }
         for (const val of Object.values(record)) {
           walk(val);
@@ -114,15 +118,33 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
 
       walk(parsed);
 
-      if (guessedMainId && lines.length > 0) {
-        const existing = missionDialogMap.get(guessedMainId) ?? [];
-        existing.push(...lines);
-        missionDialogMap.set(guessedMainId, existing);
+      if (guessedMainId && blockIds.size > 0) {
+        for (const block of blockIds) {
+          if (!blockOwners.has(block)) blockOwners.set(block, guessedMainId);
+        }
+        const existingOptions = missionOptionIds.get(guessedMainId) ?? new Set<number>();
+        for (const optionId of optionIds) existingOptions.add(optionId);
+        missionOptionIds.set(guessedMainId, existingOptions);
 
         const existingFiles = missionStoryFiles.get(guessedMainId) ?? [];
         existingFiles.push(sFile.path);
         missionStoryFiles.set(guessedMainId, existingFiles);
       }
+    }
+
+    // 由演出块还原每段任务的完整对白（含选项句），按台词顺序输出
+    for (const [block, mainId] of blockOwners) {
+      const optionIds = missionOptionIds.get(mainId) ?? new Set<number>();
+      const existing = missionDialogMap.get(mainId) ?? [];
+      for (const sentence of (blockSentences.get(block) ?? []).sort((a, b) => a.id - b.id)) {
+        if (optionIds.has(sentence.id) && !sentence.speaker) {
+          // 玩家选择肢：无名台词，按选项节点渲染
+          existing.push(`[选项] ${sentence.text}`);
+        } else {
+          existing.push(sentence.speaker ? `${sentence.speaker}：${sentence.text}` : sentence.text);
+        }
+      }
+      missionDialogMap.set(mainId, existing);
     }
 
     const mainMissions = await readSafeJsonFile<Array<Record<string, unknown>>>(

@@ -19,10 +19,15 @@ const CATEGORY_LABELS: Record<string, string> = {
   forging: "锻造材料",
   cooking: "食材烹饪",
   furnishing: "摆设素材",
-  character_ascension: "角色突破素材",
+  character_ascension: "角色晋阶材料",
+  exp_material: "角色经验材料",
+  lightcone_exp: "光锥升级材料",
+  relic_exp: "遗器强化材料",
+  material: "通用培养材料",
   trace: "行迹材料",
   trace_material: "行迹材料",
   light_cone_ascension: "光锥突破素材",
+  lightcone_ascension: "光锥晋阶材料",
   enemy_drop: "敌方掉落",
   weekly_boss: "周本材料",
   synthesis: "合成材料",
@@ -295,7 +300,10 @@ export function MaterialBrowser({
                 </div>
               </div>
               <InspectorSection title="分类">
-                <InspectorField label="分类" value={categoryLabel(selected.category)} />
+                <InspectorField
+                  label="分类"
+                  value={selected.categoryLabel ?? categoryLabel(selected.category)}
+                />
                 {selected.gameVersion ? (
                   <InspectorField label="游戏版本" value={selected.gameVersion} />
                 ) : null}

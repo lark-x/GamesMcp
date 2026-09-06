@@ -41,6 +41,10 @@ export async function extractBookDocuments(input: ExtractorInput): Promise<Extra
         if (!Number.isInteger(id)) continue;
         const seriesId = Number(b.BookSeriesID);
         const seriesInfo = seriesMap.get(seriesId);
+        // 系列名需是有效文案（上游存在「（1）」这类编号占位系列名）
+        const seriesTitle = seriesInfo?.title?.trim();
+        const hasMeaningfulSeries =
+          seriesTitle && seriesTitle.length >= 2 && !/^[（(][^\)）]{0,6}[)）]$/.test(seriesTitle);
 
         const resolveHash = (val: unknown): string | null => {
           if (!val || typeof val !== "object") return null;
@@ -49,7 +53,8 @@ export async function extractBookDocuments(input: ExtractorInput): Promise<Extra
         };
 
         const bookName = resolveHash(b.BookInsideName) ?? `书籍 ${id}`;
-        const title = seriesInfo?.title ? `${seriesInfo.title}：${bookName}` : bookName;
+        // 标题只保留书名；系列名写入元数据供目录分组，避免“系列：书名”重复。
+        const title = bookName;
         const bookContent = resolveHash(b.BookContent);
 
         if (!bookContent) {
@@ -63,10 +68,11 @@ export async function extractBookDocuments(input: ExtractorInput): Promise<Extra
           continue;
         }
 
-        const lines = [`# ${title}`];
-        if (seriesInfo?.title) lines.push(`系列：${seriesInfo.title}`);
-        if (seriesInfo?.comments) lines.push(`系列介绍：${seriesInfo.comments}`);
-        lines.push("", bookContent);
+        const lines: string[] = [];
+        if (hasMeaningfulSeries && seriesInfo?.comments) {
+          lines.push(`【系列介绍】${seriesInfo.comments}`, "");
+        }
+        lines.push(bookContent);
 
         const content = normalizeStarRailText(lines.join("\n"));
         if (!hasLikelyNarrativeText(content)) {
@@ -91,9 +97,10 @@ export async function extractBookDocuments(input: ExtractorInput): Promise<Extra
             source: "turn-based-game-data",
             sourceCommit: input.sourceRef,
             sourcePath: localbookItem.path,
+            ...(hasMeaningfulSeries && seriesTitle ? { bookSeriesTitle: seriesTitle } : {}),
           },
           hierarchy: {
-            parentId: seriesId ? `sr_book_series:${seriesId}` : "sr_book",
+            parentId: hasMeaningfulSeries ? `sr_book_series:${seriesId}` : "sr_book",
             label: "Book",
             order: Number(b.BookSeriesInsideID) || id,
           },

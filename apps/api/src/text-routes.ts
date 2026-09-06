@@ -39,7 +39,7 @@ const textDocumentListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   query: z.string().trim().max(200).optional(),
   locale: z.string().trim().min(1).max(40).default("zh-CN"),
-  limit: z.coerce.number().int().min(1).max(500).default(100),
+  limit: z.coerce.number().int().min(1).max(10000).default(100),
   offset: z.coerce.number().int().min(0).default(0),
   revisionId: revisionIdSchema.optional(),
 });
@@ -196,11 +196,24 @@ function sourceParts(summary: DocumentSummary): { characterId?: string; storyKey
   return match ? { characterId: match[1], storyKey: match[2] } : {};
 }
 
+/** sourceKey 尾部业务数字（sr_voiceline/8001003/... -> 8001003），用于游戏内默认排序。 */
+export function sourceKeyOrder(summary: DocumentSummary): number {
+  const key = summary.sourceKey ?? "";
+  // 取 key 中最后一段连续数字（兼容 /locale/zh-CN 等后缀）
+  const match = /(\d+)(?!.*\d)/.exec(key);
+  const numeric = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
+}
+
 function characterStoryFromSummary(summary: DocumentSummary, index: number) {
   const parts = sourceParts(summary);
-  const titleParts = summary.title.split(" · ");
-  const characterName = titleParts[0]?.trim() || "未知角色";
-  const storyTitle = titleParts.length > 1 ? titleParts.slice(1).join(" · ").trim() : summary.title;
+  // 星铁标题形如「角色名：小节名」，原神形如「角色名 · 小节名」
+  const separator = summary.title.includes("：") ? "：" : " · ";
+  const separatorIndex = summary.title.indexOf(separator);
+  const characterName =
+    separatorIndex > 0 ? summary.title.slice(0, separatorIndex).trim() : summary.title.trim();
+  const storyTitle =
+    separatorIndex > 0 ? summary.title.slice(separatorIndex + separator.length).trim() : summary.title;
   const characterStableId = parts.characterId
     ? `character/${parts.characterId}`
     : `character/${characterName}`;
@@ -208,6 +221,7 @@ function characterStoryFromSummary(summary: DocumentSummary, index: number) {
     stableId: summary.sourceKey ?? summary.id,
     storyStableId: summary.sourceKey ?? summary.id,
     storyKey: parts.storyKey ?? String(index + 1),
+    order: sourceKeyOrder(summary),
     documentId: summary.id,
     title: storyTitle || summary.title,
     displayTitle: summary.title,
@@ -339,7 +353,10 @@ export function registerTextRoutes(
           numberValue(provenance.sortOrder) ??
           (typeof volume === "number" ? volume : undefined) ??
           index;
-        const bookTitle = detail?.segments[0]?.headingPath[0] ?? summary.title;
+        const bookTitle =
+          stringValue(provenance.bookSeriesTitle) ??
+          detail?.segments[0]?.headingPath[0] ??
+          summary.title;
         return {
           stableId: volumeStableId,
           bookStableId,
@@ -415,14 +432,22 @@ export function registerTextRoutes(
       groups.set(story.characterStableId, current);
     });
     for (const group of groups.values())
-      group.stories.sort((left, right) => left.storyKey.localeCompare(right.storyKey, "zh-CN"));
+      group.stories.sort(
+        (left, right) =>
+          (left.order ?? 0) - (right.order ?? 0) || left.storyKey.localeCompare(right.storyKey),
+      );
+    const characters = [...groups.values()].sort(
+      (left, right) =>
+        Math.min(...left.stories.map((story) => story.order ?? 0)) -
+        Math.min(...right.stories.map((story) => story.order ?? 0)),
+    );
     return {
       gameId: params.gameId,
       revisionId,
       locale: query.locale,
       sourceDomain: "FetterStory",
       corpusStatus: summaries.length ? "available" : "character_story_source_empty",
-      characters: [...groups.values()],
+      characters,
       totalStories: summaries.length,
       truncated: summaries.length === query.limit,
       nextOffset: summaries.length === query.limit ? query.offset + summaries.length : null,
@@ -451,13 +476,17 @@ export function registerTextRoutes(
       revisionId,
       locale: query.locale,
       corpusStatus: summaries.length ? "available" : "source_empty",
-      entries: summaries.map((summary) => ({
-        id: summary.id,
-        documentId: summary.id,
-        title: summary.title,
-        type: summary.type,
-        locale: summary.locale ?? null,
-      })),
+      // 按业务 ID 升序（角色->小节 / 会话序），保持游戏内默认顺序
+      entries: summaries
+        .map((summary) => ({ summary }))
+        .sort((left, right) => sourceKeyOrder(left.summary) - sourceKeyOrder(right.summary))
+        .map(({ summary }) => ({
+          id: summary.id,
+          documentId: summary.id,
+          title: summary.title,
+          type: summary.type,
+          locale: summary.locale ?? null,
+        })),
       count: summaries.length,
       truncated: summaries.length === query.limit,
       nextOffset: summaries.length === query.limit ? query.offset + summaries.length : null,

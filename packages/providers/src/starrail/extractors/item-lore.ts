@@ -49,8 +49,12 @@ export async function extractItemLoreDocuments(input: ExtractorInput): Promise<E
         if (!bgDesc && !desc) {
           continue; // Skip virtual / non-narrative items without background description
         }
+        // 未解析模板名（{TEXTJOIN#N}）等垃圾名不进入语料
+        if (/[{}#]/u.test(name)) {
+          continue;
+        }
 
-        const lines = [`# ${name}`, `类别：${table.label}`, ""];
+        const lines: string[] = [];
         if (bgDesc) {
           lines.push("## 背景故事", bgDesc, "");
         }
@@ -73,7 +77,7 @@ export async function extractItemLoreDocuments(input: ExtractorInput): Promise<E
           category: "sr_item_lore",
           id,
           relativePath: `sr_item_lore/${id}.txt`,
-          title: `${name}（${table.label}）`,
+          title: name,
           content,
           sourceFiles: [table.path],
           sourceIds: [`ItemID:${id}`],
@@ -81,6 +85,7 @@ export async function extractItemLoreDocuments(input: ExtractorInput): Promise<E
             source: "turn-based-game-data",
             sourceCommit: input.sourceRef,
             sourcePath: table.path,
+            kind: table.label,
           },
           hierarchy: {
             parentId: "sr_item_lore",

@@ -2,6 +2,7 @@ export type ArchiveMaterial = {
   stableId: string;
   name: string;
   category: string;
+  categoryLabel?: string;
   rarity?: number | null;
   description?: string | null;
   sources?: string[];

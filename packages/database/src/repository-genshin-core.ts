@@ -201,7 +201,8 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
   }
 
   async listMaterials(options: GenshinStructuredListOptions): Promise<GenshinMaterial[]> {
-    const limit = Math.min(Math.max(options.limit, 1), 200);
+    // 上限放宽到 2000：材料总数计数与分类聚合依赖本方法拉全量（星铁 1251 条）
+    const limit = Math.min(Math.max(options.limit, 1), 2000);
     const offset = Math.max(options.offset ?? 0, 0);
     const query = options.query?.trim() ? `%${escapeLike(normalize(options.query))}%` : undefined;
     const category = options.category?.trim();

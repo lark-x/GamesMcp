@@ -171,6 +171,8 @@ export function safeProvenance(
     volumeStableId: typeof source.volumeStableId === "string" ? source.volumeStableId : undefined,
     documentStableId:
       typeof source.documentStableId === "string" ? source.documentStableId : undefined,
+    bookSeriesTitle:
+      typeof source.bookSeriesTitle === "string" ? source.bookSeriesTitle : undefined,
     bookSuitId:
       typeof source.bookSuitId === "string" || typeof source.bookSuitId === "number"
         ? source.bookSuitId

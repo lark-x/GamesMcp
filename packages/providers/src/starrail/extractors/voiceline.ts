@@ -52,9 +52,10 @@ export async function extractVoiceLineDocuments(input: ExtractorInput): Promise<
 
         const voiceM = resolveHash(v.Voice_M);
         const voiceF = resolveHash(v.Voice_F);
-        const lines = [`# ${character}：角色语音`, `## ${voiceTitle}`, ""];
+        // 正文只保留台词本身，标题由阅读器呈现，避免标题重复。
+        const lines: string[] = [];
         if (voiceM && voiceF && voiceM !== voiceF) {
-          lines.push(`[男主] ${voiceM}`, "", `[女主] ${voiceF}`);
+          lines.push(`【穹】${voiceM}`, "", `【星】${voiceF}`);
         } else {
           const text = voiceM ?? voiceF;
           if (text) lines.push(text);

@@ -847,9 +847,15 @@ export async function runStarRailIngestion(options: IngestOptions) {
         metadata.series = series;
         metadata.chapter = chapter;
       } else if (docType === "book") {
-        metadata.bookSuitId = doc.id;
-        metadata.bookStableId = `sr_book_${doc.id}`;
-        metadata.volumeId = 1;
+        // 同一系列的书归入一个分组，目录按系列聚合、按卷内序号排序
+        const seriesMatch = /^sr_book_series:(\d+)$/u.exec(String(doc.hierarchy?.parentId ?? ""));
+        const seriesId = seriesMatch ? Number(seriesMatch[1]) : undefined;
+        const seriesTitle = (doc.metadata as Record<string, unknown> | undefined)?.bookSeriesTitle;
+        metadata.bookSuitId = seriesId ?? doc.id;
+        metadata.bookStableId = seriesId ? `sr_book_series_${seriesId}` : `sr_book_${doc.id}`;
+        if (typeof seriesTitle === "string") metadata.bookSeriesTitle = seriesTitle;
+        metadata.volumeId = doc.hierarchy?.order ?? 1;
+        metadata.sortOrder = doc.hierarchy?.order ?? doc.id;
       }
 
       const docIdRes = await client.query("SELECT gen_random_uuid() AS id");
@@ -957,11 +963,18 @@ export async function runStarRailIngestion(options: IngestOptions) {
             continue;
           }
           let speakerName: string | null = null;
+          let nodeType = "dialogue";
           let body = trimmed;
-          if (trimmed.includes("：") && !trimmed.startsWith("###")) {
+          if (trimmed.startsWith("[选项]")) {
+            nodeType = "player_choice";
+            body = trimmed.slice("[选项]".length).trim();
+          } else if (trimmed.includes("：") && !trimmed.startsWith("###")) {
             const parts = trimmed.split("：");
             speakerName = parts[0].trim();
             body = parts.slice(1).join("：").trim();
+          } else {
+            // 无说话人的行是旁白/字幕，按旁白节点渲染
+            nodeType = "narration";
           }
 
           if (body) {
@@ -972,8 +985,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
                 body, ordinal, variants, metadata
               ) VALUES (
                 gen_random_uuid(), $1, $2, $3, $4,
-                $5, $6, 'dialogue', $7, $8,
-                $9, $10, '[]'::jsonb, '{}'::jsonb
+                $5, $6, $7, $8, $9,
+                $10, $11, '[]'::jsonb, '{}'::jsonb
               )
             `, [
               docId,
@@ -982,6 +995,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
               subKey,
               `${questKey}/node/${ordinal}`,
               ordinal,
+              nodeType,
               speakerName ? `speaker_${speakerName}` : null,
               speakerName,
               body,

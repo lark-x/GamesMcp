@@ -88,9 +88,8 @@ export async function extractCharacterStoryDocuments(
           continue;
         }
 
-        const content = normalizeStarRailText(
-          [`# ${character}`, `## ${section}`, "", storyText].join("\n"),
-        );
+        // 正文只保留故事文本；角色名与小节名由阅读器标题呈现，避免重复。
+        const content = normalizeStarRailText(storyText);
         if (!hasLikelyNarrativeText(content)) {
           result.issues.push({
             code: "empty_or_non_narrative_document",

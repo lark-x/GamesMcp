@@ -71,19 +71,44 @@ export class StarRailMaterialExtractor {
 
     const materials: StarRailMaterial[] = [];
 
+    // 培养材料白名单：只收游戏中「漫游手册-材料」会出现的道具类型，
+    // 贴纸/书籍/摆设/活动小道具/内部展示条目不进入材料页。
+    const MATERIAL_SUBTYPES = new Set([
+      "AvatarExp",
+      "EquipmentExp",
+      "RelicExp",
+      "AvatarRank",
+      "TracePath",
+      "CommonMonsterDrop",
+      "WeeklyMonsterDrop",
+      "ComposeMaterial",
+      "Material",
+      "Virtual",
+    ]);
+
     for (const item of rawItems) {
       const id = Number(item.ItemID ?? item.ID);
       if (!Number.isInteger(id)) continue;
 
-      // Filter internal test items
-      const rawSub = String(item.ItemSubType ?? item.ItemType ?? "");
+      const mainType = String(item.ItemMainType ?? "");
+      const subType = String(item.ItemSubType ?? "");
+      const isMaterial =
+        mainType === "Material" ||
+        mainType === "Virtual" ||
+        mainType === "Mission" ||
+        (mainType === "Usable" && subType === "Food");
+      if (!isMaterial) continue;
+      if (!MATERIAL_SUBTYPES.has(subType) && subType !== "Food" && subType !== "Mission") continue;
+
       const name = this.resolveHash(item.ItemName) ?? `物品 ${id}`;
       const lowerName = name.toLowerCase();
+      // 未解析模板（{TEXTJOIN#N}）、调试名（Hello 迷World! / W?）等垃圾名过滤
       if (
         id >= 900000 ||
         lowerName.includes("test") ||
         lowerName.includes("测试") ||
-        rawSub.includes("Test")
+        subType.includes("Test") ||
+        /[{}#]/u.test(name)
       ) {
         continue;
       }
@@ -101,28 +126,30 @@ export class StarRailMaterialExtractor {
       const story = normalizeStarRailText(this.resolveHash(item.ItemBGDesc) ?? "") || undefined;
       const cleanName = normalizeStarRailText(name);
 
-      // Classify category by real item attributes
-      let category: MaterialCategory = "other";
-      const mainType = String(item.ItemMainType ?? "");
-      const subType = String(item.ItemSubType ?? "");
+      // 按游戏内分类体系映射（子类型枚举精确匹配，而非 includes 猜测）
+      let category: MaterialCategory = "material";
 
-      if (id === 1 || id === 2 || subType.includes("Virtual") || subType.includes("Currency")) {
+      if (subType === "Virtual") {
         category = "currency";
-      } else if (subType.includes("AvatarPromotion") || mainType.includes("AvatarPromotion")) {
+      } else if (subType === "AvatarExp") {
+        category = "exp_material";
+      } else if (subType === "EquipmentExp") {
+        category = "lightcone_exp";
+      } else if (subType === "RelicExp") {
+        category = "relic_exp";
+      } else if (subType === "AvatarRank") {
         category = "character_ascension";
-      } else if (subType.includes("SkillTree") || subType.includes("Trace")) {
+      } else if (subType === "TracePath") {
         category = "trace";
-      } else if (subType.includes("EquipmentPromotion")) {
-        category = "lightcone_ascension";
-      } else if (subType.includes("MonsterDrop") || subType.includes("Common")) {
+      } else if (subType === "CommonMonsterDrop") {
         category = "enemy_drop";
-      } else if (subType.includes("BossDrop") || subType.includes("Weekly")) {
+      } else if (subType === "WeeklyMonsterDrop") {
         category = "weekly_boss";
-      } else if (subType.includes("Food") || subType.includes("Consumable")) {
-        category = "consumable";
-      } else if (subType.includes("Material") || subType.includes("Compound")) {
+      } else if (subType === "ComposeMaterial") {
         category = "synthesis";
-      } else if (subType.includes("Mission") || mainType.includes("Mission")) {
+      } else if (subType === "Food") {
+        category = "consumable";
+      } else if (subType === "Mission") {
         category = "mission";
       }
 
@@ -144,6 +171,10 @@ export class StarRailMaterialExtractor {
         sources.push({ type: "enemy_drop", description: "大地图敌方目标掉落" });
       } else if (category === "synthesis") {
         sources.push({ type: "omni_synthesizer", description: "万能合成机合成" });
+      } else if (category === "exp_material" || category === "lightcone_exp") {
+        sources.push({ type: "calyx_golden", description: "拟造花萼（金）挑战获得" });
+      } else if (category === "relic_exp") {
+        sources.push({ type: "cavern_of_corrosion", description: "侵蚀隧洞挑战获得" });
       }
 
       // Usages
@@ -152,8 +183,14 @@ export class StarRailMaterialExtractor {
         usages.push({ type: "character_ascension", targetId: "avatar_general", targetName: "角色等级晋阶突破" });
       } else if (category === "trace") {
         usages.push({ type: "character_trace", targetId: "trace_general", targetName: "角色行迹技能升级" });
-      } else if (category === "lightcone_ascension") {
+      } else if (category === "lightcone_ascension" || category === "lightcone_exp") {
         usages.push({ type: "lightcone_ascension", targetId: "lightcone_general", targetName: "光锥等级晋阶突破" });
+      } else if (category === "exp_material") {
+        usages.push({ type: "character_exp", targetId: "avatar_exp", targetName: "角色等级提升" });
+      } else if (category === "relic_exp") {
+        usages.push({ type: "relic_exp", targetId: "relic_exp", targetName: "遗器强化升级" });
+      } else if (category === "synthesis") {
+        usages.push({ type: "synthesis", targetId: "synthesis", targetName: "万能合成机合成高阶材料" });
       }
 
       materials.push({

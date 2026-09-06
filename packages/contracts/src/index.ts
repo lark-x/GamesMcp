@@ -35,6 +35,11 @@ export const documentTypeSchema = z.enum([
   "mechanism",
   "tutorial",
   "lore",
+  // 星铁语料文档类型（TurnBasedGameData 管道入库）
+  "voiceline",
+  "message",
+  "train_visitor",
+  "item_lore",
 ]);
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 

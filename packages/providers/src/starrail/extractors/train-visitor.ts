@@ -48,11 +48,6 @@ export async function extractTrainVisitorDocuments(
         if (!Number.isInteger(id)) continue;
         const avatarId = Number(v.AvatarID);
         const avatarName = avatarMap.get(avatarId) ?? `访客 ${id}`;
-        const title = `${avatarName}：列车访客`;
-        const lines = [`# ${title}`, "", `VisitorID：${id}`];
-        if (avatarId) lines.push(`AvatarID：${avatarId}`);
-        if (v.MissionID) lines.push(`MissionID：${v.MissionID}`);
-        lines.push("");
 
         const resolveHash = (val: unknown): string | null => {
           if (!val || typeof val !== "object") return null;
@@ -61,11 +56,26 @@ export async function extractTrainVisitorDocuments(
         };
 
         const comeText = resolveHash(v.MessageCome);
-        if (comeText) lines.push(`[来访留言] ${comeText}`);
         const leaveText = resolveHash(v.MessageLeave);
-        if (leaveText) lines.push(`[离开留言] ${leaveText}`);
         const residentText = resolveHash(v.MessageResident);
-        if (residentText) lines.push(`[常驻留言] ${residentText}`);
+
+        // 标题带首条留言预览，区分同一访客的多次来访记录。
+        const preview = (comeText ?? residentText ?? leaveText ?? "")
+          .replace(/\s+/gu, " ")
+          .trim()
+          .slice(0, 24);
+        const title = preview ? `${avatarName}：${preview}` : `${avatarName}：列车来访留言`;
+
+        const lines: string[] = [];
+        if (comeText) {
+          lines.push("## 来访留言", "", `${avatarName}：${comeText}`, "");
+        }
+        if (residentText) {
+          lines.push("## 常驻留言", "", `${avatarName}：${residentText}`, "");
+        }
+        if (leaveText) {
+          lines.push("## 离别留言", "", `${avatarName}：${leaveText}`, "");
+        }
 
         const content = normalizeStarRailText(lines.join("\n"));
         if (!hasLikelyNarrativeText(content)) {

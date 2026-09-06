@@ -112,7 +112,7 @@ export function StoryBrowser({
           // Fallback if catalog not ready
         }
 
-        const params = new URLSearchParams({ locale: nextFilters.locale, limit: "100" });
+        const params = new URLSearchParams({ locale: nextFilters.locale ?? "zh-CN", limit: "100" });
         if (nextFilters.query.trim()) params.set("q", nextFilters.query.trim());
         if (nextFilters.type) params.set("type", nextFilters.type);
         if (selectedRevision) params.set("revisionId", selectedRevision);
@@ -150,7 +150,7 @@ export function StoryBrowser({
       setDetailLoading(true);
       setDetailError("");
       try {
-        const params = new URLSearchParams({ locale: filters.locale, limit: "100" });
+        const params = new URLSearchParams({ locale: filters.locale ?? "zh-CN", limit: "100" });
         if (selectedRevision) params.set("revisionId", selectedRevision);
         if (options?.cursor) params.set("cursor", options.cursor);
         if (options?.subquestId) params.set("subquestId", options.subquestId);
@@ -390,7 +390,7 @@ export function StoryBrowser({
                 </div>
 
                 <div className="starrail-readiness-info">
-                  ℹ️ <strong>数据管道状态</strong>：当前本地检索库已收录 15,907 份星铁原始资料。全量主线开拓任务与短信对白文本正在通过 TurnBasedGameData 管道等待导入与语义图谱构建。
+                  ℹ️ <strong>数据管道状态</strong>：当前本地检索库已收录全量开拓任务对白（角色徽章 + 旁白 + 分支选项）、星轨短信、列车访客与角色故事/语音语料，并附带角色、光锥、遗器与材料结构化资料。
                 </div>
 
                 <div className="starrail-readiness-actions">
@@ -413,7 +413,7 @@ export function StoryBrowser({
             ) : (
               <ArchiveEmpty
                 title="选择一个任务开始阅读"
-                detail="剧情正文会以连续文本方式展示，不使用对话气泡。"
+                detail="剧情正文以对话形式呈现：说话人徽章、旁白与分支选项。"
               />
             )
           ) : null}
