@@ -85,7 +85,7 @@
   "variables": [
     {
       "input": "{NICKNAME}",
-      "output": "开拓者"
+      "output": "{NICKNAME}"
     },
     {
       "input": "{M#他}{F#她}",
@@ -117,7 +117,7 @@
     },
     {
       "input": "你好，{NICKNAME}",
-      "output": "你好，开拓者"
+      "output": "你好，{NICKNAME}"
     },
     {
       "input": "{M#哥哥}{F#姐姐}",
@@ -125,7 +125,7 @@
     },
     {
       "input": "变量 {NICKNAME} 不应被替换",
-      "output": "变量 开拓者 不应被替换"
+      "output": "变量 {NICKNAME} 不应被替换"
     },
     {
       "input": "{M#开拓者}{F#开拓者}",
@@ -133,7 +133,7 @@
     },
     {
       "input": "梦主：{NICKNAME}",
-      "output": "梦主：开拓者"
+      "output": "梦主：{NICKNAME}"
     },
     {
       "input": "{AvatarName}：出发",
@@ -153,11 +153,11 @@
     },
     {
       "input": "{NICKNAME}\n\n继续开拓",
-      "output": "开拓者\n\n继续开拓"
+      "output": "{NICKNAME}\n\n继续开拓"
     },
     {
       "input": "不要填充玩家姓名：{NICKNAME}",
-      "output": "不要填充玩家姓名：开拓者"
+      "output": "不要填充玩家姓名：{NICKNAME}"
     },
     {
       "input": "性别变量：{M#他}{F#她}",
@@ -191,7 +191,7 @@
     },
     {
       "input": "[选项] {NICKNAME} 决定出发",
-      "output": "[选项] 开拓者 决定出发"
+      "output": "[选项] {NICKNAME} 决定出发"
     },
     {
       "input": "分支\n\n\n返回现实",

@@ -71,6 +71,14 @@ export class StarRailAchievementExtractor {
       }
     }
 
+    const quests = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/QuestData.json"),
+    );
+    const rewards = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/RewardData.json"),
+    );
+    const questMap = new Map((quests ?? []).map((q) => [Number(q.QuestID), q]));
+    const rewardMap = new Map((rewards ?? []).map((r) => [Number(r.RewardID), r]));
     const achievements: StarRailAchievement[] = [];
     for (const a of rawAchs) {
       const id = Number(a.AchievementID ?? a.ID);
@@ -80,7 +88,10 @@ export class StarRailAchievementExtractor {
       const description = this.resolveHash(a.AchievementDesc) ?? "";
       const seriesId = Number(a.SeriesID ?? 1);
       const isHidden = a.ShowType === "ShowAfterFinish" || Boolean(a.IsHidden);
-      const rewardJade = Number(a.Raid ?? 5);
+      const quest = questMap.get(Number(a.QuestID));
+      const reward = rewardMap.get(Number(quest?.RewardID));
+      // An existing reward without Hcoin grants zero jade; a missing reward is unknown.
+      const rewardJade = reward ? Number(reward.Hcoin ?? 0) : null;
 
       achievements.push({
         id,

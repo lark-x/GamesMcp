@@ -66,10 +66,16 @@ export async function buildStarRailIstarothCorpus(input: {
 }
 
 function dedupeByPath(documents: StarRailCorpusDocument[]): StarRailCorpusDocument[] {
-  const seen = new Set<string>();
-  return documents.filter((document) => {
-    if (seen.has(document.relativePath)) return false;
-    seen.add(document.relativePath);
-    return true;
-  });
+  const seen = new Map<string, StarRailCorpusDocument>();
+  for (const document of documents) {
+    const previous = seen.get(document.relativePath);
+    if (previous) {
+      if (previous.content !== document.content || previous.title !== document.title) {
+        throw new Error(`Conflicting corpus path: ${document.relativePath}`);
+      }
+      previous.sourceFiles = [...new Set([...previous.sourceFiles, ...document.sourceFiles])];
+      previous.sourceIds = [...new Set([...previous.sourceIds, ...document.sourceIds])];
+    } else seen.set(document.relativePath, document);
+  }
+  return [...seen.values()];
 }

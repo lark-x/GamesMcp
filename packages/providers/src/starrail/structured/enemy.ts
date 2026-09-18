@@ -3,6 +3,7 @@ import type { StarRailEnemy } from "./types.js";
 import type { StarRailSourceInventory } from "../source/inventory.js";
 import type { StarRailTextMapResolver } from "../source/textmap.js";
 import { readSafeJsonFile } from "../extractors/shared.js";
+import { configNumber } from "./values.js";
 
 export interface EnemyExtractorOptions {
   dataDir: string;
@@ -40,7 +41,9 @@ export class StarRailEnemyExtractor {
   }
 
   public async extractEnemies(): Promise<StarRailEnemy[]> {
-    const monsterItem = this.inventory.items.find((i) => i.path === "ExcelOutput/MonsterConfig.json");
+    const monsterItem = this.inventory.items.find(
+      (i) => i.path === "ExcelOutput/MonsterConfig.json",
+    );
     if (!monsterItem) {
       return this.fixture ? this.getBaselineEnemies() : [];
     }
@@ -52,13 +55,18 @@ export class StarRailEnemyExtractor {
       return this.fixture ? this.getBaselineEnemies() : [];
     }
 
+    const templates = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/MonsterTemplateConfig.json"),
+    );
+    const templateMap = new Map((templates ?? []).map((t) => [Number(t.MonsterTemplateID), t]));
     const enemies: StarRailEnemy[] = [];
     for (const m of rawMonsters) {
       const id = Number(m.MonsterID ?? m.ID);
-      if (!Number.isInteger(id) || id > 900000) continue;
+      if (!Number.isSafeInteger(id) || id <= 0) continue;
+      const template = templateMap.get(Number(m.MonsterTemplateID));
 
       const name = this.resolveHash(m.MonsterName) ?? `敌方目标 ${id}`;
-      const rankStr = String(m.Rank ?? "");
+      const rankStr = String(template?.Rank ?? m.Rank ?? "");
       const rank: StarRailEnemy["rank"] = rankStr.includes("Boss")
         ? "BOSS"
         : rankStr.includes("Elite")
@@ -66,8 +74,8 @@ export class StarRailEnemyExtractor {
           : "MINION";
 
       const weaknesses: string[] = [];
-      if (Array.isArray(m.WeakElementList)) {
-        for (const w of m.WeakElementList) {
+      if (Array.isArray(m.StanceWeakList)) {
+        for (const w of m.StanceWeakList) {
           weaknesses.push(String(w));
         }
       }
@@ -78,10 +86,14 @@ export class StarRailEnemyExtractor {
         rank,
         camp: m.MonsterCamp ? String(m.MonsterCamp) : undefined,
         weaknesses,
-        resistances: [],
-        baseHp: m.HPBase ? Number(m.HPBase) : undefined,
-        baseAtk: m.AttackBase ? Number(m.AttackBase) : undefined,
-        baseDef: m.DefenceBase ? Number(m.DefenceBase) : undefined,
+        resistances: Array.isArray(m.DamageTypeResistance)
+          ? m.DamageTypeResistance.filter((r) => (configNumber(r.Value) ?? 0) > 0).map((r) =>
+              String(r.DamageType),
+            )
+          : [],
+        baseHp: configNumber(template?.HPBase) ?? undefined,
+        baseAtk: configNumber(template?.AttackBase) ?? undefined,
+        baseDef: configNumber(template?.DefenceBase) ?? undefined,
         drops: [],
       });
     }

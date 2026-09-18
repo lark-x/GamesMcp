@@ -3,6 +3,7 @@ import type { StarRailCharacter } from "./types.js";
 import type { StarRailSourceInventory } from "../source/inventory.js";
 import type { StarRailTextMapResolver } from "../source/textmap.js";
 import { readSafeJsonFile } from "../extractors/shared.js";
+import { configNumber, formatConfigText } from "./values.js";
 
 // AvatarBaseType -> 命途中文名
 const PATH_CN: Record<string, string> = {
@@ -72,14 +73,20 @@ export class StarRailCharacterExtractor {
     }
 
     // Load skills
-    const skillItem = this.inventory.items.find((i) => i.path === "ExcelOutput/AvatarSkillConfig.json");
-    const skillMap = new Map<number, Array<{ id: number; name: string; type: string; description: string }>>();
+    const skillItem = this.inventory.items.find(
+      (i) => i.path === "ExcelOutput/AvatarSkillConfig.json",
+    );
+    const skillMap = new Map<
+      number,
+      Array<{ id: number; name: string; type: string; description: string }>
+    >();
     if (skillItem) {
       const rawSkills = await readSafeJsonFile<Array<Record<string, unknown>>>(
         resolve(this.dataDir, skillItem.path),
       );
       if (Array.isArray(rawSkills)) {
         for (const s of rawSkills) {
+          if (Number(s.Level ?? 1) !== 1) continue;
           const sId = Number(s.SkillID ?? s.ID);
           if (!Number.isInteger(sId)) continue;
           const avatarId = Math.floor(sId / 100);
@@ -89,7 +96,7 @@ export class StarRailCharacterExtractor {
             (typeof s.AttackType === "string" && s.AttackType) ||
             this.resolveHash(s.SkillTypeDesc) ||
             "Skill";
-          const description = this.resolveHash(s.SkillDesc) ?? "";
+          const description = formatConfigText(this.resolveHash(s.SkillDesc) ?? "", s.ParamList);
           const list = skillMap.get(avatarId) ?? [];
           list.push({ id: sId, name, type, description });
           skillMap.set(avatarId, list);
@@ -98,14 +105,25 @@ export class StarRailCharacterExtractor {
     }
 
     // Load traces / skill tree
-    const treeItem = this.inventory.items.find((i) => i.path === "ExcelOutput/AvatarSkillTreeConfig.json");
-    const traceMap = new Map<number, Array<{ id: number; name: string; description: string; materialCosts: Array<{ id: number; count: number }> }>>();
+    const treeItem = this.inventory.items.find(
+      (i) => i.path === "ExcelOutput/AvatarSkillTreeConfig.json",
+    );
+    const traceMap = new Map<
+      number,
+      Array<{
+        id: number;
+        name: string;
+        description: string;
+        materialCosts: Array<{ id: number; count: number }>;
+      }>
+    >();
     if (treeItem) {
       const rawTrees = await readSafeJsonFile<Array<Record<string, unknown>>>(
         resolve(this.dataDir, treeItem.path),
       );
       if (Array.isArray(rawTrees)) {
         for (const t of rawTrees) {
+          if (Number(t.Level ?? 1) !== 1) continue;
           const pointId = Number(t.PointID ?? t.ID);
           const avatarId = Number(t.AvatarID);
           if (!Number.isInteger(pointId) || !Number.isInteger(avatarId)) continue;
@@ -130,7 +148,9 @@ export class StarRailCharacterExtractor {
     }
 
     // Load Eidolons (RankConfig)
-    const rankItem = this.inventory.items.find((i) => i.path === "ExcelOutput/AvatarRankConfig.json");
+    const rankItem = this.inventory.items.find(
+      (i) => i.path === "ExcelOutput/AvatarRankConfig.json",
+    );
     const rankMap = new Map<number, Array<{ rank: number; name: string; description: string }>>();
     if (rankItem) {
       const rawRanks = await readSafeJsonFile<Array<Record<string, unknown>>>(
@@ -151,9 +171,18 @@ export class StarRailCharacterExtractor {
       }
     }
 
+    const promotions = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/AvatarPromotionConfig.json"),
+    );
+    const baseStats = new Map(
+      (promotions ?? [])
+        .filter((p) => Number(p.Promotion ?? 0) === 0)
+        .map((p) => [Number(p.AvatarID), p]),
+    );
     const characters: StarRailCharacter[] = [];
 
     for (const a of rawAvatars) {
+      if (a.Release !== true) continue;
       const id = Number(a.AvatarID ?? a.ID);
       if (!Number.isInteger(id) || id > 900000) continue; // Filter test avatars
 
@@ -166,6 +195,7 @@ export class StarRailCharacterExtractor {
           ? `开拓者•${pathCn(path)}`
           : rawName || `角色 ${id}`;
       const rarity = a.Rarity === "CombatPowerAvatarRarityType5" || a.Rarity === 5 ? 5 : 4;
+      const stats = baseStats.get(id);
 
       characters.push({
         id,
@@ -173,10 +203,10 @@ export class StarRailCharacterExtractor {
         rarity,
         path,
         element,
-        baseHp: Number(a.AvatarBaseHP ?? 1000),
-        baseAtk: Number(a.AvatarBaseATK ?? 500),
-        baseDef: Number(a.AvatarBaseDEF ?? 400),
-        baseSpeed: Number(a.AvatarBaseSpeed ?? 100),
+        baseHp: configNumber(stats?.HPBase),
+        baseAtk: configNumber(stats?.AttackBase),
+        baseDef: configNumber(stats?.DefenceBase),
+        baseSpeed: configNumber(stats?.SpeedBase),
         skills: skillMap.get(id) ?? [],
         traces: traceMap.get(id) ?? [],
         eidolons: rankMap.get(id) ?? [],
@@ -203,9 +233,24 @@ export class StarRailCharacterExtractor {
         baseDef: 573,
         baseSpeed: 101,
         skills: [
-          { id: 100101, name: "极寒的弓矢", type: "Normal", description: "对指定敌方单体造成等同于三月七50%攻击力的冰属性伤害。" },
-          { id: 100102, name: "六相冰的庇护", type: "Skill", description: "为指定我方单体提供能够吸收等同于三月七38%防御力+190伤害的护盾。" },
-          { id: 100103, name: "冰刻箭雨之时", type: "Ultimate", description: "对敌方全体造成等同于三月七90%攻击力的冰属性伤害。" },
+          {
+            id: 100101,
+            name: "极寒的弓矢",
+            type: "Normal",
+            description: "对指定敌方单体造成等同于三月七50%攻击力的冰属性伤害。",
+          },
+          {
+            id: 100102,
+            name: "六相冰的庇护",
+            type: "Skill",
+            description: "为指定我方单体提供能够吸收等同于三月七38%防御力+190伤害的护盾。",
+          },
+          {
+            id: 100103,
+            name: "冰刻箭雨之时",
+            type: "Ultimate",
+            description: "对敌方全体造成等同于三月七90%攻击力的冰属性伤害。",
+          },
         ],
         traces: [],
         eidolons: [
@@ -224,9 +269,24 @@ export class StarRailCharacterExtractor {
         baseDef: 396,
         baseSpeed: 110,
         skills: [
-          { id: 100201, name: "云骑枪术·朔风", type: "Normal", description: "对指定敌方单体造成风属性伤害。" },
-          { id: 100202, name: "云骑枪术·疾雨", type: "Skill", description: "对指定敌方单体造成风属性伤害，暴击时减速目标。" },
-          { id: 100203, name: "洞天幻化，长梦一瞬", type: "Ultimate", description: "对指定敌方单体造成大量风属性伤害。" },
+          {
+            id: 100201,
+            name: "云骑枪术·朔风",
+            type: "Normal",
+            description: "对指定敌方单体造成风属性伤害。",
+          },
+          {
+            id: 100202,
+            name: "云骑枪术·疾雨",
+            type: "Skill",
+            description: "对指定敌方单体造成风属性伤害，暴击时减速目标。",
+          },
+          {
+            id: 100203,
+            name: "洞天幻化，长梦一瞬",
+            type: "Ultimate",
+            description: "对指定敌方单体造成大量风属性伤害。",
+          },
         ],
         traces: [],
         eidolons: [],
@@ -243,9 +303,24 @@ export class StarRailCharacterExtractor {
         baseDef: 460,
         baseSpeed: 107,
         skills: [
-          { id: 100601, name: "系统警告", type: "Normal", description: "对指定敌方单体造成量子属性伤害。" },
-          { id: 100602, name: "是否允许更改？", type: "Skill", description: "为指定敌方单体植入弱点。" },
-          { id: 100603, name: "账号已封禁", type: "Ultimate", description: "对指定敌方单体造成大量量子属性伤害并降低其防御力。" },
+          {
+            id: 100601,
+            name: "系统警告",
+            type: "Normal",
+            description: "对指定敌方单体造成量子属性伤害。",
+          },
+          {
+            id: 100602,
+            name: "是否允许更改？",
+            type: "Skill",
+            description: "为指定敌方单体植入弱点。",
+          },
+          {
+            id: 100603,
+            name: "账号已封禁",
+            type: "Ultimate",
+            description: "对指定敌方单体造成大量量子属性伤害并降低其防御力。",
+          },
         ],
         traces: [],
         eidolons: [],
@@ -262,9 +337,24 @@ export class StarRailCharacterExtractor {
         baseDef: 436,
         baseSpeed: 101,
         skills: [
-          { id: 130201, name: "三途枯涸", type: "Normal", description: "对指定敌方单体造成雷属性伤害。" },
-          { id: 130202, name: "八雷飞渡", type: "Skill", description: "获得【残梦】，为敌方单体施加【集真赤】并造成雷属性伤害。" },
-          { id: 130203, name: "残梦尽染，一刀缭断", type: "Ultimate", description: "发动4段攻击，无视弱点属性削减韧性，造成巨额雷属性伤害。" },
+          {
+            id: 130201,
+            name: "三途枯涸",
+            type: "Normal",
+            description: "对指定敌方单体造成雷属性伤害。",
+          },
+          {
+            id: 130202,
+            name: "八雷飞渡",
+            type: "Skill",
+            description: "获得【残梦】，为敌方单体施加【集真赤】并造成雷属性伤害。",
+          },
+          {
+            id: 130203,
+            name: "残梦尽染，一刀缭断",
+            type: "Ultimate",
+            description: "发动4段攻击，无视弱点属性削减韧性，造成巨额雷属性伤害。",
+          },
         ],
         traces: [],
         eidolons: [],

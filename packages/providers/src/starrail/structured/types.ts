@@ -78,10 +78,10 @@ export interface StarRailCharacter {
   rarity: number;
   path: string; // 命途: Destruction, Preservation, Hunt, Erudition, Harmony, Nihility, Abundance, Remembrance
   element: string; // 属性: Physical, Fire, Ice, Thunder, Wind, Quantum, Imaginary
-  baseHp: number;
-  baseAtk: number;
-  baseDef: number;
-  baseSpeed: number;
+  baseHp: number | null;
+  baseAtk: number | null;
+  baseDef: number | null;
+  baseSpeed: number | null;
   skills: Array<{
     id: number;
     name: string;
@@ -109,9 +109,9 @@ export interface StarRailLightCone {
   name: string;
   rarity: number;
   path: string;
-  baseHp: number;
-  baseAtk: number;
-  baseDef: number;
+  baseHp: number | null;
+  baseAtk: number | null;
+  baseDef: number | null;
   skillName?: string;
   skillDesc?: string;
   superimposeLevels?: Array<{ level: number; desc: string }>;
@@ -201,7 +201,7 @@ export interface StarRailAchievement {
   seriesId: number;
   seriesTitle?: string;
   description: string;
-  rewardJade: number;
+  rewardJade: number | null;
   isHidden: boolean;
   priority?: number;
 }

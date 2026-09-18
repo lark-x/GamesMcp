@@ -3,6 +3,7 @@ import type { StarRailRelic } from "./types.js";
 import type { StarRailSourceInventory } from "../source/inventory.js";
 import type { StarRailTextMapResolver } from "../source/textmap.js";
 import { readSafeJsonFile } from "../extractors/shared.js";
+import { formatConfigText } from "./values.js";
 
 export interface RelicExtractorOptions {
   dataDir: string;
@@ -66,7 +67,7 @@ export class StarRailRelicExtractor {
           const setId = Number(s.SetID);
           if (!Number.isInteger(setId)) continue;
           const reqNum = Number(s.RequireNum ?? 2);
-          const desc = this.resolveHash(s.SkillDesc) ?? "";
+          const desc = formatConfigText(this.resolveHash(s.SkillDesc) ?? "", s.AbilityParamList);
           const entry = skillMap.get(setId) ?? {};
           if (reqNum === 2) entry.twoPiece = desc;
           else if (reqNum === 4) entry.fourPiece = desc;
@@ -75,26 +76,43 @@ export class StarRailRelicExtractor {
       }
     }
 
+    const configs = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/RelicConfig.json"),
+    );
+    const items = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/ItemConfigRelic.json"),
+    );
+    const itemMap = new Map((items ?? []).map((item) => [Number(item.ID), item]));
     const relics: StarRailRelic[] = [];
     for (const set of rawSets) {
+      if (set.Release !== true) continue;
       const setId = Number(set.SetID ?? set.ID);
       if (!Number.isInteger(setId) || setId > 9000) continue;
 
       const setName = this.resolveHash(set.SetName) ?? `遗器套装 ${setId}`;
       const skills = skillMap.get(setId);
 
-      const slots: Array<StarRailRelic["slotType"]> = ["HEAD", "HAND", "BODY", "FOOT"];
-      for (let i = 0; i < slots.length; i++) {
-        const slot: StarRailRelic["slotType"] = slots[i] ?? "HEAD";
+      for (const config of configs ?? []) {
+        if (Number(config.SetID) !== setId) continue;
+        const slot = String(config.Type) as StarRailRelic["slotType"];
+        if (!["HEAD", "HAND", "BODY", "FOOT", "OBJECT", "NECK"].includes(slot))
+          throw new Error(`Unknown relic slot: ${slot}`);
+        const id = Number(config.ID);
+        const item = itemMap.get(id);
+        const name = this.resolveHash(item?.ItemName);
+        if (!name) continue;
+        const rarity = Number(/([2-5])$/u.exec(String(config.Rarity))?.[1]);
+        if (!Number.isInteger(rarity)) throw new Error(`Unknown relic rarity: ${config.Rarity}`);
         relics.push({
-          id: `${setId}_${i + 1}`,
-          name: `${setName} · 部位${i + 1}`,
+          id,
+          name,
           setId,
           setName,
           slotType: slot,
-          rarity: 5,
+          rarity,
           twoPieceBonus: skills?.twoPiece,
           fourPieceBonus: skills?.fourPiece,
+          story: this.resolveHash(item?.ItemBGDesc) ?? undefined,
         });
       }
     }
@@ -135,7 +153,8 @@ export class StarRailRelicExtractor {
         slotType: "HEAD",
         rarity: 5,
         twoPieceBonus: "对受负面状态影响的敌人造成的伤害提高12%。",
-        fourPieceBonus: "暴击率提高4%，装备者对陷入不少于2/3个负面状态的敌方目标造成伤害时，暴击伤害提高8%/12%。",
+        fourPieceBonus:
+          "暴击率提高4%，装备者对陷入不少于2/3个负面状态的敌方目标造成伤害时，暴击伤害提高8%/12%。",
       },
     ];
   }

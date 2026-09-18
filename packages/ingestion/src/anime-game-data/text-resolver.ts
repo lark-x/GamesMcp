@@ -51,10 +51,9 @@ export function cleanUpstreamText(raw: string): string {
     .replace(/<i>/g, "")
     .replace(/<\/i>/g, "")
     .replace(/<b>/g, "")
-    .replace(/<\/b>/g, "")
-    .replace(/\{[^#{]*#([^}]*)\}/g, "$1")
-    .replace(/\{NICKNAME\}/g, "旅行者")
-    .replace(/\{MATE\}/g, "派蒙");
+    .replace(/<\/b>/g, "");
+  // Keep runtime variables and gender branches: flattening them concatenates
+  // mutually exclusive dialogue and substitutes identities absent from source.
   return value.trim();
 }
 

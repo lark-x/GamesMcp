@@ -3,6 +3,7 @@ import type { StarRailLightCone } from "./types.js";
 import type { StarRailSourceInventory } from "../source/inventory.js";
 import type { StarRailTextMapResolver } from "../source/textmap.js";
 import { readSafeJsonFile } from "../extractors/shared.js";
+import { configNumber, formatConfigText } from "./values.js";
 
 export interface LightConeExtractorOptions {
   dataDir: string;
@@ -40,7 +41,9 @@ export class StarRailLightConeExtractor {
   }
 
   public async extractLightCones(): Promise<StarRailLightCone[]> {
-    const equipItem = this.inventory.items.find((i) => i.path === "ExcelOutput/EquipmentConfig.json");
+    const equipItem = this.inventory.items.find(
+      (i) => i.path === "ExcelOutput/EquipmentConfig.json",
+    );
     if (!equipItem) {
       return this.fixture ? this.getBaselineLightCones() : [];
     }
@@ -63,40 +66,47 @@ export class StarRailLightConeExtractor {
       );
       if (Array.isArray(rawSkills)) {
         for (const s of rawSkills) {
+          if (Number(s.Level ?? 1) !== 1) continue;
           const sId = Number(s.SkillID ?? s.ID);
           if (!Number.isInteger(sId)) continue;
           const skillName = this.resolveHash(s.SkillName) ?? "";
-          const skillDesc = this.resolveHash(s.SkillDesc) ?? "";
+          const skillDesc = formatConfigText(this.resolveHash(s.SkillDesc) ?? "", s.ParamList);
           skillMap.set(sId, { skillName, skillDesc });
         }
       }
     }
 
+    const promotions = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(this.dataDir, "ExcelOutput/EquipmentPromotionConfig.json"),
+    );
+    const baseStats = new Map(
+      (promotions ?? [])
+        .filter((p) => Number(p.Promotion ?? 0) === 0)
+        .map((p) => [Number(p.EquipmentID), p]),
+    );
     const cones: StarRailLightCone[] = [];
     for (const e of rawEquips) {
+      if (e.Release !== true) continue;
       const id = Number(e.EquipmentID ?? e.ID);
       if (!Number.isInteger(id) || id > 90000) continue;
 
       const name = this.resolveHash(e.EquipmentName) ?? `光锥 ${id}`;
-      const rarity =
-        e.Rarity === "CombatPowerEquipmentRarityType5" || e.Rarity === 5
-          ? 5
-          : e.Rarity === "CombatPowerEquipmentRarityType4" || e.Rarity === 4
-            ? 4
-            : 3;
+      const rarity = Number(/([345])$/u.exec(String(e.Rarity))?.[1]);
+      if (!Number.isInteger(rarity)) throw new Error(`Unknown light cone rarity: ${e.Rarity}`);
       const path = String(e.AvatarBaseType ?? "Destruction");
 
       const skillId = Number(e.SkillID);
       const skill = skillMap.get(skillId);
+      const stats = baseStats.get(id);
 
       cones.push({
         id,
         name,
         rarity,
         path,
-        baseHp: Number(e.HPBase ?? 900),
-        baseAtk: Number(e.AttackBase ?? 400),
-        baseDef: Number(e.DefenceBase ?? 300),
+        baseHp: configNumber(stats?.BaseHP),
+        baseAtk: configNumber(stats?.BaseAttack),
+        baseDef: configNumber(stats?.BaseDefence),
         skillName: skill?.skillName,
         skillDesc: skill?.skillDesc,
         ascensionMaterials: [],

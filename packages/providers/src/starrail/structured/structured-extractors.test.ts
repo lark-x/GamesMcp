@@ -73,7 +73,9 @@ describe("StarRail Structured Domain Extractors (Phase 4 ~ 9)", () => {
     });
     const materials = await extractor.extractMaterials();
     expect(materials.length).toBeGreaterThan(0);
-    expect(materials.some((m) => m.name === "暴风之眼" && m.category === "character_ascension")).toBe(true);
+    expect(
+      materials.some((m) => m.name === "暴风之眼" && m.category === "character_ascension"),
+    ).toBe(true);
     expect(materials.some((m) => m.name === "信用点" && m.category === "currency")).toBe(true);
     expect(materials.every((m) => m.sources.length > 0)).toBe(true);
   });
@@ -100,7 +102,7 @@ describe("StarRail Structured Domain Extractors (Phase 4 ~ 9)", () => {
     const achievements = await extractor.extractAchievements();
     expect(achievements.length).toBeGreaterThan(0);
     expect(achievements.some((a) => a.title === "通往群星的轨道")).toBe(true);
-    expect(achievements.every((a) => a.rewardJade > 0)).toBe(true);
+    expect(achievements.every((a) => a.rewardJade !== null && a.rewardJade > 0)).toBe(true);
   });
 
   it("strictly forbids baseline fallbacks in production mode when files are missing", async () => {

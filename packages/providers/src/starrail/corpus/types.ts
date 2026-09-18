@@ -53,7 +53,7 @@ export interface StarRailCorpusMetadata {
     sourceCommit: string;
     generatedAt: string;
     generator: "gamesmcp-starrail-corpus";
-    generatorVersion: "1";
+    generatorVersion: "2";
     locale: string;
   };
   files: Array<{

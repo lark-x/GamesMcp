@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import type { PoolClient } from "pg";
 import { resolve } from "node:path";
 import { createPool, createDatabase } from "../packages/database/src/client.js";
 import { SqlGenshinStructuredRepository } from "../packages/database/src/repository-genshin-core.js";
@@ -17,7 +18,10 @@ import {
   extractVoiceLineDocuments,
   extractStoryAtlasDocuments,
 } from "../packages/providers/src/starrail/extractors/index.js";
-import { normalizeStarRailText, normalizeStarRailLabel } from "../packages/providers/src/starrail/corpus/normalizer.js";
+import {
+  normalizeStarRailText,
+  normalizeStarRailLabel,
+} from "../packages/providers/src/starrail/corpus/normalizer.js";
 import type { StarRailCorpusDocument } from "../packages/providers/src/starrail/corpus/types.js";
 import { StarRailWorldChapterResolver } from "../packages/providers/src/starrail/structured/world-chapter.js";
 import { StarRailCharacterExtractor } from "../packages/providers/src/starrail/structured/character.js";
@@ -105,10 +109,11 @@ async function extractStructuredCodex(input: {
   };
 }
 
-/** 结构化资料写入共用 genshin_* 结构化表（ingest 事务提交后执行，幂等可重跑）。 */
+/** Structured and narrative records must commit or roll back together. */
 async function persistStructuredCodex(
-  pool: ReturnType<typeof createPool>,
+  pool: PoolClient,
   structured: StructuredCodex,
+  sourceCommit: string,
 ): Promise<Record<string, number>> {
   // genshin_* 表为两游戏共用的结构化存储；这里以宽类型写入星铁业务字段
   //（值超出原神 zod 枚举，但存储层为纯列映射，无枚举校验）。
@@ -127,10 +132,10 @@ async function persistStructuredCodex(
     gameId,
     revisionId,
     locale: "zh-CN",
-    gameVersion: "3.0",
-    sourceId: null,
-    sourceSnapshotId: null,
-    provenance: { source: "turn-based-game-data" },
+    gameVersion: "unknown",
+    sourceId: SOURCE_ID,
+    sourceSnapshotId: SNAPSHOT_ID,
+    provenance: { source: "turn-based-game-data", sourceCommit, baseStatLevel: 1, promotion: 0 },
   };
 
   for (const table of [
@@ -312,7 +317,7 @@ async function persistStructuredCodex(
       seriesId: number;
       seriesTitle?: string;
       description: string;
-      rewardJade: number;
+      rewardJade: number | null;
       isHidden: boolean;
     };
     await repo.upsertAchievement({
@@ -413,10 +418,13 @@ export async function runStarRailIngestion(options: IngestOptions) {
   console.log(`Mode: ${options.dryRun ? "DRY-RUN (No DB changes)" : "LIVE (PostgreSQL upsert)"}`);
 
   // Phase 0: Task 0.4 - Fail if --limit applied in production mode
-  if (options.production && options.limit !== undefined) {
+  if ((!options.dryRun || options.production) && options.limit !== undefined) {
     throw new Error(
       "[P0-02] Fatal: --limit is strictly forbidden in production/release mode to prevent database truncation.",
     );
+  }
+  if (options.fixture && !options.dryRun) {
+    throw new Error("Fixture ingestion is dry-run only; it must not replace the live revision.");
   }
 
   // Phase 0: Task 0.1 - Fail fast if full sourceDir is missing without explicit --fixture
@@ -471,9 +479,6 @@ export async function runStarRailIngestion(options: IngestOptions) {
     }
   }
 
-  const sampleReviewPath = resolve("artifacts/starrail-full-corpus/sample-review.json");
-  const hasSampleData = existsSync(sampleReviewPath);
-
   console.log("---------------- Phase 0 Source Gate ----------------");
   console.log(`STAR_RAIL_SOURCE_MODE = ${sourceMode}`);
   console.log(`fixtureFallback = false`);
@@ -482,7 +487,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
   console.log("-----------------------------------------------------");
 
   const allDocuments: StarRailCorpusDocument[] = [];
-  let sourceCommit = "8cdb905dc2f8e6fffa9be4eb07af3e34435d6091";
+  let sourceCommit = "unknown";
+  const extractionIssues: Array<{ code: string; message: string }> = [];
   let worldChapterResolver: StarRailWorldChapterResolver | undefined;
   let structuredCodex: StructuredCodex | undefined;
   const mainMissionMap = new Map<number, Record<string, unknown>>();
@@ -491,6 +497,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
     console.log(`Building inventory and text map from ${targetDir}...`);
     const snapshot = await readStarRailSourceSnapshot(targetDir);
     sourceCommit = snapshot.ref;
+    if (!options.dryRun && sourceCommit === "unknown")
+      throw new Error("Live ingestion requires a traceable source Git checkout");
     const inventory = await buildStarRailInventory({
       dataDir: targetDir,
       sourceRef: snapshot.ref,
@@ -554,6 +562,19 @@ export async function runStarRailIngestion(options: IngestOptions) {
       extractStoryAtlasDocuments(extractorInput),
     ]);
 
+    extractionIssues.push(
+      ...[
+        missions,
+        stories,
+        messages,
+        visitors,
+        books,
+        characterStories,
+        voicelines,
+        itemLores,
+        storyAtlas,
+      ].flatMap((result) => result.issues),
+    );
     allDocuments.push(
       ...missions.documents,
       ...stories.documents,
@@ -568,41 +589,6 @@ export async function runStarRailIngestion(options: IngestOptions) {
 
     console.log("Extracting structured codex data...");
     structuredCodex = await extractStructuredCodex(extractorInput);
-  }
-
-  // Also incorporate high-fidelity samples from sample-review.json if targetDir was fixture-only
-  if (hasSampleData && allDocuments.length < 50) {
-    console.log(`Incorporating verified samples from ${sampleReviewPath}...`);
-    const sampleJson = JSON.parse(readFileSync(sampleReviewPath, "utf8")) as Record<
-      string,
-      Array<{ id: number; title: string; relativePath: string; preview: string }>
-    >;
-
-    for (const [cat, items] of Object.entries(sampleJson)) {
-      for (const item of items) {
-        if (!allDocuments.some((d) => d.id === item.id && d.category === cat)) {
-          allDocuments.push({
-            category: cat as StarRailCorpusDocument["category"],
-            id: item.id,
-            relativePath: item.relativePath,
-            title: item.title,
-            content: normalizeStarRailText(item.preview),
-            sourceFiles: [item.relativePath],
-            sourceIds: [`${cat}:${item.id}`],
-            metadata: {
-              source: "turn-based-game-data",
-              sourceCommit,
-              sourcePath: item.relativePath,
-            },
-            hierarchy: {
-              parentId: cat,
-              label: cat,
-              order: item.id,
-            },
-          });
-        }
-      }
-    }
   }
 
   const uniqueDocuments: StarRailCorpusDocument[] = [];
@@ -633,12 +619,24 @@ export async function runStarRailIngestion(options: IngestOptions) {
   }
 
   if (options.dryRun) {
-    console.log("\n[DRY-RUN] Validation completed successfully. 0 errors detected. Exiting without writing to database.");
-    return { ok: true, dryRun: true, documents: allDocuments.length, categories: categoryCounts };
+    console.log(
+      `\n[DRY-RUN] Extracted ${uniqueDocuments.length} documents with ${extractionIssues.length} reported issues; no database changes.`,
+    );
+    return {
+      ok: true,
+      dryRun: true,
+      documents: uniqueDocuments.length,
+      categories: categoryCounts,
+      issues: extractionIssues,
+    };
   }
+  if (!uniqueDocuments.length)
+    throw new Error("Refusing to replace a revision with an empty corpus");
 
   // Live Database Upsert
-  console.log(`\nConnecting to PostgreSQL at ${options.databaseUrl.replace(/:[^:@]+@/, ":****@")}...`);
+  console.log(
+    `\nConnecting to PostgreSQL at ${options.databaseUrl.replace(/:[^:@]+@/, ":****@")}...`,
+  );
   const pool = createPool(options.databaseUrl);
   const client = await pool.connect();
 
@@ -646,71 +644,99 @@ export async function runStarRailIngestion(options: IngestOptions) {
     await client.query("BEGIN");
 
     // 1. Source
-    await client.query(`
+    await client.query(
+      `
       INSERT INTO knowledge.sources (id, game_id, name, type, path_label, license_note, enabled, parser_type, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         updated_at = NOW()
-    `, [
-      SOURCE_ID,
-      GAME_ID,
-      "TurnBasedGameData zh-CN · full archive",
-      "local_json",
-      targetDir ?? "data/games/starrail",
-      "Star Rail Knowledge & Dialogue Archive",
-      true,
-      "starrail:archive",
-    ]);
+    `,
+      [
+        SOURCE_ID,
+        GAME_ID,
+        "TurnBasedGameData zh-CN · full archive",
+        "local_json",
+        targetDir ?? "data/games/starrail",
+        "Star Rail Knowledge & Dialogue Archive",
+        true,
+        "starrail:archive",
+      ],
+    );
 
     // 2. Source Snapshot
-    await client.query(`
+    await client.query(
+      `
       INSERT INTO knowledge.source_snapshots (id, source_id, content_hash, storage_path, captured_at, metadata)
       VALUES ($1, $2, $3, $4, NOW(), $5)
       ON CONFLICT (id) DO UPDATE SET
         metadata = EXCLUDED.metadata,
+        content_hash = EXCLUDED.content_hash,
+        storage_path = EXCLUDED.storage_path,
         captured_at = NOW()
-    `, [
-      SNAPSHOT_ID,
-      SOURCE_ID,
-      `starrail-${sourceCommit}`,
-      targetDir ?? "data/games/starrail",
-      JSON.stringify({ locale: "zh-CN", gameVersion: "3.0", sourceCommit }),
-    ]);
+    `,
+      [
+        SNAPSHOT_ID,
+        SOURCE_ID,
+        `starrail-${sourceCommit}`,
+        targetDir ?? "data/games/starrail",
+        JSON.stringify({ locale: "zh-CN", gameVersion: "unknown", sourceCommit }),
+      ],
+    );
 
     // 3. Import Batch
-    await client.query(`
+    await client.query(
+      `
       INSERT INTO knowledge.import_batches (
         id, game_id, source_id, source_snapshot_id, status, parser_version,
         success_count, failure_count, errors, warnings, diff, staged_records,
         structured_records, created_at, completed_at
       ) VALUES (
-        $1, $2, $3, $4, 'applied', '2.0.0',
-        $5, 0, '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb,
+        $1, $2, $3, $4, 'applied', '3.0.0',
+        $5, 0, '[]'::jsonb, $6::jsonb, '{}'::jsonb, '[]'::jsonb,
         '{}'::jsonb, NOW(), NOW()
       ) ON CONFLICT (id) DO UPDATE SET
         completed_at = NOW(),
+        parser_version = EXCLUDED.parser_version,
+        warnings = EXCLUDED.warnings,
         success_count = EXCLUDED.success_count
-    `, [BATCH_ID, GAME_ID, SOURCE_ID, SNAPSHOT_ID, allDocuments.length]);
+    `,
+      [
+        BATCH_ID,
+        GAME_ID,
+        SOURCE_ID,
+        SNAPSHOT_ID,
+        uniqueDocuments.length,
+        JSON.stringify(extractionIssues),
+      ],
+    );
 
     // 4. Dataset Manifest
-    await client.query(`
+    await client.query(
+      `
       INSERT INTO knowledge.dataset_manifests (
         id, game_id, kind, base_revision_id, root_hash, record_count, created_at
       ) VALUES (
         $1, $2, 'published', null, $3, $4, NOW()
       ) ON CONFLICT (id) DO UPDATE SET
+        root_hash = EXCLUDED.root_hash,
         record_count = EXCLUDED.record_count
-    `, [MANIFEST_ID, GAME_ID, `manifest-${sourceCommit}`, allDocuments.length]);
+    `,
+      [MANIFEST_ID, GAME_ID, `manifest-${sourceCommit}`, uniqueDocuments.length],
+    );
 
     // 5. Dataset Revision
-    await client.query(`
+    await client.query(
+      `
       UPDATE knowledge.dataset_revisions
       SET is_current = false
       WHERE game_id = $1 AND id != $2
-    `, [GAME_ID, REVISION_ID]);
+    `,
+      [GAME_ID, REVISION_ID],
+    );
 
-    await client.query(`
+    await client.query(
+      `
       INSERT INTO knowledge.dataset_revisions (
         id, game_id, revision_number, source_batch_id, lifecycle_status, index_status,
         is_current, release_note, manifest_id, source_id, locale, game_version,
@@ -718,28 +744,38 @@ export async function runStarRailIngestion(options: IngestOptions) {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
       ON CONFLICT (id) DO UPDATE SET
         lifecycle_status = 'published',
+        game_version = EXCLUDED.game_version,
+        release_note = EXCLUDED.release_note,
         is_current = true,
         activated_at = NOW()
-    `, [
-      REVISION_ID,
-      GAME_ID,
-      1,
-      BATCH_ID,
-      "published",
-      "ready",
-      true,
-      `Star Rail full corpus ingestion · Commit ${sourceCommit.slice(0, 7)}`,
-      MANIFEST_ID,
-      SOURCE_ID,
-      "zh-CN",
-      "3.0",
-    ]);
+    `,
+      [
+        REVISION_ID,
+        GAME_ID,
+        1,
+        BATCH_ID,
+        "published",
+        "ready",
+        true,
+        `Star Rail full corpus ingestion · Commit ${sourceCommit.slice(0, 7)}`,
+        MANIFEST_ID,
+        SOURCE_ID,
+        "zh-CN",
+        "unknown",
+      ],
+    );
 
     // 6. Documents & Dialogues
     console.log("Writing documents and dialogue nodes to PostgreSQL knowledge tables...");
-    await client.query("DELETE FROM knowledge.quest_dialogue_nodes WHERE revision_id = $1", [REVISION_ID]);
-    await client.query("DELETE FROM knowledge.quest_subquests WHERE revision_id = $1", [REVISION_ID]);
-    await client.query("DELETE FROM knowledge.document_segments WHERE revision_id = $1", [REVISION_ID]);
+    await client.query("DELETE FROM knowledge.quest_dialogue_nodes WHERE revision_id = $1", [
+      REVISION_ID,
+    ]);
+    await client.query("DELETE FROM knowledge.quest_subquests WHERE revision_id = $1", [
+      REVISION_ID,
+    ]);
+    await client.query("DELETE FROM knowledge.document_segments WHERE revision_id = $1", [
+      REVISION_ID,
+    ]);
     await client.query("DELETE FROM knowledge.documents WHERE revision_id = $1", [REVISION_ID]);
 
     const docsToInsert = options.limit ? uniqueDocuments.slice(0, options.limit) : uniqueDocuments;
@@ -825,17 +861,14 @@ export async function runStarRailIngestion(options: IngestOptions) {
           if (match) missionId = Number(match[1]);
         }
         const mm = mainMissionMap.get(missionId);
-        let cId = mm?.ChapterID ? Number(mm.ChapterID) : undefined;
+        const cId = mm?.ChapterID ? Number(mm.ChapterID) : undefined;
         const chap = cId && worldChapterResolver ? worldChapterResolver.getChapter(cId) : undefined;
         // Chapter placement wins over the per-mission WorldID, which is noisy
         // for activity chapters whose entry missions sit in another world.
-        let worldId =
-          chap && chap.worldId > 0
-            ? chap.worldId
-            : mm?.WorldID
-              ? Number(mm.WorldID)
-              : undefined;
-        const wld = worldId && worldChapterResolver ? worldChapterResolver.getWorld(worldId) : undefined;
+        const worldId =
+          chap && chap.worldId > 0 ? chap.worldId : mm?.WorldID ? Number(mm.WorldID) : undefined;
+        const wld =
+          worldId && worldChapterResolver ? worldChapterResolver.getWorld(worldId) : undefined;
 
         const rawType = String(mm?.Type ?? "");
         let series = doc.category === "sr_story" ? "散篇剧情" : "冒险任务";
@@ -875,15 +908,14 @@ export async function runStarRailIngestion(options: IngestOptions) {
           series,
           seriesTitle: series,
           order: doc.hierarchy?.order ?? doc.id,
-          completeness: "complete",
+          completeness: "partial",
           visibility,
-          dialogueNodes: [{ id: 1 }],
         };
 
         metadata.quest = questData;
         metadata.questPayload = questData;
         metadata.questKey = questKey;
-        metadata.completeness = "complete";
+        metadata.completeness = "partial";
         metadata.visibility = visibility;
         metadata.region = region;
         metadata.regionId = regionId;
@@ -904,7 +936,9 @@ export async function runStarRailIngestion(options: IngestOptions) {
       const docIdRes = await client.query("SELECT gen_random_uuid() AS id");
       const docId = docIdRes.rows[0].id;
 
-      const rawSourceKey = questKey ? `${questKey}/locale/zh-CN` : `${doc.category}/${doc.id}/locale/zh-CN`;
+      const rawSourceKey = questKey
+        ? `${questKey}/locale/zh-CN`
+        : `${doc.category}/${doc.id}/locale/zh-CN`;
       let sourceKey = rawSourceKey;
       let suffix = 1;
       while (seenSourceKeys.has(sourceKey)) {
@@ -912,26 +946,29 @@ export async function runStarRailIngestion(options: IngestOptions) {
       }
       seenSourceKeys.add(sourceKey);
 
-      await client.query(`
+      await client.query(
+        `
         INSERT INTO knowledge.documents (
           id, game_id, source_key, type, title, normalized_title, game_version,
           source_snapshot_id, body, metadata, revision_id, deleted, locale, created_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, '3.0',
+          $1, $2, $3, $4, $5, $6, 'unknown',
           $7, $8, $9, $10, false, 'zh-CN', NOW()
         )
-      `, [
-        docId,
-        GAME_ID,
-        sourceKey,
-        docType,
-        doc.title,
-        doc.title.toLowerCase(),
-        SNAPSHOT_ID,
-        doc.content,
-        JSON.stringify(metadata),
-        REVISION_ID,
-      ]);
+      `,
+        [
+          docId,
+          GAME_ID,
+          sourceKey,
+          docType,
+          doc.title,
+          doc.title.toLowerCase(),
+          SNAPSHOT_ID,
+          doc.content,
+          JSON.stringify(metadata),
+          REVISION_ID,
+        ],
+      );
 
       // Insert document segments
       const segments = splitIntoSegments(doc.content);
@@ -984,12 +1021,15 @@ export async function runStarRailIngestion(options: IngestOptions) {
         const subId = subIdRes.rows[0].id;
         const subKey = `${questKey}/subquest/1`;
 
-        await client.query(`
+        await client.query(
+          `
           INSERT INTO knowledge.quest_subquests (
             id, document_id, revision_id, quest_key, subquest_key, subquest_id,
             ordinal, title, objective, completeness, metadata
-          ) VALUES ($1, $2, $3, $4, $5, 1, 1, $6, $7, 'complete', '{}'::jsonb)
-        `, [subId, docId, REVISION_ID, questKey, subKey, doc.title, "完成剧情推进"]);
+          ) VALUES ($1, $2, $3, $4, $5, 1, 1, $6, $7, 'partial', '{}'::jsonb)
+        `,
+          [subId, docId, REVISION_ID, questKey, subKey, doc.title, "完成剧情推进"],
+        );
 
         // Parse conversation lines from content
         const lines = doc.content.split("\n");
@@ -1021,7 +1061,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
           }
 
           if (body) {
-            await client.query(`
+            await client.query(
+              `
               INSERT INTO knowledge.quest_dialogue_nodes (
                 id, document_id, revision_id, quest_key, subquest_key,
                 node_key, node_id, node_type, speaker_key, speaker_name,
@@ -1031,37 +1072,32 @@ export async function runStarRailIngestion(options: IngestOptions) {
                 $5, $6, $7, $8, $9,
                 $10, $11, '[]'::jsonb, '{}'::jsonb
               )
-            `, [
-              docId,
-              REVISION_ID,
-              questKey,
-              subKey,
-              `${questKey}/node/${ordinal}`,
-              ordinal,
-              nodeType,
-              speakerName ? `speaker_${speakerName}` : null,
-              speakerName,
-              body,
-              ordinal++,
-            ]);
+            `,
+              [
+                docId,
+                REVISION_ID,
+                questKey,
+                subKey,
+                `${questKey}/node/${ordinal}`,
+                ordinal,
+                nodeType,
+                speakerName ? `speaker_${speakerName}` : null,
+                speakerName,
+                body,
+                ordinal++,
+              ],
+            );
           }
         }
       }
     }
 
+    if (structuredCodex) {
+      const stats = await persistStructuredCodex(client, structuredCodex, sourceCommit);
+      console.log("Structured codex upserted:", JSON.stringify(stats));
+    }
     await client.query("COMMIT");
     console.log(`\nSuccessfully ingested ${docsToInsert.length} documents into PostgreSQL!`);
-
-    // 结构化资料（角色/光锥/遗器/敌人/材料/成就）在主事务提交后写入，
-    // 失败不影响已提交的文档数据，且可幂等重跑。
-    if (structuredCodex) {
-      try {
-        const stats = await persistStructuredCodex(pool, structuredCodex);
-        console.log("Structured codex upserted:", JSON.stringify(stats));
-      } catch (error) {
-        console.error("Structured codex persistence failed:", error);
-      }
-    }
     return { ok: true, documents: docsToInsert.length, revisionId: REVISION_ID };
   } catch (error) {
     await client.query("ROLLBACK");

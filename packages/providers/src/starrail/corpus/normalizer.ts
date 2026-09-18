@@ -2,19 +2,16 @@ const COLOR_TAG = /<\/?color(?:=[^>]*)?>/giu;
 const RUBY_TAG = /<\/?ruby(?:=[^>]*)?>/giu;
 const HTML_LIKE_TAG = /<\/?(?:size|b|i|u|align|sprite|icon|unbreak)(?:=[^>]*)?>/giu;
 
-// 上游模板占位符：{NICKNAME} 指代开拓者，其余（{TEXTNUM}、{M#..} 等）为运行时
-// 才能填充的数值/布局槽位，静态文本中直接移除。
+// Body variables are source data; only display labels use a generic nickname.
 const NICKNAME_PLACEHOLDER = /\{NICKNAME\}/giu;
-const TEMPLATE_PLACEHOLDER = /\{[A-Z][A-Z0-9_#,.]*\}/gu;
 
 export function normalizeStarRailText(input: string): string {
   return input
-    .replace(NICKNAME_PLACEHOLDER, "开拓者")
     .replace(COLOR_TAG, "")
     .replace(/<color=[^>]*$/giu, "")
     .replace(RUBY_TAG, "")
     .replace(HTML_LIKE_TAG, "")
-    .replace(/\\n/gu, "\n")
+    .replace(/\\r\\n|\\n|\\r/gu, "\n")
     .split("")
     .filter((char) => !isDiscardedControlCharacter(char))
     .join("")
@@ -27,7 +24,7 @@ export function normalizeStarRailText(input: string): string {
 /** 标题/条目名单行文本清洗：占位符替换 + 富文本标签剥离 + 空白压缩。 */
 export function normalizeStarRailLabel(input: string): string {
   return normalizeStarRailText(input)
-    .replace(TEMPLATE_PLACEHOLDER, "")
+    .replace(NICKNAME_PLACEHOLDER, "开拓者")
     .replace(/\s+/gu, " ")
     .replace(/^[\s·:：,，、-]+|[\s·:：,，、-]+$/gu, "")
     .trim();

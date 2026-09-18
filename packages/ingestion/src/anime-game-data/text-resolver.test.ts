@@ -13,6 +13,10 @@ const primary = {
 const fallback = { locale: "en-US", values: { 201: "Fallback text" } };
 
 describe("cleanUpstreamText", () => {
+  it("preserves mutually exclusive branches and runtime identities", () => {
+    const source = "{NICKNAME}，{M#哥哥}{F#姐姐}正在找{MATE}。";
+    expect(cleanUpstreamText(source)).toBe(source);
+  });
   it("strips rich text tags and unescapes newlines", () => {
     expect(cleanUpstreamText("a\\nb")).toBe("a\nb");
     expect(cleanUpstreamText("<color=#FF0000>x</color>")).toBe("x");

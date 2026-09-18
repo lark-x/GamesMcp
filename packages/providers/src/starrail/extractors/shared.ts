@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parseSourceJson } from "../source/json.js";
 import type { StarRailCorpusCategory, StarRailCorpusDocument } from "../corpus/types.js";
 import { buildStableContentIdentity, deterministicCorpusId, naturalId } from "../corpus/ids.js";
 import { hasLikelyNarrativeText, normalizeStarRailText } from "../corpus/normalizer.js";
@@ -88,7 +89,8 @@ export async function extractRecordDocuments(input: {
             context,
           }),
       );
-      if (!hasLikelyNarrativeText(content)) {
+      // A resolved title alone does not make a narrative document.
+      if (!hasLikelyNarrativeText(content.replace(/^#\s+[^\n]*(?:\n|$)/u, ""))) {
         result.issues.push({
           code: "empty_or_non_narrative_document",
           message: `Skipped empty/non-narrative ${input.category} document`,
@@ -133,8 +135,7 @@ export async function readJsonRecords(
   item: StarRailInventoryItem,
 ): Promise<Record<string, unknown>[]> {
   const raw = await readFile(resolve(dataDir, item.path), "utf8");
-  const safeJson = raw.replace(/:\s*(-?\d{15,})/gu, ': "$1"');
-  const parsed = JSON.parse(safeJson) as unknown;
+  const parsed = parseSourceJson(raw);
   if (Array.isArray(parsed)) return parsed.filter(isRecord);
   if (isRecord(parsed)) {
     const values = Object.values(parsed);
@@ -147,10 +148,10 @@ export async function readJsonRecords(
 export async function readSafeJsonFile<T = unknown>(filePath: string): Promise<T | null> {
   try {
     const raw = await readFile(filePath, "utf8");
-    const safeJson = raw.replace(/:\s*(-?\d{15,})/gu, ': "$1"');
-    return JSON.parse(safeJson) as T;
-  } catch {
-    return null;
+    return parseSourceJson<T>(raw);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
   }
 }
 
@@ -167,10 +168,20 @@ export function firstResolved(
 }
 
 export function resolveTextCandidate(value: unknown, context: RecordContext): string | undefined {
-  if (typeof value === "number") return context.resolver.resolve(value) ?? String(value);
+  if (typeof value === "number" || (typeof value === "string" && /^-?\d+$/u.test(value))) {
+    const resolved = context.resolver.resolve(value);
+    if (resolved !== null) return normalizeStarRailText(resolved) || undefined;
+    if (String(value) !== "0") {
+      context.issues.push({
+        code: "text_hash_unresolved",
+        message: `Missing TextMap hash: ${value}`,
+        sourcePath: context.sourcePath,
+      });
+    }
+    return undefined;
+  }
   if (typeof value === "string") {
-    const byHash = /^\d+$/u.test(value) ? context.resolver.resolve(value) : null;
-    return normalizeStarRailText(byHash ?? value);
+    return normalizeStarRailText(value) || undefined;
   }
   if (!isRecord(value)) return undefined;
   for (const key of ["TextMapHash", "MainTextMapHash", "Hash", "Value", "Text", "text"]) {

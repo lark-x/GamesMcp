@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 
@@ -35,21 +34,8 @@ export async function buildStarRailInventory(input: {
   sourceRef: string;
   output?: string;
 }): Promise<StarRailSourceInventory> {
-  if (input.output && existsSync(input.output)) {
-    try {
-      const existing = JSON.parse(await readFile(input.output, "utf8")) as StarRailSourceInventory;
-      if (
-        existing.schemaVersion === 1 &&
-        Array.isArray(existing.items) &&
-        existing.items.length > 0
-      ) {
-        return existing;
-      }
-    } catch {
-      // Rebuild if corrupted
-    }
-  }
-
+  // Output is an audit artifact, not a cache: even an unchanged Git ref can
+  // contain modified, added or removed source files.
   const root = resolve(input.dataDir);
   const files = await walk(root);
   const items: StarRailInventoryItem[] = [];
@@ -113,7 +99,9 @@ function familyFromPath(path: string): string | undefined {
 }
 
 function localeFromPath(path: string): string | undefined {
-  return /(CHS|CHT|CN|EN|JP|KR|DE|ES|FR|ID|PT|RU|TH|VI)/iu.exec(path)?.[1]?.toUpperCase();
+  return /(?:^|\/)TextMap(?:Main)?(CHS|CHT|CN|EN|ENG|JP|KR|DE|ES|FR|ID|PT|RU|TH|VI)(?:[._/]|$)/iu
+    .exec(path)?.[1]
+    ?.toUpperCase();
 }
 
 function jsonShape(bytes: Buffer): StarRailInventoryItem["json"] {

@@ -20,6 +20,12 @@ export async function readStarRailSourceSnapshot(dataDir: string): Promise<StarR
 
 function readGitCommit(path: string): string {
   try {
+    const root = execFileSync("git", ["-C", path, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    // Fixtures and unpacked exports must not inherit GamesMcp's commit.
+    if (root !== path) return "unknown";
     return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],

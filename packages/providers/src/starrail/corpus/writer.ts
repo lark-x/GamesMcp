@@ -41,7 +41,7 @@ export async function writeStarRailIstarothCorpus(input: {
       sourceCommit: input.sourceCommit,
       generatedAt,
       generator: "gamesmcp-starrail-corpus",
-      generatorVersion: "1",
+      generatorVersion: "2",
       locale: input.locale,
     },
     files: documents.map((document) => ({
