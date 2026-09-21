@@ -115,8 +115,12 @@ async function main() {
   const publicKeys = new Set(
     result.records.map((record) => `${record.quest?.mainQuestId}/${record.locale}`),
   );
-  const excludedByKey = new Map(result.manifest.excluded.map((item) => [item.sourceKey, item.reason]));
-  const failureByKey = new Map(result.manifest.failures.map((item) => [item.sourceKey, item.reason]));
+  const excludedByKey = new Map(
+    result.manifest.excluded.map((item) => [item.sourceKey, item.reason]),
+  );
+  const failureByKey = new Map(
+    result.manifest.failures.map((item) => [item.sourceKey, item.reason]),
+  );
 
   const tasks = inputs.mainQuest.map((main) => {
     const mainId = idText(main.id ?? main.mainQuestId) ?? "unknown";
@@ -241,12 +245,17 @@ async function main() {
 
   const questTalkFiles = Object.keys(inputs.questTalkInputHashes).sort();
   const matchedQuestTalkFiles = new Set(
-    result.auditRecords.flatMap((record) => recordSourceFiles(record).filter((path) => path.startsWith("BinOutput/Talk/Quest/"))),
+    result.auditRecords.flatMap((record) =>
+      recordSourceFiles(record).filter((path) => path.startsWith("BinOutput/Talk/Quest/")),
+    ),
   );
-  const questTalkFilesWithoutParsedNodes = questTalkFiles.filter((path) => !matchedQuestTalkFiles.has(path));
+  const questTalkFilesWithoutParsedNodes = questTalkFiles.filter(
+    (path) => !matchedQuestTalkFiles.has(path),
+  );
   const duplicateTitles = new Map<string, string[]>();
   for (const task of tasks) {
-    const title = typeof task.locales["zh-CN"]?.title === "string" ? task.locales["zh-CN"].title : undefined;
+    const title =
+      typeof task.locales["zh-CN"]?.title === "string" ? task.locales["zh-CN"].title : undefined;
     if (!title) continue;
     const list = duplicateTitles.get(title) ?? [];
     list.push(task.mainQuestId);
@@ -257,15 +266,16 @@ async function main() {
     .map(([title, ids]) => ({ title, mainQuestIds: ids.sort() }));
 
   const zhTasks = tasks.map((task) => task.locales["zh-CN"]);
-  const talkResolutionProblems = [...inputs.resolvedTalksByMainId.entries()]
-    .flatMap(([mainQuestId, resolved]) => [
+  const talkResolutionProblems = [...inputs.resolvedTalksByMainId.entries()].flatMap(
+    ([mainQuestId, resolved]) => [
       ...(resolved.unresolvedTalkIds.length
         ? [{ mainQuestId, kind: "unresolved", talkIds: resolved.unresolvedTalkIds }]
         : []),
       ...(resolved.ambiguousTalkIds.length
         ? [{ mainQuestId, kind: "ambiguous", talkIds: resolved.ambiguousTalkIds }]
         : []),
-    ]);
+    ],
+  );
   const sourceFilesUsed = new Set(tasks.flatMap((task) => task.sourceFiles));
   const registeredTalkFilesNotReferenced = inputs.talkRegistry.files
     .filter((file) => !sourceFilesUsed.has(file.relativePath))
@@ -314,7 +324,9 @@ async function main() {
         : requestedPath;
       baseline = JSON.parse(await readFile(baselineFile, "utf8")) as Record<string, unknown>;
     } catch (error) {
-      throw new Error(`baseline_read_failed:${baselinePath}:${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `baseline_read_failed:${baselinePath}:${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -335,13 +347,13 @@ async function main() {
       familyCount: new Set(tasks.map((task) => task.familyId).filter(Boolean)).size,
       duplicateTitleGroups: duplicateTitleGroups.length,
       contentRoleZh: countValues(
-        zhTasks.flatMap((item) => (typeof item?.contentRole === "string" ? [item.contentRole] : [])),
+        zhTasks.flatMap((item) =>
+          typeof item?.contentRole === "string" ? [item.contentRole] : [],
+        ),
       ),
       dialogueResolutionStatusZh: countValues(
         zhTasks.flatMap((item) =>
-          typeof item?.dialogueResolutionStatus === "string"
-            ? [item.dialogueResolutionStatus]
-            : [],
+          typeof item?.dialogueResolutionStatus === "string" ? [item.dialogueResolutionStatus] : [],
         ),
       ),
       talkResolvedQuestCount: zhTasks.filter(
@@ -437,8 +449,12 @@ async function main() {
     "",
     "## 内容角色与对白状态",
     "",
-    `- 内容角色：${Object.entries(report.summary.contentRoleZh).map(([key, value]) => `${key}=${value}`).join("；")}`,
-    `- 对白状态：${Object.entries(report.summary.dialogueResolutionStatusZh).map(([key, value]) => `${key}=${value}`).join("；")}`,
+    `- 内容角色：${Object.entries(report.summary.contentRoleZh)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("；")}`,
+    `- 对白状态：${Object.entries(report.summary.dialogueResolutionStatusZh)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("；")}`,
     `- Talk 未解析/歧义清单：${report.sourceAudit.talkResolutionProblems.length} 条，详见 JSON。`,
     "",
     "本报告只读取上游文件并在内存中运行转换，不写入数据库；可据此统一修复规则后再执行一次候选导入。",

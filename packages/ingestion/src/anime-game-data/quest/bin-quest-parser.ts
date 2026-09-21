@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
-import type {
-  QuestBinContent,
-  QuestBinRecord,
-  QuestRelationEdge,
-} from "./types.js";
+import type { QuestBinContent, QuestBinRecord, QuestRelationEdge } from "./types.js";
 
 type Json = Record<string, unknown>;
 
 function asObject(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Json)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
 }
 
 function idText(value: unknown): string | undefined {
@@ -35,7 +29,10 @@ function contentRows(row: Json): Json[] {
 function parseMainId(value: Json, relativePath: string): string | undefined {
   const direct = idText(value.mainQuestId ?? value.mainId ?? value.BJAAAKHKKKL);
   if (direct) return direct;
-  const stem = relativePath.split(/[\\/]/u).pop()?.replace(/\.json$/iu, "");
+  const stem = relativePath
+    .split(/[\\/]/u)
+    .pop()
+    ?.replace(/\.json$/iu, "");
   return stem && /^\d+$/u.test(stem) ? stem : undefined;
 }
 
@@ -61,9 +58,10 @@ export function parseBinQuestFile(
     : Array.isArray(value.subquests)
       ? value.subquests.map(asObject)
       : [];
-  const mainQuestId = rows
-    .map((row) => idText(row.BJAAAKHKKKL ?? row.mainQuestId ?? row.mainId))
-    .find((id): id is string => Boolean(id)) ?? fallbackMainId;
+  const mainQuestId =
+    rows
+      .map((row) => idText(row.BJAAAKHKKKL ?? row.mainQuestId ?? row.mainId))
+      .find((id): id is string => Boolean(id)) ?? fallbackMainId;
   if (!mainQuestId) return undefined;
   const subQuestIds = rows
     .map((row) => idText(row.KCGAKLCHDCC ?? row.subQuestId ?? row.subId ?? row.id))
@@ -133,11 +131,13 @@ export function parseBinQuestFile(
     }
   }
   const deduped = new Map(relationEdges.map((edge) => [edgeId(edge), edge]));
-  const completeTalkIds = [...new Set(
-    relationEdges
-      .filter((edge) => edge.relationType === "complete_talk" && edge.talkId)
-      .map((edge) => edge.talkId!),
-  )];
+  const completeTalkIds = [
+    ...new Set(
+      relationEdges
+        .filter((edge) => edge.relationType === "complete_talk" && edge.talkId)
+        .map((edge) => edge.talkId!),
+    ),
+  ];
   return {
     mainQuestId,
     sourceFile: relativePath,

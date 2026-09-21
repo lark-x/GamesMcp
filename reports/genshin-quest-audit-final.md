@@ -11,35 +11,35 @@
 
 ## 重点核对
 
-| 主任务 | 标题 | 系列 | 章节 | 对白 | 内容角色 | Talk 状态 | 质量 |
-| --- | --- | --- | --- | ---: | --- | --- | --- |
-| 21009 | 旧味难寻 | 散篇任务 |  | 15 | story | resolved | complete |
-| 72236 | 三色档案 | 散篇任务 |  | 48 | story_and_control | resolved | complete |
-| 73013 | 为那菈献上珍馐 | 散篇任务 | 愿为一炊之梦 | 140 | story_and_control | resolved | complete |
-| 73019 | 料理是快乐的回忆 | 散篇任务 | 愿为一炊之梦 | 155 | story | resolved | complete |
-| 73020 | 料理是自然的风味 | 散篇任务 | 愿为一炊之梦 | 107 | story_and_control | resolved | complete |
-| 73021 | 料理是思归的香气 | 散篇任务 | 愿为一炊之梦 | 141 | story | resolved | complete |
-| 73022 | 料理是分享的美好 | 散篇任务 | 愿为一炊之梦 | 187 | story | resolved | complete |
-| 73189 | 无形壁障 | 散篇任务 | 旧语新知 | 14 | story_and_control | resolved | complete |
-| 74001 | 「水仙十字大冒险」 | 水仙十字系列 | 水仙的安·第一幕 「水仙十字大冒险」 | 653 | story_and_control | resolved | complete |
-| 74002 | 「公主」与「冒险团」的故事 | 水仙十字系列 | 水仙的安·第一幕 「水仙十字大冒险」 | 181 | story_and_control | resolved | complete |
-| 74003 | 安的故事 | 水仙十字系列 | 水仙的安·第二幕 「镜中的王国」 | 319 | story_and_control | resolved | complete |
-| 74004 | 玛丽安的故事 | 水仙十字系列 | 水仙的安·第三幕 「假如她不再梦到你…」 | 262 | story_and_control | resolved | complete |
-| 74072 | 藻海的寻踪 | 水仙十字系列 | 水仙的追迹·第一幕 藻海的寻踪 | 943 | story_and_control | resolved | complete |
-| 74073 | 缪斯的母亲 | 水仙十字系列 | 水仙的追迹·第一幕 藻海的寻踪 | 83 | story_and_control | resolved | complete |
-| 74074 | 流星的投矛 | 水仙十字系列 | 水仙的追迹·第一幕 藻海的寻踪 | 81 | story_and_control | resolved | complete |
-| 74075 | 丘比特的爱人 | 水仙十字系列 | 水仙的追迹·第一幕 藻海的寻踪 | 86 | story_and_control | resolved | complete |
-| 74076 | 悲喜的面具 | 水仙十字系列 | 水仙的追迹·第一幕 藻海的寻踪 | 98 | story_and_control | resolved | complete |
-| 74077 | 救世者的守灵 | 水仙十字系列 | 水仙的追迹·第二幕 救世者的守灵 | 119 | story_and_control | resolved | complete |
-| 74078 | 溪舟的尾波 | 水仙十字系列 | 水仙的追迹·第四幕 溪舟的尾波 | 341 | story_and_control | resolved | complete |
-| 74165 | 大梦的醒转 | 水仙十字系列 | 水仙的追迹·第三幕 大梦的醒转 | 101 | story_and_control | resolved | complete |
-| 74183 | 雷穆利亚的最后一日 | 谐律上的咏叙诗 | 谐律上的咏叙诗·第二章 被缚的囚徒 | 109 | story_and_control | resolved | complete |
-| 74184 | 佩特莉可的阴霾 | 谐律上的咏叙诗 | 谐律上的咏叙诗·序曲 诡镇之梦 | 242 | story_and_control | resolved | complete |
-| 74194 | 通往卡皮托林的阶梯 | 谐律上的咏叙诗 | 谐律上的咏叙诗·第三章 法沙利亚狂想曲 | 250 | story_and_control | resolved | complete |
-| 74195 | 水下夜想曲 | 谐律上的咏叙诗 | 谐律上的咏叙诗·第一章 海魔王的宫殿 | 209 | story_and_control | resolved | complete |
-| 74196 | 哀悼命运之疮 | 谐律上的咏叙诗 | 谐律上的咏叙诗·终章 安魂曲 | 427 | story_and_control | resolved | complete |
-| 76148 | 狮子奋迅 | 山中好长日 | 山中好长日·第二章 地狱 | 28 | story_and_control | resolved | complete |
-| 76152 | 狮子奋迅 | 山中好长日 | 山中好长日·第二章 地狱 | 0 | aggregate | not_applicable | aggregate |
+| 主任务 | 标题                       | 系列           | 章节                                  | 对白 | 内容角色          | Talk 状态      | 质量      |
+| ------ | -------------------------- | -------------- | ------------------------------------- | ---: | ----------------- | -------------- | --------- |
+| 21009  | 旧味难寻                   | 散篇任务       |                                       |   15 | story             | resolved       | complete  |
+| 72236  | 三色档案                   | 散篇任务       |                                       |   48 | story_and_control | resolved       | complete  |
+| 73013  | 为那菈献上珍馐             | 散篇任务       | 愿为一炊之梦                          |  140 | story_and_control | resolved       | complete  |
+| 73019  | 料理是快乐的回忆           | 散篇任务       | 愿为一炊之梦                          |  155 | story             | resolved       | complete  |
+| 73020  | 料理是自然的风味           | 散篇任务       | 愿为一炊之梦                          |  107 | story_and_control | resolved       | complete  |
+| 73021  | 料理是思归的香气           | 散篇任务       | 愿为一炊之梦                          |  141 | story             | resolved       | complete  |
+| 73022  | 料理是分享的美好           | 散篇任务       | 愿为一炊之梦                          |  187 | story             | resolved       | complete  |
+| 73189  | 无形壁障                   | 散篇任务       | 旧语新知                              |   14 | story_and_control | resolved       | complete  |
+| 74001  | 「水仙十字大冒险」         | 水仙十字系列   | 水仙的安·第一幕 「水仙十字大冒险」    |  653 | story_and_control | resolved       | complete  |
+| 74002  | 「公主」与「冒险团」的故事 | 水仙十字系列   | 水仙的安·第一幕 「水仙十字大冒险」    |  181 | story_and_control | resolved       | complete  |
+| 74003  | 安的故事                   | 水仙十字系列   | 水仙的安·第二幕 「镜中的王国」        |  319 | story_and_control | resolved       | complete  |
+| 74004  | 玛丽安的故事               | 水仙十字系列   | 水仙的安·第三幕 「假如她不再梦到你…」 |  262 | story_and_control | resolved       | complete  |
+| 74072  | 藻海的寻踪                 | 水仙十字系列   | 水仙的追迹·第一幕 藻海的寻踪          |  943 | story_and_control | resolved       | complete  |
+| 74073  | 缪斯的母亲                 | 水仙十字系列   | 水仙的追迹·第一幕 藻海的寻踪          |   83 | story_and_control | resolved       | complete  |
+| 74074  | 流星的投矛                 | 水仙十字系列   | 水仙的追迹·第一幕 藻海的寻踪          |   81 | story_and_control | resolved       | complete  |
+| 74075  | 丘比特的爱人               | 水仙十字系列   | 水仙的追迹·第一幕 藻海的寻踪          |   86 | story_and_control | resolved       | complete  |
+| 74076  | 悲喜的面具                 | 水仙十字系列   | 水仙的追迹·第一幕 藻海的寻踪          |   98 | story_and_control | resolved       | complete  |
+| 74077  | 救世者的守灵               | 水仙十字系列   | 水仙的追迹·第二幕 救世者的守灵        |  119 | story_and_control | resolved       | complete  |
+| 74078  | 溪舟的尾波                 | 水仙十字系列   | 水仙的追迹·第四幕 溪舟的尾波          |  341 | story_and_control | resolved       | complete  |
+| 74165  | 大梦的醒转                 | 水仙十字系列   | 水仙的追迹·第三幕 大梦的醒转          |  101 | story_and_control | resolved       | complete  |
+| 74183  | 雷穆利亚的最后一日         | 谐律上的咏叙诗 | 谐律上的咏叙诗·第二章 被缚的囚徒      |  109 | story_and_control | resolved       | complete  |
+| 74184  | 佩特莉可的阴霾             | 谐律上的咏叙诗 | 谐律上的咏叙诗·序曲 诡镇之梦          |  242 | story_and_control | resolved       | complete  |
+| 74194  | 通往卡皮托林的阶梯         | 谐律上的咏叙诗 | 谐律上的咏叙诗·第三章 法沙利亚狂想曲  |  250 | story_and_control | resolved       | complete  |
+| 74195  | 水下夜想曲                 | 谐律上的咏叙诗 | 谐律上的咏叙诗·第一章 海魔王的宫殿    |  209 | story_and_control | resolved       | complete  |
+| 74196  | 哀悼命运之疮               | 谐律上的咏叙诗 | 谐律上的咏叙诗·终章 安魂曲            |  427 | story_and_control | resolved       | complete  |
+| 76148  | 狮子奋迅                   | 山中好长日     | 山中好长日·第二章 地狱                |   28 | story_and_control | resolved       | complete  |
+| 76152  | 狮子奋迅                   | 山中好长日     | 山中好长日·第二章 地狱                |    0 | aggregate         | not_applicable | aggregate |
 
 ## 非完整任务
 

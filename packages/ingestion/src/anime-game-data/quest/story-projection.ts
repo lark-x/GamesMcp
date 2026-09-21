@@ -46,12 +46,26 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
       };
       family.chapters.push(chapter);
     }
-    const { regionId: _regionId, regionTitle: _regionTitle, regionOrder: _regionOrder, familyId: _familyId, familyTitle: _familyTitle, familyOrder: _familyOrder, chapterId: _chapterId, chapterTitle: _chapterTitle, chapterOrder: _chapterOrder, ...quest } = row;
+    const {
+      regionId: _regionId,
+      regionTitle: _regionTitle,
+      regionOrder: _regionOrder,
+      familyId: _familyId,
+      familyTitle: _familyTitle,
+      familyOrder: _familyOrder,
+      chapterId: _chapterId,
+      chapterTitle: _chapterTitle,
+      chapterOrder: _chapterOrder,
+      ...quest
+    } = row;
     chapter.quests.push(quest);
     regions.set(row.regionId, region);
   }
   const byOrder = <T extends { order: number }>(items: T[]): T[] =>
-    items.sort((left, right) => left.order - right.order || JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    items.sort(
+      (left, right) =>
+        left.order - right.order || JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    );
   for (const region of regions.values()) {
     for (const family of region.families) {
       for (const chapter of family.chapters) byOrder(chapter.quests);

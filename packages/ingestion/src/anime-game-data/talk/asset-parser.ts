@@ -5,9 +5,7 @@ import type { TalkAssetRecord, TalkDialogueRow, TalkSourceKind } from "./types.j
 type Json = Record<string, unknown>;
 
 function asObject(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Json)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
 }
 
 function idText(value: unknown): string | undefined {
@@ -60,7 +58,12 @@ function normalizeRow(
     row.nextDialogIds ?? row.nextDialogs ?? row.KMLAFCBMFEI ?? row.GBLICFDCPCK,
   );
   const role = firstObject(row, ["talkRole", "role", "LFGCLNLPAPB", "PIBKEGJOJHN"]);
-  const roleType = typeof role?._type === "string" ? role?._type : typeof role?.type === "string" ? role.type : undefined;
+  const roleType =
+    typeof role?._type === "string"
+      ? role?._type
+      : typeof role?.type === "string"
+        ? role.type
+        : undefined;
   const roleId = idText(role?._id ?? role?.id ?? role?.roleId);
   const bodyHash = hashText(
     row.talkContentTextMapHash ??
@@ -70,10 +73,7 @@ function normalizeRow(
       row.contentTextMapHash,
   );
   const speakerNameHash = hashText(
-    row.talkRoleNameTextMapHash ??
-      row.speakerNameTextMapHash ??
-      row.BKABCBAFIKD ??
-      row.BMFGJJJPBBC,
+    row.talkRoleNameTextMapHash ?? row.speakerNameTextMapHash ?? row.BKABCBAFIKD ?? row.BMFGJJJPBBC,
   );
   return {
     dialogId,

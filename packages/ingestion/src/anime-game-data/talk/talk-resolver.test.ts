@@ -8,7 +8,10 @@ function asset(
   rows = 1,
 ): TalkAssetRecord {
   return {
-    talkId: relativePath.split("/").pop()?.replace(/\.json$/u, ""),
+    talkId: relativePath
+      .split("/")
+      .pop()
+      ?.replace(/\.json$/u, ""),
     sourceKind,
     relativePath,
     fileHash: relativePath,

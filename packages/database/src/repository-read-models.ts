@@ -1467,7 +1467,13 @@ export class RepositoryReadModels {
             provenance: StoryFamily["provenance"];
             chaptersMap: Map<
               string,
-              { id: string; name: string; order: number; series?: string; quests: StoryQuestEntry[] }
+              {
+                id: string;
+                name: string;
+                order: number;
+                series?: string;
+                quests: StoryQuestEntry[];
+              }
             >;
           }
         >;
@@ -1495,9 +1501,10 @@ export class RepositoryReadModels {
         rawChapterId !== null &&
         String(rawChapterId).trim() !== "" &&
         String(meta.chapterTitle ?? meta.chapter ?? "").trim() !== "未分类章节";
-      const fallbackChapterKey = series && !genericSeries
-        ? `series_${series.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/giu, "_")}`
-        : "standalone";
+      const fallbackChapterKey =
+        series && !genericSeries
+          ? `series_${series.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/giu, "_")}`
+          : "standalone";
       const chapterId = hasNamedChapter
         ? String(rawChapterId)
         : `fallback_${regionId}_${fallbackChapterKey}`;
@@ -1521,15 +1528,16 @@ export class RepositoryReadModels {
       const subquestCount = subquestCounts.get(row.documentId) ?? 0;
       const contentRole = meta.contentRole;
       const dialogueResolutionStatus = meta.dialogueResolutionStatus;
-      const bodyAvail: BodyAvailability = contentRole === "aggregate" || contentRole === "control"
-        ? "none"
-        : dialogueCount > 0
-        ? "dialogue"
-        : row.hasBody
-          ? "document"
-          : subquestCount > 0
-            ? "objective_only"
-            : "none";
+      const bodyAvail: BodyAvailability =
+        contentRole === "aggregate" || contentRole === "control"
+          ? "none"
+          : dialogueCount > 0
+            ? "dialogue"
+            : row.hasBody
+              ? "document"
+              : subquestCount > 0
+                ? "objective_only"
+                : "none";
       const qualityCode =
         meta.qualityCode ??
         (completeness === "complete"
@@ -1540,14 +1548,14 @@ export class RepositoryReadModels {
               ? "partial_dialogue"
               : "source_missing");
       const familyName =
-        cleanName(meta.storyFamilyTitle) ??
-        (series && !genericSeries ? series : "散篇任务");
+        cleanName(meta.storyFamilyTitle) ?? (series && !genericSeries ? series : "散篇任务");
       const familyId =
         explicitFamilyId ??
         (series && !genericSeries
           ? `family:${series.toLocaleLowerCase("zh-Hans-CN").replace(/[^a-z0-9\u4e00-\u9fff]+/giu, "_")}`
           : `standalone:${regionId}`);
-      const familyProvenance: StoryFamily["provenance"] = meta.storyFamilyProvenance ??
+      const familyProvenance: StoryFamily["provenance"] =
+        meta.storyFamilyProvenance ??
         (explicitFamilyId || meta.storyFamilyTitle
           ? "upstream"
           : series && !genericSeries
@@ -1605,17 +1613,32 @@ export class RepositoryReadModels {
       .sort((a, b) => a.order - b.order)
       .map((reg) => {
         const families = [...reg.familiesMap.values()]
-          .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN") || a.id.localeCompare(b.id))
+          .sort(
+            (a, b) =>
+              a.order - b.order ||
+              a.name.localeCompare(b.name, "zh-Hans-CN") ||
+              a.id.localeCompare(b.id),
+          )
           .map((family) => {
             const chapters = [...family.chaptersMap.values()]
-              .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN") || a.id.localeCompare(b.id))
+              .sort(
+                (a, b) =>
+                  a.order - b.order ||
+                  a.name.localeCompare(b.name, "zh-Hans-CN") ||
+                  a.id.localeCompare(b.id),
+              )
               .map((chapter) => {
                 const titleCounts = new Map<string, number>();
                 for (const quest of chapter.quests) {
                   titleCounts.set(quest.title, (titleCounts.get(quest.title) ?? 0) + 1);
                 }
                 const quests = chapter.quests
-                  .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, "zh-Hans-CN") || a.questKey.localeCompare(b.questKey))
+                  .sort(
+                    (a, b) =>
+                      a.order - b.order ||
+                      a.title.localeCompare(b.title, "zh-Hans-CN") ||
+                      a.questKey.localeCompare(b.questKey),
+                  )
                   .map((quest) => ({
                     ...quest,
                     displayTitle:

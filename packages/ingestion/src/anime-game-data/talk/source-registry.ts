@@ -40,12 +40,17 @@ async function walk(directory: string, root: string): Promise<string[]> {
     if (entry.name.startsWith(".")) continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) result.push(...(await walk(path, root)));
-    else if (extname(entry.name).toLowerCase() === ".json") result.push(relative(root, path).replaceAll("\\", "/"));
+    else if (extname(entry.name).toLowerCase() === ".json")
+      result.push(relative(root, path).replaceAll("\\", "/"));
   }
   return result;
 }
 
-async function mapLimit<T, U>(items: T[], limit: number, worker: (item: T) => Promise<U>): Promise<U[]> {
+async function mapLimit<T, U>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<U>,
+): Promise<U[]> {
   const output = new Array<U>(items.length);
   let next = 0;
   const run = async (): Promise<void> => {
@@ -55,7 +60,9 @@ async function mapLimit<T, U>(items: T[], limit: number, worker: (item: T) => Pr
       output[index] = await worker(items[index]!);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, Math.max(items.length, 1)) }, () => run()));
+  await Promise.all(
+    Array.from({ length: Math.min(limit, Math.max(items.length, 1)) }, () => run()),
+  );
   return output;
 }
 
@@ -95,7 +102,8 @@ export async function buildTalkSourceRegistry(
   try {
     relativePaths = await walk(talkRoot, root);
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return emptyRegistry();
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return emptyRegistry();
     throw error;
   }
   const parseKinds = new Set(options.parseKinds ?? ["quest", "npc_group"]);
@@ -142,16 +150,23 @@ export async function buildTalkSourceRegistry(
   }
   const duplicateTalkIds = [...assetsByTalkId.entries()]
     .filter(([, list]) => list.length > 1)
-    .map(([talkId, list]) => ({ talkId, sourceFiles: list.map((asset) => asset.relativePath).sort() }));
+    .map(([talkId, list]) => ({
+      talkId,
+      sourceFiles: list.map((asset) => asset.relativePath).sort(),
+    }));
   const fileCountsByKind: Record<string, number> = {};
   const parsedByKind: Record<string, number> = {};
   for (const file of files) {
     fileCountsByKind[file.sourceKind] = (fileCountsByKind[file.sourceKind] ?? 0) + 1;
     if (file.parsed) parsedByKind[file.sourceKind] = (parsedByKind[file.sourceKind] ?? 0) + 1;
   }
-  const unknownDirectories = [...new Set(
-    files.filter((file) => file.sourceKind === "unknown").map((file) => file.relativePath.split("/")[1] ?? ""),
-  )].sort();
+  const unknownDirectories = [
+    ...new Set(
+      files
+        .filter((file) => file.sourceKind === "unknown")
+        .map((file) => file.relativePath.split("/")[1] ?? ""),
+    ),
+  ].sort();
   const lazyAssets = new Map<string, Promise<TalkAssetRecord | undefined>>();
   const loadAsset = async (relativePath: string): Promise<TalkAssetRecord | undefined> => {
     const existing = lazyAssets.get(relativePath);
@@ -168,7 +183,8 @@ export async function buildTalkSourceRegistry(
       assets.push(asset);
       if (asset.talkId) {
         const list = assetsByTalkId.get(asset.talkId) ?? [];
-        if (!list.some((candidate) => candidate.relativePath === asset.relativePath)) list.push(asset);
+        if (!list.some((candidate) => candidate.relativePath === asset.relativePath))
+          list.push(asset);
         assetsByTalkId.set(asset.talkId, list);
       }
       return asset;
@@ -176,7 +192,10 @@ export async function buildTalkSourceRegistry(
     lazyAssets.set(relativePath, promise);
     return promise;
   };
-  const findAssets = async (talkId: string, sourceKind?: TalkSourceKind): Promise<TalkAssetRecord[]> => {
+  const findAssets = async (
+    talkId: string,
+    sourceKind?: TalkSourceKind,
+  ): Promise<TalkAssetRecord[]> => {
     const direct = (assetsByTalkId.get(talkId) ?? []).filter(
       (asset) => !sourceKind || asset.sourceKind === sourceKind,
     );

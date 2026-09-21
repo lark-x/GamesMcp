@@ -4,9 +4,7 @@ import type { TalkSourceKind } from "./types.js";
 type Json = Record<string, unknown>;
 
 function asObject(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Json)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
 }
 
 function idText(value: unknown): string | undefined {
@@ -77,7 +75,11 @@ export function parseNpcGroupRelations(
         sourceHash,
         derived: false,
         confidence: explicitQuestIds.includes(questId) ? 1 : 0.8,
-        metadata: { groupId, triggerIndex: index, sourceKind: "npc_group" satisfies TalkSourceKind },
+        metadata: {
+          groupId,
+          triggerIndex: index,
+          sourceKind: "npc_group" satisfies TalkSourceKind,
+        },
       });
     }
   }

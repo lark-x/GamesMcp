@@ -529,7 +529,12 @@ async function loadBinQuestRecords(root: string): Promise<BinQuestLoadResult> {
       records: [],
       byMainId: new Map(),
       inputHashes: {},
-      failures: [{ relativePath: binQuestDir, reason: error instanceof Error ? error.message : String(error) }],
+      failures: [
+        {
+          relativePath: binQuestDir,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      ],
     };
   }
   const loaded = await Promise.all(
@@ -980,10 +985,7 @@ function chapterStoryOrder(value: string | undefined): number | undefined {
   return undefined;
 }
 
-function storyFamilyOverrideFor(
-  inputs: Inputs,
-  mainId: string,
-): StoryFamilyOverride | undefined {
+function storyFamilyOverrideFor(inputs: Inputs, mainId: string): StoryFamilyOverride | undefined {
   return inputs.storyFamilyOverrides.find((override) => override.questIds.includes(mainId));
 }
 
@@ -1242,9 +1244,7 @@ function buildDialogueGraph(
       sourceFiles.add(input.sourceFile);
       return existingNodeKey;
     }
-    const nodeKey = uniqueNodeKey(
-      input.nodeKeyBase ?? `quest/${mainId}/dialog/${input.nodeId}`,
-    );
+    const nodeKey = uniqueNodeKey(input.nodeKeyBase ?? `quest/${mainId}/dialog/${input.nodeId}`);
     nodes.push({
       nodeKey,
       nodeId: input.nodeId,
@@ -1367,14 +1367,9 @@ function buildDialogueGraph(
       const performCfg = text(row.performCfg ?? row.performConfig);
       if (!performCfg) return false;
       const escaped = mainId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-      return new RegExp(`(?:^|[/_])(?:MQ|WQ|LQ|EQ|Q)${escaped}(?:[/_]|$)`, "iu").test(
-        performCfg,
-      );
+      return new RegExp(`(?:^|[/_])(?:MQ|WQ|LQ|EQ|Q)${escaped}(?:[/_]|$)`, "iu").test(performCfg);
     });
-    const explicitTalkRows = [
-      ...directTalkRows,
-      ...resolvedTalkRows,
-    ];
+    const explicitTalkRows = [...directTalkRows, ...resolvedTalkRows];
     const talkRowsById = new Map(
       explicitTalkRows.flatMap((row) => {
         const id = idText(row.id ?? row.__talkId);
@@ -1807,9 +1802,7 @@ export function buildRecord(
   const dialogueNodes = graph.nodes.map((node) => ({
     ...node,
     subquestKey:
-      node.subquestKey && subquestKeys.has(node.subquestKey)
-        ? node.subquestKey
-      : undefined,
+      node.subquestKey && subquestKeys.has(node.subquestKey) ? node.subquestKey : undefined,
   }));
   const dialogueEdges = graph.edges;
   const usesQuestTalkSource = graph.sourceFiles.some((sourceFile) =>
@@ -1836,7 +1829,7 @@ export function buildRecord(
           ? "hidden"
           : visibilityReason === "test_or_placeholder"
             ? "test"
-        : "unresolved";
+            : "unresolved";
   const binQuestRecord = inputs.binQuestByMainId.get(mainId);
   const resolvedTalks = inputs.resolvedTalksByMainId.get(mainId);
   const relationEdges = [
@@ -1862,12 +1855,13 @@ export function buildRecord(
     resolvedTalkCount: resolvedTalkIds.length,
     dialogueNodeCount: dialogueNodes.length,
     hasSiblingQuestRelations: relationEdges.some(
-      (edge) => edge.relationType === "quest_state_equal" || edge.relationType === "add_quest_progress",
+      (edge) =>
+        edge.relationType === "quest_state_equal" || edge.relationType === "add_quest_progress",
     ),
     hasProgressOrReward: Boolean(
       binQuestRecord?.contentCounts.QUEST_CONTENT_ADD_QUEST_PROGRESS ||
-        main.rewardIdList ||
-        main.rewardId,
+      main.rewardIdList ||
+      main.rewardId,
     ),
   });
   const dialogueResolutionStatus: DialogueResolutionStatus = classifyDialogueResolution({
@@ -1885,7 +1879,9 @@ export function buildRecord(
     ...(dialogueNodes.length || dialogueResolutionStatus === "not_applicable"
       ? []
       : ["missingDialogue"]),
-    ...(subquests.length || dialogueResolutionStatus === "not_applicable" ? [] : ["missingSubquests"]),
+    ...(subquests.length || dialogueResolutionStatus === "not_applicable"
+      ? []
+      : ["missingSubquests"]),
   ];
   const warnings = [
     questTypeWarning(originalQuestType),
@@ -1902,21 +1898,20 @@ export function buildRecord(
       ? "control"
       : contentRole === "aggregate"
         ? "aggregate"
-    : dialogueNodes.length
-      ? unresolvedSpeakerCount > 0
-        ? "speaker_unresolved"
-        : "complete"
-      : dialogueNodes.length
-        ? "partial_dialogue"
-        : "metadata_only";
+        : dialogueNodes.length
+          ? unresolvedSpeakerCount > 0
+            ? "speaker_unresolved"
+            : "complete"
+          : dialogueNodes.length
+            ? "partial_dialogue"
+            : "metadata_only";
   const isNonNarrative = ["control", "trigger", "reward", "aggregate"].includes(contentRole);
-  const prerequisites = [
-    ...asArray(main.prerequisites),
-    ...asArray(main.BJOCFAJIGLH),
-  ].flatMap((row) => {
-    const id = idText(row.id ?? row.mainQuestId ?? row.questId);
-    return id ? [`quest/${id}`] : [];
-  });
+  const prerequisites = [...asArray(main.prerequisites), ...asArray(main.BJOCFAJIGLH)].flatMap(
+    (row) => {
+      const id = idText(row.id ?? row.mainQuestId ?? row.questId);
+      return id ? [`quest/${id}`] : [];
+    },
+  );
   const payload: QuestRecordPayload = {
     questKey: `quest/${mainId}`,
     mainQuestId: mainId,
@@ -2093,19 +2088,19 @@ export function buildRecord(
             ...graph.sourceFiles,
           ]),
         ].sort(),
-      relationEdges,
-      contentRole,
-      dialogueResolutionStatus,
-      talkIds,
-      resolvedTalkIds,
-      unresolvedTalkIds,
-      talkSourceKinds,
-      sourceCoverage: {
-        talkRegistry: inputs.talkRegistry.coverage,
-        binQuestFiles: inputs.binQuest.length,
-        binQuestFailures: inputs.binQuestFailures,
-      },
-      lineage: {
+        relationEdges,
+        contentRole,
+        dialogueResolutionStatus,
+        talkIds,
+        resolvedTalkIds,
+        unresolvedTalkIds,
+        talkSourceKinds,
+        sourceCoverage: {
+          talkRegistry: inputs.talkRegistry.coverage,
+          binQuestFiles: inputs.binQuest.length,
+          binQuestFailures: inputs.binQuestFailures,
+        },
+        lineage: {
           mainQuest: {
             relativeFile: inputPaths.mainQuest,
             upstreamId: mainId,

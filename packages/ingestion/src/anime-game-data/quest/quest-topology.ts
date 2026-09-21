@@ -15,8 +15,14 @@ export function topologicalQuestOrder(
   const adjacency = new Map<string, Set<string>>();
   const indegree = new Map<string, number>(ids.map((id) => [id, 0]));
   for (const edge of edges) {
-    if (!edge.toQuestId || !indegree.has(edge.fromQuestId) || !indegree.has(edge.toQuestId)) continue;
-    if (!new Set(["starts_after", "requires", "quest_state_equal", "main_quest_relation"]).has(edge.relationType)) continue;
+    if (!edge.toQuestId || !indegree.has(edge.fromQuestId) || !indegree.has(edge.toQuestId))
+      continue;
+    if (
+      !new Set(["starts_after", "requires", "quest_state_equal", "main_quest_relation"]).has(
+        edge.relationType,
+      )
+    )
+      continue;
     const next = adjacency.get(edge.fromQuestId) ?? new Set<string>();
     if (!next.has(edge.toQuestId)) {
       next.add(edge.toQuestId);
@@ -69,16 +75,18 @@ export function buildQuestTopologies(
     const relevant = relationEdges.filter(
       (edge) => edge.fromQuestId === questId || edge.toQuestId === questId,
     );
-    const prerequisiteQuestIds = [...new Set(
-      relevant
-        .filter((edge) => edge.toQuestId === questId)
-        .map((edge) => edge.fromQuestId),
-    )];
-    const childQuestIds = [...new Set(
-      relevant
-        .filter((edge) => edge.fromQuestId === questId && edge.toQuestId)
-        .map((edge) => edge.toQuestId!),
-    )];
+    const prerequisiteQuestIds = [
+      ...new Set(
+        relevant.filter((edge) => edge.toQuestId === questId).map((edge) => edge.fromQuestId),
+      ),
+    ];
+    const childQuestIds = [
+      ...new Set(
+        relevant
+          .filter((edge) => edge.fromQuestId === questId && edge.toQuestId)
+          .map((edge) => edge.toQuestId!),
+      ),
+    ];
     topologies.set(questId, {
       questId,
       prerequisiteQuestIds,
@@ -87,7 +95,11 @@ export function buildQuestTopologies(
       storyOrder: upstreamOrder.get(questId),
       contentRole:
         contentRoles.get(questId) ??
-        classifyQuestContentRole({ hasExplicitStoryTalk: false, resolvedTalkCount: 0, dialogueNodeCount: 0 }),
+        classifyQuestContentRole({
+          hasExplicitStoryTalk: false,
+          resolvedTalkCount: 0,
+          dialogueNodeCount: 0,
+        }),
       relationEdges: relevant,
     });
   }

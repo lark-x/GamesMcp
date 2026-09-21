@@ -1,16 +1,10 @@
 import type { QuestRelationEdge } from "../quest/types.js";
-import type {
-  TalkCandidate,
-  TalkRelationEvidence,
-  TalkSourceRegistry,
-} from "./types.js";
+import type { TalkCandidate, TalkRelationEvidence, TalkSourceRegistry } from "./types.js";
 
 type Json = Record<string, unknown>;
 
 function asObject(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Json)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
 }
 
 function idText(value: unknown): string | undefined {
@@ -103,7 +97,11 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
     (edge) => edge.fromQuestId && relatedQuestIds.has(edge.fromQuestId),
   );
   const refs = new Map<string, { evidence: TalkRelationEvidence; relationEdgeId?: string }>();
-  const addRef = (talkId: string | undefined, evidence: TalkRelationEvidence, edge?: QuestRelationEdge): void => {
+  const addRef = (
+    talkId: string | undefined,
+    evidence: TalkRelationEvidence,
+    edge?: QuestRelationEdge,
+  ): void => {
     if (!talkId) return;
     const existing = refs.get(talkId);
     if (!existing || existing.evidence === "perform_cfg_exact") {
@@ -116,10 +114,15 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
     const questId = idText(row.questId ?? row.mainQuestId ?? row.mainId);
     const talkId = idText(row.id ?? row.talkId);
     if (questId === input.mainQuestId) addRef(talkId, "talk_excel_quest_id");
-    else if (!questId && exactPerformCfgMatch(row.performCfg ?? row.performConfig, input.mainQuestId))
+    else if (
+      !questId &&
+      exactPerformCfgMatch(row.performCfg ?? row.performConfig, input.mainQuestId)
+    )
       addRef(talkId, "perform_cfg_exact");
   }
-  const talkIds = [...refs.keys()].sort((left, right) => Number(left) - Number(right) || left.localeCompare(right));
+  const talkIds = [...refs.keys()].sort(
+    (left, right) => Number(left) - Number(right) || left.localeCompare(right),
+  );
   const candidates: TalkCandidate[] = [];
   for (const talkId of talkIds) {
     const relation = refs.get(talkId)!;
@@ -133,7 +136,10 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
         talkId,
         sourceKind: asset.sourceKind,
         sourceFile: asset.relativePath,
-        confidence: relation.evidence === "quest_complete_talk" || relation.evidence === "talk_excel_quest_id" ? 1 : 0.8,
+        confidence:
+          relation.evidence === "quest_complete_talk" || relation.evidence === "talk_excel_quest_id"
+            ? 1
+            : 0.8,
         evidence: relation.evidence,
         asset,
         relationEdgeId: relation.relationEdgeId,
@@ -149,13 +155,19 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
   const uniqueCandidates = new Map<string, TalkCandidate>();
   for (const candidate of candidates) uniqueCandidates.set(candidateKey(candidate), candidate);
   const ambiguousTalkIds = [...byTalkId.entries()]
-    .filter(([, list]) => new Set(list.map((candidate) => candidate.asset?.fileHash ?? candidate.sourceFile)).size > 1)
+    .filter(
+      ([, list]) =>
+        new Set(list.map((candidate) => candidate.asset?.fileHash ?? candidate.sourceFile)).size >
+        1,
+    )
     .map(([talkId]) => talkId);
   const resolvedTalkIds = talkIds.filter((talkId) => (byTalkId.get(talkId)?.length ?? 0) > 0);
   const unresolvedTalkIds = talkIds.filter((talkId) => !resolvedTalkIds.includes(talkId));
   return {
     candidates: [...uniqueCandidates.values()].sort(
-      (left, right) => Number(left.talkId) - Number(right.talkId) || left.sourceFile.localeCompare(right.sourceFile),
+      (left, right) =>
+        Number(left.talkId) - Number(right.talkId) ||
+        left.sourceFile.localeCompare(right.sourceFile),
     ),
     talkIds,
     resolvedTalkIds,
