@@ -1,13 +1,611 @@
 {
   "characters": [
-    { "name": "胡桃", "element": "pyro", "rarity": 5, "weaponType": "polearm" },
-    { "name": "Albedo", "element": "geo", "rarity": 5, "weaponType": "sword" }
+    {
+      "name": "Albedo",
+      "element": "geo",
+      "rarity": 5,
+      "weaponType": "sword"
+    },
+    {
+      "name": "七七",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "sword"
+    },
+    {
+      "name": "丽莎",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "catalyst"
+    },
+    {
+      "name": "凝光",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "catalyst"
+    },
+    {
+      "name": "凯亚",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "sword"
+    },
+    {
+      "name": "凯特",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "sword"
+    },
+    {
+      "name": "北斗",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "claymore"
+    },
+    {
+      "name": "可莉",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "catalyst"
+    },
+    {
+      "name": "安柏",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "bow"
+    },
+    {
+      "name": "旅行者",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "bow"
+    },
+    {
+      "name": "温迪",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "bow"
+    },
+    {
+      "name": "班尼特",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "sword"
+    },
+    {
+      "name": "琴",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "sword"
+    },
+    {
+      "name": "甘雨",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "bow"
+    },
+    {
+      "name": "神里绫华",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "sword"
+    },
+    {
+      "name": "胡桃",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "polearm"
+    },
+    {
+      "name": "芭芭拉",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "catalyst"
+    },
+    {
+      "name": "莫娜",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "catalyst"
+    },
+    {
+      "name": "菲谢尔",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "bow"
+    },
+    {
+      "name": "行秋",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "sword"
+    },
+    {
+      "name": "诺艾尔",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "claymore"
+    },
+    {
+      "name": "达达利亚",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "bow"
+    },
+    {
+      "name": "迪卢克",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "claymore"
+    },
+    {
+      "name": "迪奥娜",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "bow"
+    },
+    {
+      "name": "重云",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "claymore"
+    },
+    {
+      "name": "钟离",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "polearm"
+    },
+    {
+      "name": "阿贝多",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "sword"
+    },
+    {
+      "name": "雷泽",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "claymore"
+    },
+    {
+      "name": "香菱",
+      "element": null,
+      "rarity": 4,
+      "weaponType": "polearm"
+    },
+    {
+      "name": "魈",
+      "element": null,
+      "rarity": 5,
+      "weaponType": "polearm"
+    }
   ],
-  "materials": [{ "name": "霓裳花", "category": "local_specialty" }],
-  "weapons": [{ "name": "Dull Blade", "weaponType": "sword", "rarity": 1 }],
-  "enemies": [{ "name": "Slime", "drops": [] }],
+  "materials": [
+    {
+      "name": "丘丘人解药",
+      "category": "quest_item",
+      "rarity": null
+    },
+    {
+      "name": "卷心菜",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "塞西莉亚花",
+      "category": "other",
+      "rarity": 3
+    },
+    {
+      "name": "夜泊石",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "天原银莲",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "小麦",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "慕风蘑菇",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "掠夺的货物",
+      "category": "quest_item",
+      "rarity": null
+    },
+    {
+      "name": "攀爬终点花环",
+      "category": "quest_item",
+      "rarity": null
+    },
+    {
+      "name": "日落果",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "松果",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "清心",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "琉璃百合",
+      "category": "other",
+      "rarity": 3
+    },
+    {
+      "name": "甜甜花",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "白萝卜",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "纸条",
+      "category": "quest_item",
+      "rarity": null
+    },
+    {
+      "name": "绝云椒椒",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "胡萝卜",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "苹果",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "莲蓬",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "落落莓",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "薄荷",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "蘑菇",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "金鱼草",
+      "category": "cooking",
+      "rarity": null
+    },
+    {
+      "name": "钩钩果",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "霓裳花",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "风车菊",
+      "category": "local_specialty",
+      "rarity": null
+    },
+    {
+      "name": "飞行冠军奖杯",
+      "category": "quest_item",
+      "rarity": null
+    },
+    {
+      "name": "飞行终点花环",
+      "category": "quest_item",
+      "rarity": null
+    },
+    {
+      "name": "马尾",
+      "category": "consumable",
+      "rarity": null
+    }
+  ],
+  "weapons": [
+    {
+      "name": "Dull Blade",
+      "weaponType": "sword",
+      "rarity": 1
+    }
+  ],
+  "enemies": [
+    {
+      "name": "Slime",
+      "drops": []
+    }
+  ],
   "entities": [
-    { "canonicalName": "钟离", "aliases": ["摩拉克斯"] },
-    { "canonicalName": "胡桃", "aliases": ["堂主"] }
+    {
+      "canonicalName": "摩拉克斯",
+      "aliases": []
+    },
+    {
+      "canonicalName": "旅行者 · 角色故事1",
+      "aliases": []
+    },
+    {
+      "canonicalName": "旅行者 · 角色详细",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 琴团长生活作息表·第十七版",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 神之眼",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 角色故事1",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 角色故事2",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 角色故事3",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 角色故事4",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 角色故事5",
+      "aliases": []
+    },
+    {
+      "canonicalName": "琴 · 角色详细",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 杜若丸",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 神之眼",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 角色故事1",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 角色故事2",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 角色故事3",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 角色故事4",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 角色故事5",
+      "aliases": []
+    },
+    {
+      "canonicalName": "神里绫华 · 角色详细",
+      "aliases": []
+    }
+  ],
+  "documents": [
+    {
+      "id": "1c30c985-6c97-5e5c-af30-58a3c78f8992",
+      "title": "1c30c985-6c97-5e5c-af30-58a3c78f8992",
+      "body": "1c30c985-6c97-5e5c-af30-58a3c78f8992"
+    },
+    {
+      "id": "28682cba-1481-57ac-9ca4-ba83a9ebcd20",
+      "title": "28682cba-1481-57ac-9ca4-ba83a9ebcd20",
+      "body": "28682cba-1481-57ac-9ca4-ba83a9ebcd20"
+    },
+    {
+      "id": "2a055ddb-e677-5d0c-96c1-4493521be8cc",
+      "title": "2a055ddb-e677-5d0c-96c1-4493521be8cc",
+      "body": "2a055ddb-e677-5d0c-96c1-4493521be8cc"
+    },
+    {
+      "id": "4197513a-efe0-5730-ad89-7a1238d9c8ae",
+      "title": "4197513a-efe0-5730-ad89-7a1238d9c8ae",
+      "body": "4197513a-efe0-5730-ad89-7a1238d9c8ae"
+    },
+    {
+      "id": "4c8bc829-e749-5cd6-ad8a-53faeb1929d1",
+      "title": "4c8bc829-e749-5cd6-ad8a-53faeb1929d1",
+      "body": "4c8bc829-e749-5cd6-ad8a-53faeb1929d1"
+    },
+    {
+      "id": "54362661-667c-5441-bb52-8e7638ce0913",
+      "title": "54362661-667c-5441-bb52-8e7638ce0913",
+      "body": "54362661-667c-5441-bb52-8e7638ce0913"
+    },
+    {
+      "id": "5d8ed35d-d3ee-58ce-a47f-441a0497dac7",
+      "title": "5d8ed35d-d3ee-58ce-a47f-441a0497dac7",
+      "body": "5d8ed35d-d3ee-58ce-a47f-441a0497dac7"
+    },
+    {
+      "id": "6d2428e4-2969-5d12-a40a-7ed53c9d2c71",
+      "title": "6d2428e4-2969-5d12-a40a-7ed53c9d2c71",
+      "body": "6d2428e4-2969-5d12-a40a-7ed53c9d2c71"
+    },
+    {
+      "id": "a31b0696-3694-5569-b5af-4264f0c2bd99",
+      "title": "a31b0696-3694-5569-b5af-4264f0c2bd99",
+      "body": "a31b0696-3694-5569-b5af-4264f0c2bd99"
+    },
+    {
+      "id": "bb204b9a-0038-5234-aeed-932397dbb1a7",
+      "title": "bb204b9a-0038-5234-aeed-932397dbb1a7",
+      "body": "bb204b9a-0038-5234-aeed-932397dbb1a7"
+    },
+    {
+      "id": "c0decfa3-9744-5b43-b9e5-c89643446eed",
+      "title": "c0decfa3-9744-5b43-b9e5-c89643446eed",
+      "body": "c0decfa3-9744-5b43-b9e5-c89643446eed"
+    },
+    {
+      "id": "dc20bb69-1df4-57a0-adb0-db541cbf5ea0",
+      "title": "dc20bb69-1df4-57a0-adb0-db541cbf5ea0",
+      "body": "dc20bb69-1df4-57a0-adb0-db541cbf5ea0"
+    },
+    {
+      "id": "丘丘人解药",
+      "title": "丘丘人解药",
+      "body": "丘丘人解药"
+    },
+    {
+      "id": "少女薇拉的忧郁·卷一",
+      "title": "少女薇拉的忧郁·卷一",
+      "body": "少女薇拉的忧郁·卷一"
+    },
+    {
+      "id": "少女薇拉的忧郁·卷三",
+      "title": "少女薇拉的忧郁·卷三",
+      "body": "少女薇拉的忧郁·卷三"
+    },
+    {
+      "id": "少女薇拉的忧郁·卷二",
+      "title": "少女薇拉的忧郁·卷二",
+      "body": "少女薇拉的忧郁·卷二"
+    },
+    {
+      "id": "掠夺的货物",
+      "title": "掠夺的货物",
+      "body": "掠夺的货物"
+    },
+    {
+      "id": "攀爬终点花环",
+      "title": "攀爬终点花环",
+      "body": "攀爬终点花环"
+    },
+    {
+      "id": "日落果",
+      "title": "日落果",
+      "body": "日落果"
+    },
+    {
+      "id": "温妮莎传奇·上篇",
+      "title": "温妮莎传奇·上篇",
+      "body": "温妮莎传奇·上篇"
+    },
+    {
+      "id": "温妮莎传奇·下篇",
+      "title": "温妮莎传奇·下篇",
+      "body": "温妮莎传奇·下篇"
+    },
+    {
+      "id": "纸条",
+      "title": "纸条",
+      "body": "纸条"
+    },
+    {
+      "id": "苹果",
+      "title": "苹果",
+      "body": "苹果"
+    },
+    {
+      "id": "蒲公英海的狐狸·卷一",
+      "title": "蒲公英海的狐狸·卷一",
+      "body": "蒲公英海的狐狸·卷一"
+    },
+    {
+      "id": "蒲公英海的狐狸·卷三",
+      "title": "蒲公英海的狐狸·卷三",
+      "body": "蒲公英海的狐狸·卷三"
+    },
+    {
+      "id": "蒲公英海的狐狸·卷二",
+      "title": "蒲公英海的狐狸·卷二",
+      "body": "蒲公英海的狐狸·卷二"
+    },
+    {
+      "id": "飞行冠军奖杯",
+      "title": "飞行冠军奖杯",
+      "body": "飞行冠军奖杯"
+    },
+    {
+      "id": "飞行终点花环",
+      "title": "飞行终点花环",
+      "body": "飞行终点花环"
+    }
+  ],
+  "quests": [
+    {
+      "questKey": "叠山",
+      "title": "叠山",
+      "body": "叠山"
+    },
+    {
+      "questKey": "往生",
+      "title": "往生",
+      "body": "往生"
+    },
+    {
+      "questKey": "惊变",
+      "title": "惊变",
+      "body": "惊变"
+    },
+    {
+      "questKey": "望舒",
+      "title": "望舒",
+      "body": "望舒"
+    },
+    {
+      "questKey": "留云",
+      "title": "留云",
+      "body": "留云"
+    },
+    {
+      "questKey": "请仙",
+      "title": "请仙",
+      "body": "请仙"
+    },
+    {
+      "questKey": "遗失之书",
+      "title": "遗失之书",
+      "body": "遗失之书"
+    },
+    {
+      "questKey": "麻烦的工作",
+      "title": "麻烦的工作",
+      "body": "麻烦的工作"
+    }
   ]
 }

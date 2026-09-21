@@ -16,7 +16,11 @@ import {
   reviewIssues,
 } from "./schema.js";
 import { mapReleaseCandidateBuild } from "./repository-mappers.js";
-import { manifestRootHash, releaseCandidateChecksum } from "./repository-utils.js";
+import {
+  hydrateManifestRecords,
+  manifestRootHash,
+  releaseCandidateChecksum,
+} from "./repository-utils.js";
 
 type RevisionRow = typeof datasetRevisions.$inferSelect;
 
@@ -38,10 +42,17 @@ export async function getReleaseCandidateBuild(
     .limit(1);
   const row = rows[0];
   if (!row) return null;
+  const normalizedRecords = row.build.manifestId
+    ? await hydrateManifestRecords(
+        ctx.db,
+        row.build.manifestId,
+        row.build.normalizedRecords,
+      )
+    : row.build.normalizedRecords;
   return {
     ...mapReleaseCandidateBuild(row.build),
     gameId: row.gameId,
-    normalizedRecords: row.build.normalizedRecords,
+    normalizedRecords,
     structuredRecords: row.build.structuredRecords ?? undefined,
   };
 }

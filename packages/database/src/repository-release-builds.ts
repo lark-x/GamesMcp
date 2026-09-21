@@ -146,6 +146,17 @@ export async function buildReleaseCandidate(
     normalizedRecords,
     candidate.baseRevisionId,
   );
+  const persistedRecordIndex = normalizedRecords.map((record) => ({
+    sourceKey: record.sourceKey,
+    recordType: record.recordType,
+    title: record.title,
+    documentType: record.documentType,
+    gameVersion: record.gameVersion,
+    locale: record.locale,
+    contentHash: record.contentHash,
+    parserVersion: record.parserVersion,
+    metadata: { manifestPayload: true },
+  })) as NormalizedRecord[];
   return ctx.db.transaction(async (tx) => {
     await tx.execute(
       sql`select id from knowledge.release_candidates where id = ${candidateId}::uuid for update`,
@@ -163,7 +174,10 @@ export async function buildReleaseCandidate(
         buildNumber: (prior[0]?.buildNumber ?? 0) + 1,
         status: "ready",
         contentChecksum,
-        normalizedRecords,
+        // The full records are immutable contentObjects addressed by the
+        // manifest.  Keep only a compact key index here; one giant JSONB array
+        // exceeds PostgreSQL's per-array-element limit for current quest data.
+        normalizedRecords: persistedRecordIndex,
         structuredRecords,
         manifestId,
         baseRevisionId: candidate.baseRevisionId,

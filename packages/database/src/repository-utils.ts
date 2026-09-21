@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DocumentSummary, DocumentType, EntitySummary, EntityType } from "@gip/contracts";
 import type {
   ConflictKind,
@@ -11,9 +11,43 @@ import type {
   StructuredImportRecords,
   VerificationItem,
 } from "@gip/domain";
-import { documents, entities, sourceObservations } from "./schema.js";
+import {
+  contentObjects,
+  datasetManifestEntries,
+  documents,
+  entities,
+  sourceObservations,
+} from "./schema.js";
+import type { Database } from "./client.js";
 
 export const defaultLimit = 20;
+
+/**
+ * Candidate/revision manifests keep the full normalized payload one content
+ * object per record.  Hydrate it by the compact source-key index instead of
+ * putting the complete corpus in a single PostgreSQL JSONB value.
+ */
+export async function hydrateManifestRecords(
+  db: Database,
+  manifestId: string,
+  indexRecords: NormalizedRecord[],
+): Promise<NormalizedRecord[]> {
+  const rows = await db
+    .select({ canonicalKey: datasetManifestEntries.canonicalKey, payload: contentObjects.payload })
+    .from(datasetManifestEntries)
+    .innerJoin(contentObjects, eq(contentObjects.contentHash, datasetManifestEntries.contentHash))
+    .where(eq(datasetManifestEntries.manifestId, manifestId));
+  if (!rows.length) return indexRecords;
+  const payloadByKey = new Map(
+    rows.map((row) => [row.canonicalKey, row.payload as unknown as NormalizedRecord]),
+  );
+  if (indexRecords.length && !indexRecords.every((record) => payloadByKey.has(record.sourceKey))) {
+    return indexRecords;
+  }
+  return indexRecords.length
+    ? indexRecords.map((record) => payloadByKey.get(record.sourceKey)!).filter(Boolean)
+    : rows.map((row) => row.payload as unknown as NormalizedRecord);
+}
 
 export const animeCategoryFiles = {
   book: "books.json",
@@ -214,15 +248,26 @@ export function observationConflictKind(observations: SourceObservationRow[]): C
     const provenance = Object.keys(nested).length ? nested : metadata;
     const lineage = asRecord(provenance.lineage);
     const lineagePresent = Object.keys(lineage).length > 0;
-    return !observation.title || (lineagePresent && (!lineage.title || !lineage.body));
+    // Quest records name their body source `dialogue`; the generic document
+    // converter calls it `body`. Treat either precise lineage as complete.
+    const bodyLineage = lineage.body ?? lineage.dialogue;
+    return !observation.title || (lineagePresent && (!lineage.title || !bodyLineage));
   });
   if (missingField) return "missing_field";
   if (observationChannels.size <= 1) return "formatting_only";
-  const normalizedHashes = new Set(
-    observations.map((observation) => observation.normalizedContentHash),
-  );
-  if (normalizedHashes.size > 1) return "content_conflict";
+  // Readable text is the authoritative signal: a content conflict must mean the
+  // reader-visible title or body actually differs between observations.
+  // Content hashes are deliberately not used here because they also change when
+  // the converter/normalizer is revised, which would report every tooling
+  // upgrade as a conflict and block publication on unchanged upstream data.
   const rawHashes = new Set(observations.map((observation) => observation.rawContentHash));
+  // A converter revision may change the normalized body while the immutable
+  // upstream payload is identical. That is a parser/tooling difference, not
+  // two competing source claims, and must not block the next candidate.
+  if (rawHashes.size === 1) return "formatting_only";
+  const titleVariants = new Set(observations.map((observation) => observation.title));
+  const bodyVariants = new Set(observations.map((observation) => observation.body));
+  if (titleVariants.size > 1 || bodyVariants.size > 1) return "content_conflict";
   return rawHashes.size === 1 ? "exact_match" : "formatting_only";
 }
 
@@ -253,9 +298,18 @@ export function releaseCandidateChecksum(
   records: NormalizedRecord[],
   structuredRecords?: StructuredImportRecords,
 ): string {
-  return createHash("sha256")
-    .update(stableStringify({ records, structuredRecords: structuredRecords ?? {} }))
-    .digest("hex");
+  // Hash records incrementally. A complete AnimeGameData quest candidate is
+  // hundreds of megabytes, so stringifying the outer `{ records, ... }`
+  // object exceeds V8's maximum string length before PostgreSQL is involved.
+  const hash = createHash("sha256");
+  hash.update("records[");
+  for (const record of records) {
+    hash.update(canonicalRecordBytes(record));
+    hash.update("\0");
+  }
+  hash.update("]structured:");
+  hash.update(stableStringify(structuredRecords ?? {}));
+  return hash.digest("hex");
 }
 
 export function canonicalRecordBytes(record: NormalizedRecord): string {
@@ -281,14 +335,16 @@ function canonicalize(value: unknown): unknown {
 }
 
 export function manifestRootHash(records: NormalizedRecord[]): string {
-  const lines = [...records]
-    .sort((left, right) => left.sourceKey.localeCompare(right.sourceKey))
-    .map(
-      (record) =>
-        `${record.sourceKey}\0${createHash("sha256").update(canonicalRecordBytes(record)).digest("hex")}\n`,
-    )
-    .join("");
-  return createHash("sha256").update(lines).digest("hex");
+  const hash = createHash("sha256");
+  for (const record of [...records].sort((left, right) =>
+    left.sourceKey.localeCompare(right.sourceKey),
+  )) {
+    hash.update(record.sourceKey);
+    hash.update("\0");
+    hash.update(createHash("sha256").update(canonicalRecordBytes(record)).digest("hex"));
+    hash.update("\n");
+  }
+  return hash.digest("hex");
 }
 
 export function mergeReleaseCandidateRecords(
@@ -608,7 +664,7 @@ export function publicQuestCondition() {
 
 export function publicDocumentCondition() {
   return sql`(
-    ${documents.type} NOT IN ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'other')
+    ${documents.type} NOT IN ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'companion_mission', 'daily_mission', 'trailblaze_continuation', 'trailblaze_mission', 'adventure_quest', 'other')
     OR ${publicQuestCondition()}
   )`;
 }
@@ -626,4 +682,3 @@ export async function insertInChunks<T>(
     }
   }
 }
-

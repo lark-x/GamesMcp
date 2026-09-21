@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { ArchiveEmpty, ArchiveLoading } from "../ArchiveStates.js";
 import { getQuestTypeOptions, questTypeLabel, questTypeOptions } from "../../shared.js";
 import type { StoryCatalog as ApiStoryCatalog } from "../../api.js";
@@ -8,8 +8,9 @@ import type { StoryCatalogFilters, StoryEntry, StoryTreeNode } from "./story.typ
 /**
  * Pure hierarchy builder:
  * Region / World
- * └─ Chapter
- *    └─ Quest
+ * └─ Story family
+ *    └─ Chapter
+ *       └─ Quest
  * Fallback to Series -> Chapter -> Quest if catalog regions unavailable.
  */
 export function buildStoryTree(
@@ -21,41 +22,87 @@ export function buildStoryTree(
   const query = (queryFilter || "").trim().toLowerCase();
 
   if (catalog && catalog.regions && catalog.regions.length > 0) {
+    // The catalog carries the complete hierarchy, while the search endpoint
+    // also searches dialogue bodies.  When a query is active, use its quest
+    // keys as an additional allow-list so a hit inside a line of dialogue is
+    // reflected in the final tree instead of being lost because the title or
+    // chapter name did not match locally.
+    const searchMatches = query && entries.length > 0
+      ? new Set(entries.map((entry) => entry.questKey))
+      : undefined;
     const result: StoryTreeNode[] = [];
     for (const region of catalog.regions) {
       const regionNode: StoryTreeNode = {
         id: `region:${region.id}`,
         type: "region",
         title: region.name,
+        order: region.order,
         children: [],
       };
-      for (const chapter of region.chapters) {
-        const filteredQuests = chapter.quests.filter((q) => {
-          if (!query) return true;
-          return (
-            q.title.toLowerCase().includes(query) ||
-            chapter.name.toLowerCase().includes(query) ||
-            region.name.toLowerCase().includes(query)
-          );
-        });
-        if (filteredQuests.length === 0) continue;
+      const families = region.families?.length
+        ? region.families
+        : [
+            {
+              id: `legacy:${region.id}`,
+              name: "散篇任务",
+              order: 0,
+              provenance: "fallback" as const,
+              chapters: region.chapters,
+            },
+          ];
+      for (const family of families) {
+        const familyNode: StoryTreeNode = {
+          id: `family:${region.id}:${family.id}`,
+          type: "series",
+          title: family.name,
+          order: family.order,
+          children: [],
+        };
+        for (const chapter of family.chapters) {
+          const filteredQuests = chapter.quests.filter((q) => {
+            if (!query) return true;
+            const title = (q.displayTitle ?? q.title).toLowerCase();
+            const localMatch =
+              title.includes(query) ||
+              q.title.toLowerCase().includes(query) ||
+              chapter.name.toLowerCase().includes(query) ||
+              family.name.toLowerCase().includes(query) ||
+              region.name.toLowerCase().includes(query);
+            return searchMatches?.has(q.questKey) || localMatch;
+          });
+          if (filteredQuests.length === 0) continue;
 
-        const questNodes: StoryTreeNode[] = filteredQuests.map((q) => ({
-          id: `quest:${q.questKey}`,
-          type: "quest",
-          title: q.title,
-          questKey: q.questKey,
-        }));
-
-        regionNode.children!.push({
-          id: `chapter:${region.id}:${chapter.id}`,
-          type: "chapter",
-          title: chapter.name,
-          children: questNodes,
-        });
+          familyNode.children!.push({
+            id: `chapter:${region.id}:${family.id}:${chapter.id}`,
+            type: "chapter",
+            title: chapter.name,
+            order: chapter.order,
+            children: filteredQuests
+              .sort(
+                (a, b) =>
+                  a.order - b.order ||
+                  (a.displayTitle ?? a.title).localeCompare(b.displayTitle ?? b.title, "zh-Hans-CN") ||
+                  a.questKey.localeCompare(b.questKey),
+              )
+              .map((q) => ({
+                id: `quest:${q.questKey}`,
+                type: "quest" as const,
+                title: q.displayTitle ?? q.title,
+                order: q.order,
+                questKey: q.questKey,
+              })),
+          });
+        }
+        if (familyNode.children!.length > 0) regionNode.children!.push(familyNode);
       }
       if (regionNode.children!.length > 0) {
         result.push(regionNode);
+      }
+    }
+    for (const region of result) {
+      region.children?.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, "zh-Hans-CN"));
+      for (const family of region.children ?? []) {
+        family.children?.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, "zh-Hans-CN"));
       }
     }
     if (result.length > 0) return result;
@@ -208,31 +255,13 @@ export function StoryCatalog({
     if (!activeQuestKey || !tree.length) return;
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      for (const topNode of tree) {
-        let topHasActive = false;
-        if (topNode.children) {
-          for (const child of topNode.children) {
-            let childHasActive = false;
-            if (child.type === "chapter" && child.children) {
-              for (const q of child.children) {
-                if (q.questKey === activeQuestKey) {
-                  childHasActive = true;
-                  break;
-                }
-              }
-            } else if (child.questKey === activeQuestKey) {
-              topHasActive = true;
-            }
-            if (childHasActive) {
-              next.add(child.id);
-              topHasActive = true;
-            }
-          }
-        }
-        if (topHasActive) {
-          next.add(topNode.id);
-        }
-      }
+      const visit = (node: StoryTreeNode): boolean => {
+        if (node.questKey === activeQuestKey) return true;
+        const childHasActive = node.children?.some(visit) ?? false;
+        if (childHasActive) next.add(node.id);
+        return childHasActive;
+      };
+      tree.forEach(visit);
       return next;
     });
   }, [activeQuestKey, tree]);
@@ -260,6 +289,66 @@ export function StoryCatalog({
       else next.add(id);
       return next;
     });
+  }
+
+  function renderNode(node: StoryTreeNode): ReactNode {
+    if (node.type === "quest") {
+      const isActive = node.questKey === activeQuestKey;
+      return (
+        <button
+          type="button"
+          key={node.id}
+          className={`story-tree-quest ${isActive ? "is-active" : ""}`}
+          aria-current={isActive ? "page" : undefined}
+          onClick={() =>
+            node.questKey && onSelect({ questKey: node.questKey, title: node.title })
+          }
+        >
+          <span>{node.title}</span>
+        </button>
+      );
+    }
+
+    const isExpanded = isSearching || expandedIds.has(node.id);
+    const isChapter = node.type === "chapter";
+    const containerClass = isChapter ? "story-tree-chapter" : "story-tree-series";
+    const headerClass = isChapter
+      ? "story-tree-header story-tree-chapter-header"
+      : "story-tree-header story-tree-series-header";
+    return (
+      <section
+        key={node.id}
+        className={containerClass}
+        role="treeitem"
+        aria-expanded={isExpanded}
+      >
+        <button
+          type="button"
+          className={headerClass}
+          aria-expanded={isExpanded}
+          onClick={() => {
+            toggleExpand(node.id);
+            if (!isExpanded && isChapter && node.children?.[0]?.questKey) {
+              const firstQuest = node.children[0];
+              onSelect({ questKey: firstQuest.questKey!, title: firstQuest.title });
+            }
+          }}
+        >
+          <span className="story-tree-toggle-icon" aria-hidden="true">
+            {isExpanded ? "▾" : "▸"}
+          </span>
+          {isChapter ? <span>{node.title}</span> : <strong>{node.title}</strong>}
+        </button>
+        {isExpanded && node.children?.length ? (
+          <div
+            className={isChapter ? "story-tree-chapter-children" : "story-tree-series-children"}
+            role="group"
+          >
+            {node.children.map(renderNode)}
+          </div>
+        ) : null}
+      </section>
+    );
   }
 
   return (
@@ -298,114 +387,7 @@ export function StoryCatalog({
         {loading ? (
           <ArchiveLoading label="任务目录加载中" />
         ) : tree.length ? (
-          tree.map((topNode) => {
-            const isTopExpanded = isSearching || expandedIds.has(topNode.id);
-            return (
-              <section
-                key={topNode.id}
-                className="story-tree-series"
-                role="treeitem"
-                aria-expanded={isTopExpanded}
-              >
-                <button
-                  type="button"
-                  className="story-tree-header story-tree-series-header"
-                  aria-expanded={isTopExpanded}
-                  onClick={() => toggleExpand(topNode.id)}
-                >
-                  <span className="story-tree-toggle-icon" aria-hidden="true">
-                    {isTopExpanded ? "▾" : "▸"}
-                  </span>
-                  <strong>{topNode.title}</strong>
-                </button>
-
-                {isTopExpanded && topNode.children ? (
-                  <div className="story-tree-series-children" role="group">
-                    {topNode.children.map((child) => {
-                      if (child.type === "chapter") {
-                        const isChapterExpanded = isSearching || expandedIds.has(child.id);
-                        return (
-                          <div
-                            key={child.id}
-                            className="story-tree-chapter"
-                            role="treeitem"
-                            aria-expanded={isChapterExpanded}
-                          >
-                            <button
-                              type="button"
-                              className="story-tree-header story-tree-chapter-header"
-                              aria-expanded={isChapterExpanded}
-                              onClick={() => {
-                                toggleExpand(child.id);
-                                if (!isChapterExpanded && child.children?.length) {
-                                  const firstQuest = child.children[0];
-                                  if (firstQuest?.questKey) {
-                                    onSelect({
-                                      questKey: firstQuest.questKey,
-                                      title: firstQuest.title,
-                                    });
-                                  }
-                                }
-                              }}
-                            >
-                              <span className="story-tree-toggle-icon" aria-hidden="true">
-                                {isChapterExpanded ? "▾" : "▸"}
-                              </span>
-                              <span>{child.title}</span>
-                            </button>
-                            {isChapterExpanded && child.children ? (
-                              <div className="story-tree-chapter-children" role="group">
-                                {child.children.map((questNode) => {
-                                  const isActive = questNode.questKey === activeQuestKey;
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={questNode.id}
-                                      className={`story-tree-quest ${isActive ? "is-active" : ""}`}
-                                      aria-current={isActive ? "page" : undefined}
-                                      onClick={() =>
-                                        questNode.questKey &&
-                                        onSelect({
-                                          questKey: questNode.questKey,
-                                          title: questNode.title,
-                                        })
-                                      }
-                                    >
-                                      <span>{questNode.title}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      }
-
-                      // Quest directly under region / series
-                      const isActive = child.questKey === activeQuestKey;
-                      return (
-                        <button
-                          type="button"
-                          key={child.id}
-                          className={`story-tree-quest ${isActive ? "is-active" : ""}`}
-                          aria-current={isActive ? "page" : undefined}
-                          onClick={() =>
-                            child.questKey &&
-                            onSelect({
-                              questKey: child.questKey,
-                              title: child.title,
-                            })
-                          }
-                        >
-                          <span>{child.title}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </section>
-            );
-          })
+          tree.map(renderNode)
         ) : (
           <ArchiveEmpty
             title={isStarRail ? "暂无星铁开拓任务" : "没有任务结果"}

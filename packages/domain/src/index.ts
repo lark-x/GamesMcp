@@ -42,6 +42,7 @@ export type {
   StoryCatalog,
   StoryRegion,
   StoryChapter,
+  StoryFamily,
   StoryQuestEntry,
   BodyAvailability,
   NarrativeMode,
@@ -179,10 +180,19 @@ export type QuestRecordPayload = {
     | "event_quest"
     | "commission"
     | "hangout"
+    | "companion_mission"
+    | "daily_mission"
+    | "trailblaze_continuation"
+    | "trailblaze_mission"
+    | "adventure_quest"
     | "other";
   locale: string;
   chapterId?: string | number;
   chapterTitle?: string;
+  storyFamilyId?: string;
+  storyFamilyTitle?: string;
+  storyFamilyProvenance?: "upstream" | "derived" | "curated" | "fallback";
+  storyFamilyOrder?: number;
   seriesId?: string | number;
   seriesTitle?: string;
   regionId?: string | number;
@@ -191,8 +201,19 @@ export type QuestRecordPayload = {
   worldId?: string | number;
   worldName?: string;
   chapter?: string;
+  chapterNum?: string;
   series?: string;
   order?: number;
+  chapterOrder?: number;
+  storyPosition?: number;
+  displayTitle?: string;
+  qualityCode?:
+    | "complete"
+    | "partial_dialogue"
+    | "metadata_only"
+    | "source_missing"
+    | "parser_failed"
+    | "speaker_unresolved";
   completeness: QuestCompleteness;
   completenessReasons?: string[];
   /** Records outside the public game-facing catalogue remain available to admin preview only. */
@@ -883,6 +904,8 @@ export type QuestSearchHit = {
   documentId: Id;
   revision: string;
   match?: string;
+  /** Reader-visible excerpt of the quest body. `match` is only the match class. */
+  excerpt?: string | null;
 };
 
 export type QuestDialoguePage = {
@@ -938,6 +961,11 @@ export type GetQuestRequest = {
   /** Defaults to true for public APIs; admin preview can explicitly disable it. */
   publicOnly?: boolean;
   revisionId?: Id;
+};
+
+export type StoryCatalogRequest = {
+  locale?: string;
+  questType?: QuestRecordPayload["questType"];
 };
 
 export type ArchiveHome = import("@gip/contracts").ArchiveHomeResponse;
@@ -1039,7 +1067,11 @@ export interface KnowledgeRepository {
   searchQuests?(gameId: Id, request: QuestSearchRequest): Promise<QuestSearchHit[]>;
   searchDialogue?(gameId: Id, request: DialogueSearchRequest): Promise<DialogueSearchHit[]>;
   getQuest?(gameId: Id, request: GetQuestRequest): Promise<QuestDialoguePage | null>;
-  getStoryCatalog?(gameId: Id, revisionId?: Id): Promise<StoryCatalog>;
+  getStoryCatalog?(
+    gameId: Id,
+    revisionId?: Id,
+    options?: StoryCatalogRequest,
+  ): Promise<StoryCatalog>;
   createSource(input: Omit<Source, "id">): Promise<Source>;
   listSources(gameId?: Id): Promise<Source[]>;
   getSource(sourceId: Id): Promise<Source | null>;
@@ -1383,6 +1415,9 @@ export function validateNormalizedRecords(
         "story_quest",
         "world_quest",
         "event_quest",
+        "companion_mission",
+        "daily_mission",
+        "trailblaze_continuation",
         "commission",
         "hangout",
         "other",

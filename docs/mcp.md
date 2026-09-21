@@ -17,12 +17,40 @@ GamesMcp MCP
 | 类别 | 工具 |
 | --- | --- |
 | 平台 | `list_games` `get_game_capabilities` |
-| 实体 | `get_character` `get_material` `get_equipment`（原神武器 / 星铁光锥）`get_weapon`（`get_equipment` 别名）`get_enemy` `resolve_entity` |
-| 检索 | `search_dialogue` `search_quests` `search_lore` `search_entities` `search_items` `search_mechanics` `search_game_knowledge` |
-| 读取 | `get_quest` `get_lore_document` `get_relationships` `get_entity_texts` `get_item_text` `get_game_document` `get_game_document_hierarchy` |
+| 实体 | `get_character` `get_material` `get_equipment`（原神武器 / 星铁光锥）`get_enemy` `resolve_entity` |
+| 检索 | `search`（统一检索全部语料）`search_game_knowledge` |
+| 读取 | `get_quest` `get_document` `get_relationships` `get_entity_texts` `get_game_document` `get_game_document_hierarchy` |
 | Provider | `get_game_provider_status` 及各游戏 provider 工具 |
 
 Response budget：检索类工具只返回小结果 + excerpt；需要完整正文时再调用 `get_*` 读取。
+
+`search` 是唯一的检索入口：入参 `game_id` / `query` / `limit`（默认 10，上限 50），
+可选 `type`（`all`/`dialogue`/`quest`/`document`/`item`/`mechanism`/`structured`，默认 `all`）
+与 `speaker`、`quest`、`locale` 筛选。每条结果带 `type` 标签与引用 id，
+模型据此决定是否下钻 `get_quest` / `get_document` 读取完整正文。
+
+### 语言（`locale`）
+
+语料是双语的：原神每个任务同时存有中文与英文两份（对话节点内容各自独立），
+因此默认必须限定语言，否则同一次检索会混入两种语言、或让英文查询命中英文副本。
+
+- **默认 `zh-CN`**：不传 `locale` 时，全部检索面（对话 / 任务 / 文档 / 物品 / 机制）
+  都只返回中文素材。
+- **显式切换**：传 `locale: "en"` 即可检索英文素材，例如
+  `search({ game_id, query: "Rite of Descension", locale: "en" })`。
+
+星铁语料目前只有中文，该参数对其无影响。
+
+### 结果配比与 `limit`
+
+`limit` 就是页大小（默认 10，上限 50）：请求多少条就返回多少条，条数上限与
+字节上限都随页大小等比放大。
+
+每个命中面（对话 / 任务 / 文档 / 物品 / 机制 / 结构化）各自使用不同的打分区间
+（结构化与文档可达 ~8.8，台词上限约 6.6）。若只按分数排序，高分面会用大量
+相似条目把真正承载正文的面整个挤出结果，例如搜「水仙十字」时前排被同名卡牌
+与教学文本占满，任务与台词一条都进不来。因此合并时先按面保留配额（页面的一半
+均分给各命中面），剩余名额再按分数补足，展示顺序仍为分数优先。
 
 ## 本地开发（stdio）
 
@@ -103,7 +131,15 @@ pnpm docker:logs [service]      # 跟踪日志（mcp/api/web/worker/postgres）
 pnpm docker:stop                # down（保留数据卷）
 ```
 
-`docker-deploy.sh` 的完成标准：Compose 校验 → 构建 api/worker/mcp/web → PostgreSQL healthy → 四服务启动 → API `/api/health`、MCP `/health`、Web `/`、MCP `/ready` 全部通过 → `scripts/test-mcp-http.ts` 协议冒烟（initialize / tools/list / list_games）通过。
+`scripts/docker-stack.ts` 的完成标准：Compose 校验 → 构建 api/worker/mcp/web → PostgreSQL healthy → 四服务启动 → API `/api/health`、MCP `/health`、Web `/`、MCP `/ready` 全部通过 → `scripts/test-mcp-http.ts` 协议冒烟（initialize / tools/list / list_games）通过。
+
+以上命令统一走 `node --import tsx scripts/docker-stack.ts <action>`，不依赖 bash。这样在 Windows 上不会误用 WSL 的 bash（它连的是 WSL 自带的 Docker 引擎，看不到 Docker Desktop 的容器，还会把 `F:/...` 当成相对路径），macOS / Linux 上行为完全一致。
+
+必填的 `.env` 变量：
+
+- `DATA_DIR`：持久化数据目录。各平台使用本机绝对路径（macOS 示例 `/Volumes/Lark/lark/GamesMcp/data`）。把 Windows 盘符路径带到 macOS 会被直接拒绝，而不是静默挂载到错误位置。
+- `ISTAROTH_IMAGE`：compose 在解析阶段就要求非空，即使不启动 provider。只有 `pnpm docker:deploy:providers` 会真正拉取，届时必须替换为固定的 tag 或 digest。
+- `MCP_AUTH_TOKEN`：仅 `docker:deploy` 强制要求（compose 固定以 production + `0.0.0.0` 启动 MCP，必然命中鉴权门禁）。
 
 MCP 容器暴露策略：默认 `127.0.0.1:4200`。需要 LAN 接入时改为 `0.0.0.0:4200` 并必须配置 `MCP_AUTH_TOKEN`。
 

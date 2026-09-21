@@ -6,7 +6,7 @@
 
 ```bash
 pnpm eval:search-core   # 搜索核心排序/解析基线（8 用例）
-pnpm eval:mcp-tools     # MCP 结构化工具 KPI（7 用例，平均 1 次调用）
+pnpm eval:mcp-tools     # MCP 工具 KPI（金标准 247 用例，平均 1 次调用）
 ```
 
 需要数据库的评测在 `pnpm db:up && pnpm db:migrate` 并导入样例数据后运行：
@@ -14,6 +14,7 @@ pnpm eval:mcp-tools     # MCP 结构化工具 KPI（7 用例，平均 1 次调�
 ```bash
 pnpm eval:retrieval     # 109 条检索 golden（ENFORCE_RETRIEVAL_TARGETS=1 强制达标）
 pnpm eval:qa            # 证据 QA golden（ENFORCE_QA_TARGETS=1 强制达标）
+pnpm test:retrieval:zh  # 中文子串检索门（真实库，断言关键词进入前 10）
 ```
 
 发布前建议至少完整跑一轮上述命令并记录输出。
@@ -22,9 +23,9 @@ pnpm eval:qa            # 证据 QA golden（ENFORCE_QA_TARGETS=1 强制达标�
 
 - REST：`/api/games/:gameId/genshin/{characters,materials,weapons,artifacts,achievements,enemies}`
   为只读结构化接口，响应经共享 Zod 契约校验。
-- MCP：`get_character`、`get_material`、`resolve_entity`、`search_dialogue`
-  等游戏语义工具接受显示名，内部通过 `GameDomainService` 解析；旧的通用
-  工具仍可用，计划在清理阶段（Phase 12）标记弃用。
+- MCP：`get_character`、`get_material`、`get_equipment`、`resolve_entity`、
+  `search` 等游戏语义工具接受显示名，内部通过 `GameDomainService` 解析。
+  检索统一走 `search`，按 `type` 区分对话 / 任务 / 文档 / 物品 / 机制 / 结构化记录。
 - 结构化数据页：Web `#codex/<kind>`（角色/材料/武器/圣遗物/成就/敌人）。
 
 ## 日常启动

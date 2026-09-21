@@ -31,14 +31,14 @@ echo "==> Rolling back to version: ${TARGET_ROLLBACK_VERSION}"
 export GAMESMCP_VERSION="${TARGET_ROLLBACK_VERSION}"
 
 echo "==> Ensuring target rollback images are present..."
-if ! docker compose -f "${COMPOSE_FILE}" pull api worker web; then
+if ! docker compose -f "${COMPOSE_FILE}" pull api worker web mcp; then
   echo "ERROR: Failed to pull rollback images for version ${TARGET_ROLLBACK_VERSION}."
   echo "       Rollback aborted to avoid inconsistent state."
   exit 1
 fi
 
 echo "==> Restarting services with rollback version..."
-docker compose -f "${COMPOSE_FILE}" up -d api worker web
+docker compose -f "${COMPOSE_FILE}" up -d api worker web mcp
 
 echo "==> Verifying health after rollback..."
 if bash "${SCRIPT_DIR}/health-check.sh"; then
@@ -46,6 +46,6 @@ if bash "${SCRIPT_DIR}/health-check.sh"; then
   echo "==> Rollback to ${TARGET_ROLLBACK_VERSION} completed successfully!"
 else
   echo "ERROR: Health check failed after rollback. Check container logs with:"
-  echo "  docker compose -f docker-compose.prod.yml logs api worker web"
+  echo "  docker compose -f docker-compose.prod.yml logs api worker web mcp"
   exit 1
 fi

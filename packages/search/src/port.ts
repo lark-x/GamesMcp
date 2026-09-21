@@ -2,7 +2,13 @@ import type { DocumentSummary } from "@gip/contracts";
 import type { DocumentType } from "@gip/contracts";
 import type { ResolverCandidate } from "./entity-resolver.js";
 
-export type SearchMatchType = "fts" | "trgm" | "prefix" | "exact";
+/**
+ * Match classes emitted by the SQL search port. `substring` is the tier that
+ * makes CJK queries work: PostgreSQL FTS cannot segment Chinese (the `simple`
+ * config collapses a whole sentence into one token), so a real substring hit
+ * is the only signal that a phrase actually occurs in the text.
+ */
+export type SearchMatchType = "fts" | "trgm" | "prefix" | "substring" | "exact";
 
 export type SearchSurface = "structured" | "document" | "segment" | "dialogue";
 

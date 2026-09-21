@@ -36,13 +36,13 @@ echo "==> Updating to version: ${TARGET_VERSION}"
 export GAMESMCP_VERSION="${TARGET_VERSION}"
 
 echo "==> Pulling target image version..."
-if ! docker compose -f "${COMPOSE_FILE}" pull api worker web; then
+if ! docker compose -f "${COMPOSE_FILE}" pull api worker web mcp; then
   echo "ERROR: Failed to pull target images for version ${TARGET_VERSION}"
   exit 1
 fi
 
 echo "==> Applying updated containers..."
-docker compose -f "${COMPOSE_FILE}" up -d api worker web
+docker compose -f "${COMPOSE_FILE}" up -d api worker web mcp
 
 echo "==> Verifying health after update..."
 if bash "${SCRIPT_DIR}/health-check.sh"; then

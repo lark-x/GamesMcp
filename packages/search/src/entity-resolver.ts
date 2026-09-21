@@ -32,6 +32,8 @@ export type ResolverCandidate = {
   matchTier?: EntityMatchTier;
   matchedText?: string;
   matchConfidence?: number;
+  /** Raw trigram similarity behind a `trigram` tier, when the port reports it. */
+  rawSimilarity?: number | null;
 };
 
 export function matchedByForTier(tier: SearchTierName | "none"): ResolvedEntity["matchedBy"] {

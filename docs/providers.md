@@ -2,7 +2,7 @@
 
 GamesMcp exposes one MCP server to AI clients and can route selected calls to game knowledge providers. Genshin uses Istaroth. StarRail currently has a local baseline provider and a migration path to a StarRail Istaroth checkpoint.
 
-The gateway keeps the existing PostgreSQL/revision/evidence/search stack intact. Existing tools such as `search_lore`, `search_dialogue`, `get_character`, `get_weapon`, and `resolve_entity` continue to use the local GamesMcp implementation. New provider calls use separate tools:
+The gateway keeps the existing PostgreSQL/revision/evidence/search stack intact. Existing tools such as `search`, `get_character`, `get_equipment`, and `resolve_entity` continue to use the local GamesMcp implementation. New provider calls use separate tools:
 
 - `search_game_knowledge`
 - `get_game_document`

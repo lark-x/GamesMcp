@@ -50,21 +50,14 @@ const MCP_TOOLS = [
   "get_game_capabilities",
   "get_character",
   "get_material",
-  "get_weapon",
+  "get_equipment",
   "get_enemy",
   "resolve_entity",
-  "search_dialogue",
-  "search_entities",
-  "get_entity",
-  "search_lore",
-  "search_quests",
+  "search",
   "get_quest",
-  "get_lore_document",
+  "get_document",
   "get_relationships",
   "get_entity_texts",
-  "search_items",
-  "get_item_text",
-  "search_mechanics",
 ] as const;
 type McpTool = (typeof MCP_TOOLS)[number];
 
@@ -922,36 +915,22 @@ function mcpQuestion(tool: McpTool, seed: McpSeed): string {
       return `「${seed.name}」是什么元素`;
     case "get_material":
       return `「${seed.name}」是什么类别`;
-    case "get_weapon":
+    case "get_equipment":
       return `「${seed.name}」是什么武器类型`;
     case "get_enemy":
       return `「${seed.name}」会掉落什么`;
     case "resolve_entity":
       return `「${seed.name}」对应哪个实体`;
-    case "search_dialogue":
+    case "search":
       return `搜索台词「${queryFragment(seed.body)}」`;
-    case "search_entities":
-      return `搜索实体「${seed.name}」`;
-    case "get_entity":
-      return `读取实体「${seed.name}」`;
-    case "search_lore":
-      return `搜索文档「${seed.title}」`;
-    case "search_quests":
-      return `搜索任务「${seed.title}」`;
     case "get_quest":
       return `读取任务「${seed.title}」`;
-    case "get_lore_document":
+    case "get_document":
       return `读取文档「${seed.title}」`;
     case "get_relationships":
       return `查询「${seed.name}」的关系`;
     case "get_entity_texts":
       return `查询「${seed.name}」绑定的文本`;
-    case "search_items":
-      return `搜索物品「${seed.name}」`;
-    case "get_item_text":
-      return `读取物品「${seed.name}」文本`;
-    case "search_mechanics":
-      return `搜索机制说明「${queryFragment(seed.body)}」`;
   }
 }
 
@@ -983,7 +962,7 @@ function generatedMcpCases(corpus: Corpus): McpGoldenCase[] {
         seeds: seedsFromStructured(corpus, "material"),
       },
       {
-        tool: "get_weapon",
+        tool: "get_equipment",
         count: 23,
         requiredField: "weaponType",
         seeds: seedsFromStructured(corpus, "weapon"),
@@ -1001,34 +980,55 @@ function generatedMcpCases(corpus: Corpus): McpGoldenCase[] {
         seeds: seedsFromCharacterStories(corpus),
       },
       {
-        tool: "search_dialogue",
+        tool: "search",
         count: 19,
         requiredField: "hits",
         seeds: seedsFromDialogue(corpus),
       },
+      // The remaining search recipes preserve the coverage of the per-surface
+      // search_* tools that the unified search absorbed (entity index, lore
+      // documents, quests, items and mechanism text).
       {
-        tool: "search_entities",
+        tool: "search",
         count: 12,
-        requiredField: "entities",
+        requiredField: "hits",
         seeds: seedsFromCharacterStories(corpus),
       },
       {
-        tool: "get_entity",
-        count: 12,
-        requiredField: "entity",
-        seeds: seedsFromCharacterStoryEntityIds(corpus),
-      },
-      {
-        tool: "search_lore",
+        tool: "search",
         count: 12,
         requiredField: "hits",
         seeds: seedsFromDocuments(corpus, ["quest", "book", "character_story", "item"]),
       },
       {
-        tool: "search_quests",
+        tool: "search",
         count: 12,
-        requiredField: "quests",
+        requiredField: "hits",
         seeds: seedsFromDocuments(corpus, ["quest"]),
+      },
+      {
+        tool: "search",
+        count: 8,
+        requiredField: "hits",
+        seeds: seedsFromItems(corpus),
+      },
+      {
+        tool: "search",
+        count: 1,
+        requiredField: "hits",
+        seeds: seedsFromItems(corpus),
+      },
+      {
+        tool: "get_document",
+        count: 12,
+        requiredField: "document",
+        seeds: seedsFromCharacterStoryEntityIds(corpus),
+      },
+      {
+        tool: "get_document",
+        count: 8,
+        requiredField: "document",
+        seeds: seedsFromStructured(corpus, "material"),
       },
       {
         tool: "get_quest",
@@ -1037,7 +1037,7 @@ function generatedMcpCases(corpus: Corpus): McpGoldenCase[] {
         seeds: seedsFromDocuments(corpus, ["quest"]),
       },
       {
-        tool: "get_lore_document",
+        tool: "get_document",
         count: 8,
         requiredField: "document",
         seeds: seedsFromDocuments(corpus, ["quest", "book", "character_story", "item"]),
@@ -1054,14 +1054,6 @@ function generatedMcpCases(corpus: Corpus): McpGoldenCase[] {
         requiredField: "bindings",
         seeds: seedsFromCharacterStoryEntityIds(corpus),
       },
-      { tool: "search_items", count: 8, requiredField: "items", seeds: seedsFromItems(corpus) },
-      {
-        tool: "get_item_text",
-        count: 8,
-        requiredField: "item",
-        seeds: seedsFromStructured(corpus, "material"),
-      },
-      { tool: "search_mechanics", count: 1, requiredField: "hits", seeds: seedsFromItems(corpus) },
     ];
   const cases: McpGoldenCase[] = [];
   let sequence = 1;

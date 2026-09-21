@@ -122,8 +122,44 @@ services:
     image: "ghcr.io/lark-x/gamesmcp-web:${GAMESMCP_VERSION:?GAMESMCP_VERSION is required}"
     depends_on:
       - api
+      - mcp
     ports:
       - "127.0.0.1:4173:80"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1/"]
+
+  mcp:
+    image: "ghcr.io/lark-x/gamesmcp-mcp:${GAMESMCP_VERSION:?GAMESMCP_VERSION is required}"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://gip:gip@postgres:5432/gip
+      DATA_DIR: /app/data
+      MCP_HTTP_ENABLED: "true"
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 4200
+      MCP_PATH: /mcp
+      GAMESMCP_ISTAROTH_URL: http://istaroth:8000/mcp
+      GAMESMCP_GENSHIN_ISTAROTH_URL: http://istaroth:8000/mcp
+      GAMESMCP_STARRAIL_ISTAROTH_URL: http://istaroth-starrail:8000/mcp
+      GAMESMCP_STARRAIL_DATA_DIR: /app/data/games/starrail/turn-based-game-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4200:4200"
+    volumes:
+      - "${DATA_DIR:?DATA_DIR must point to a persistent external data directory}:/app/data"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4200/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10

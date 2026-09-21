@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QuestDetail, QuestSearchHit, StoryCatalog as ApiStoryCatalog } from "../../api.js";
 import { api, apiFetch } from "../../api.js";
 import { mapQuestDetail, mergeQuestPages } from "../../codex/mappers.js";
-import { completenessLabel, isStarRailGame, questTypeLabel } from "../../shared.js";
+import {
+  completenessLabel,
+  getQuestTypeOptions,
+  isStarRailGame,
+  questTypeLabel,
+} from "../../shared.js";
 import { ArchiveEmpty, ArchiveError } from "../ArchiveStates.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
@@ -67,18 +72,41 @@ export function StoryBrowser({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
-  const [activeSubquestKey, setActiveSubquestKey] = useState<string | undefined>();
   const [highlightNodeKey, setHighlightNodeKey] = useState<string | undefined>();
   const [travelerPrefs, setTravelerPrefs] = useState<ProtagonistPreferences>(() =>
     loadProtagonistPreferences(isStarRail),
   );
   const abortRef = useRef<AbortController | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
+  const lastGameIdRef = useRef(gameId);
 
   // Synchronize preference state when switching between games
   useEffect(() => {
     setTravelerPrefs(loadProtagonistPreferences(isStarRail));
   }, [isStarRail, gameId]);
+
+  // A type value from the other game's vocabulary must not survive a game
+  // switch.  Otherwise the API receives a legacy/foreign type and the reader
+  // can show a stale tree or an unrelated compatibility result.
+  useEffect(() => {
+    const supportedTypes = new Set(getQuestTypeOptions(isStarRail).map(([value]) => value));
+    setFilters((current) =>
+      supportedTypes.has(current.type) ? current : { ...current, type: "" },
+    );
+  }, [isStarRail, gameId]);
+
+  // A quest key is scoped to a game. Clear the old detail when the selector
+  // changes so a failed lookup in the new game cannot leave the previous
+  // game's title and body on screen.
+  useEffect(() => {
+    if (lastGameIdRef.current === gameId) return;
+    lastGameIdRef.current = gameId;
+    setQuest(null);
+    setCursor(undefined);
+    setHighlightNodeKey(undefined);
+    setDetailError("");
+    onQuestKeyChange?.(undefined, "replace");
+  }, [gameId, onQuestKeyChange]);
 
   function updateTravelerPrefs(patch: Partial<ProtagonistPreferences>) {
     setTravelerPrefs((prev) => {
@@ -104,17 +132,19 @@ export function StoryBrowser({
 
       setCatalogLoading(true);
       setCatalogError("");
+      // A catalog request is independent from the quest search request. Clear
+      // the previous tree before starting both so a slow/failed response can
+      // never leave a prior type filter rendered over the new result.
+      setCatalog(null);
       try {
-        try {
-          const catalogResult = await api.storyCatalog(gameId, {
+        const catalogRequest = api
+          .storyCatalog(gameId, {
             revisionId: selectedRevision,
-          });
-          if (catalogResult && catalogResult.regions && catalogResult.regions.length > 0) {
-            setCatalog(catalogResult);
-          }
-        } catch {
-          // Fallback if catalog not ready
-        }
+            locale: nextFilters.locale,
+            type: nextFilters.type ? (nextFilters.type as QuestSearchHit["type"]) : undefined,
+            signal: controller.signal,
+          })
+          .catch(() => null);
 
         const params = new URLSearchParams({ locale: nextFilters.locale ?? "zh-CN", limit: "100" });
         if (nextFilters.query.trim()) params.set("q", nextFilters.query.trim());
@@ -125,6 +155,11 @@ export function StoryBrowser({
           { signal: controller.signal },
         );
         setEntries(result.quests.map(toEntry));
+
+        const catalogResult = await catalogRequest;
+        if (!controller.signal.aborted && catalogResult) {
+          setCatalog(catalogResult);
+        }
       } catch (reason) {
         if (
           controller.signal.aborted ||
@@ -165,6 +200,7 @@ export function StoryBrowser({
         setQuest((current) => (options?.cursor && current ? mergeQuestPages(current, page) : page));
         setCursor(page.nextCursor);
       } catch (reason) {
+        if (!options?.cursor) setQuest(null);
         setDetailError(reason instanceof Error ? reason.message : "任务详情加载失败");
       } finally {
         setDetailLoading(false);
@@ -180,7 +216,6 @@ export function StoryBrowser({
       return;
     }
     if (quest?.questKey === initialQuestKey) return;
-    setActiveSubquestKey(undefined);
     setCursor(undefined);
     setHighlightNodeKey(undefined);
     void openQuest(initialQuestKey);
@@ -190,7 +225,6 @@ export function StoryBrowser({
   useEffect(() => {
     if (!quest?.questKey) return;
     setCursor(undefined);
-    setActiveSubquestKey(undefined);
     setHighlightNodeKey(undefined);
     void openQuest(quest.questKey);
   }, [filters.locale, selectedRevision]);
@@ -230,26 +264,38 @@ export function StoryBrowser({
                 {
                   key: "main",
                   label: "开拓任务",
-                  active: filters.type === "main",
-                  onSelect: () => handleFiltersChange({ type: "main" }),
+                  active: filters.type === "trailblaze_mission",
+                  onSelect: () => handleFiltersChange({ type: "trailblaze_mission" }),
                 },
                 {
                   key: "companion",
                   label: "同行任务",
-                  active: filters.type === "companion",
-                  onSelect: () => handleFiltersChange({ type: "companion" }),
+                  active: filters.type === "companion_mission",
+                  onSelect: () => handleFiltersChange({ type: "companion_mission" }),
                 },
                 {
                   key: "continuation",
                   label: "开拓续闻",
-                  active: filters.type === "continuation",
-                  onSelect: () => handleFiltersChange({ type: "continuation" }),
+                  active: filters.type === "trailblaze_continuation",
+                  onSelect: () => handleFiltersChange({ type: "trailblaze_continuation" }),
                 },
                 {
                   key: "world",
                   label: "冒险任务",
-                  active: filters.type === "world",
-                  onSelect: () => handleFiltersChange({ type: "world" }),
+                  active: filters.type === "adventure_quest",
+                  onSelect: () => handleFiltersChange({ type: "adventure_quest" }),
+                },
+                {
+                  key: "daily",
+                  label: "日常任务",
+                  active: filters.type === "daily_mission",
+                  onSelect: () => handleFiltersChange({ type: "daily_mission" }),
+                },
+                {
+                  key: "event",
+                  label: "活动任务",
+                  active: filters.type === "event_quest",
+                  onSelect: () => handleFiltersChange({ type: "event_quest" }),
                 },
               ]
             : [
@@ -277,6 +323,18 @@ export function StoryBrowser({
                   active: filters.type === "event_quest" || filters.type === "event",
                   onSelect: () => handleFiltersChange({ type: "event_quest" }),
                 },
+                {
+                  key: "commission",
+                  label: "委托",
+                  active: filters.type === "commission",
+                  onSelect: () => handleFiltersChange({ type: "commission" }),
+                },
+                {
+                  key: "hangout",
+                  label: "邀约事件",
+                  active: filters.type === "hangout",
+                  onSelect: () => handleFiltersChange({ type: "hangout" }),
+                },
               ]),
         ],
       },
@@ -285,7 +343,6 @@ export function StoryBrowser({
   );
 
   function selectEntry(entry: { questKey: string; title: string }) {
-    setActiveSubquestKey(undefined);
     setCursor(undefined);
     setHighlightNodeKey(undefined);
     onQuestKeyChange?.(entry.questKey, "push");
@@ -293,7 +350,6 @@ export function StoryBrowser({
   }
 
   function navigateToQuest(targetQuestKey: string) {
-    setActiveSubquestKey(undefined);
     setCursor(undefined);
     setHighlightNodeKey(undefined);
     onQuestKeyChange?.(targetQuestKey, "push");
@@ -345,7 +401,11 @@ export function StoryBrowser({
           ) : null}
           {!quest && !detailLoading ? (
             isStarRail && entries.length === 0 ? (
-              <div className="starrail-readiness-card" role="region" aria-label="星穹铁道档案就绪说明">
+              <div
+                className="starrail-readiness-card"
+                role="region"
+                aria-label="星穹铁道档案就绪说明"
+              >
                 <div className="starrail-readiness-badge">
                   <span>🚀 银河铁道之声 · 星海剧情档案库</span>
                 </div>
@@ -358,7 +418,11 @@ export function StoryBrowser({
                   <div className="story-pref-controls-left">
                     <div className="story-pref-group">
                       <span className="story-pref-label">开拓者设定</span>
-                      <div className="story-gender-segmented" role="radiogroup" aria-label="开拓者视角">
+                      <div
+                        className="story-gender-segmented"
+                        role="radiogroup"
+                        aria-label="开拓者视角"
+                      >
                         <button
                           type="button"
                           className={`story-gender-btn ${travelerPrefs.gender === "male" ? "is-active" : ""}`}
@@ -440,7 +504,9 @@ export function StoryBrowser({
                 </div>
 
                 <div className="starrail-readiness-info">
-                  ℹ️ <strong>数据管道状态</strong>：当前本地检索库已收录全量开拓任务对白（角色徽章 + 旁白 + 分支选项）、星轨短信、列车访客与角色故事/语音语料，并附带角色、光锥、遗器与材料结构化资料。
+                  ℹ️ <strong>数据管道状态</strong>：当前本地检索库已收录全量开拓任务对白（角色徽章 +
+                  旁白 +
+                  分支选项）、星轨短信、列车访客与角色故事/语音语料，并附带角色、光锥、遗器与材料结构化资料。
                 </div>
 
                 <div className="starrail-readiness-actions">
@@ -488,7 +554,11 @@ export function StoryBrowser({
                       <span className="story-pref-label">
                         {isStarRail ? "开拓者设定" : "主角设定"}
                       </span>
-                      <div className="story-gender-segmented" role="radiogroup" aria-label="主角视角">
+                      <div
+                        className="story-gender-segmented"
+                        role="radiogroup"
+                        aria-label="主角视角"
+                      >
                         <button
                           type="button"
                           className={`story-gender-btn ${travelerPrefs.gender === "male" ? "is-active" : ""}`}
@@ -565,64 +635,34 @@ export function StoryBrowser({
                   <span>{quest.warnings.join("；")}</span>
                 </div>
               ) : null}
-              {quest.subquests.length ? (
-                <nav className="story-subquest-row" aria-label="子任务">
-                  <button
-                    type="button"
-                    className={!activeSubquestKey ? "is-active" : ""}
-                    onClick={() => {
-                      setActiveSubquestKey(undefined);
-                      void openQuest(quest.questKey);
-                    }}
-                  >
-                    全部阶段 ({quest.subquests.length})
-                  </button>
-                  {quest.subquests.map((subquest) => (
-                    <button
-                      type="button"
-                      key={subquest.subquestKey}
-                      className={subquest.subquestKey === activeSubquestKey ? "is-active" : ""}
-                      onClick={() => {
-                        setActiveSubquestKey(subquest.subquestKey);
-                        void openQuest(quest.questKey, {
-                          subquestId: String(subquest.subquestId),
-                        });
-                      }}
-                    >
-                      {subquest.title}
-                    </button>
-                  ))}
-                </nav>
-              ) : null}
-              {activeSubquestKey ? (
-                <div className="story-active-subquest-indicator">
-                  <span>❖ 当前聚焦阶段：{quest.subquests.find((s) => s.subquestKey === activeSubquestKey)?.title}</span>
-                  <button
-                    type="button"
-                    className="story-inline-link"
-                    onClick={() => {
-                      setActiveSubquestKey(undefined);
-                      void openQuest(quest.questKey);
-                    }}
-                  >
-                    查看全部阶段剧情
-                  </button>
-                </div>
-              ) : null}
               <div className="story-prose">
                 {quest.narrative?.mode === "document" ? (
                   <div className="story-narrative-document">
-                    {quest.narrative.documentSegments && quest.narrative.documentSegments.length > 0 ? (
+                    {quest.narrative.documentSegments &&
+                    quest.narrative.documentSegments.length > 0 ? (
                       quest.narrative.documentSegments.map((seg) => (
-                        <section key={seg.segmentId} className="story-script-narration" style={{ marginBottom: "16px" }}>
-                          <span className="story-narration-glyph" aria-hidden="true">❖</span>
+                        <section
+                          key={seg.segmentId}
+                          className="story-script-narration"
+                          style={{ marginBottom: "16px" }}
+                        >
+                          <span className="story-narration-glyph" aria-hidden="true">
+                            ❖
+                          </span>
                           <div className="story-narration-content">
                             {seg.heading ? (
                               <h4 style={{ margin: "0 0 8px", color: "var(--archive-text)" }}>
                                 {formatStoryText(seg.heading, travelerPrefs)}
                               </h4>
                             ) : null}
-                            <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.8, color: "var(--archive-text)" }}>
+                            <p
+                              style={{
+                                margin: 0,
+                                whiteSpace: "pre-wrap",
+                                lineHeight: 1.8,
+                                color: "var(--archive-text)",
+                              }}
+                            >
                               {formatStoryText(seg.body, travelerPrefs)}
                             </p>
                           </div>
@@ -630,9 +670,18 @@ export function StoryBrowser({
                       ))
                     ) : quest.narrative.documentBody ? (
                       <section className="story-script-narration">
-                        <span className="story-narration-glyph" aria-hidden="true">❖</span>
+                        <span className="story-narration-glyph" aria-hidden="true">
+                          ❖
+                        </span>
                         <div className="story-narration-content">
-                          <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.8, color: "var(--archive-text)" }}>
+                          <p
+                            style={{
+                              margin: 0,
+                              whiteSpace: "pre-wrap",
+                              lineHeight: 1.8,
+                              color: "var(--archive-text)",
+                            }}
+                          >
                             {formatStoryText(quest.narrative.documentBody, travelerPrefs)}
                           </p>
                         </div>
@@ -643,14 +692,18 @@ export function StoryBrowser({
                   </div>
                 ) : quest.narrative?.mode === "objective_only" ? (
                   <div className="story-narrative-objectives">
-                    <p className="muted" style={{ marginBottom: "12px" }}>此任务为目标型任务，无独立角色对白记录：</p>
+                    <p className="muted" style={{ marginBottom: "12px" }}>
+                      此任务为目标型任务，无独立角色对白记录：
+                    </p>
                     {quest.subquests.map((sub) => (
                       <div key={sub.subquestKey} className="story-script-objective">
                         <span className="story-objective-badge">目标</span>
                         <div style={{ flex: 1 }}>
                           <strong>{formatStoryText(sub.title, travelerPrefs)}</strong>
                           {sub.objective ? (
-                            <p style={{ margin: "4px 0 0", color: "var(--archive-text-secondary)" }}>
+                            <p
+                              style={{ margin: "4px 0 0", color: "var(--archive-text-secondary)" }}
+                            >
                               {formatStoryText(sub.objective, travelerPrefs)}
                             </p>
                           ) : null}
@@ -712,7 +765,13 @@ export function StoryBrowser({
           ) : null}
         </article>
       }
-      inspector={<StoryInspector quest={quest} onSelectCitation={handleSelectCitation} />}
+      inspector={
+        <StoryInspector
+          quest={quest}
+          isStarRail={isStarRail}
+          onSelectCitation={handleSelectCitation}
+        />
+      }
     />
   );
 }

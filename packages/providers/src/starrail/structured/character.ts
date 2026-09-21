@@ -3,6 +3,7 @@ import type { StarRailCharacter } from "./types.js";
 import type { StarRailSourceInventory } from "../source/inventory.js";
 import type { StarRailTextMapResolver } from "../source/textmap.js";
 import { readSafeJsonFile } from "../extractors/shared.js";
+import { normalizeStarRailLabel } from "../corpus/normalizer.js";
 import { configNumber, formatConfigText } from "./values.js";
 
 // AvatarBaseType -> 命途中文名
@@ -127,7 +128,13 @@ export class StarRailCharacterExtractor {
           const pointId = Number(t.PointID ?? t.ID);
           const avatarId = Number(t.AvatarID);
           if (!Number.isInteger(pointId) || !Number.isInteger(avatarId)) continue;
-          const name = this.resolveHash(t.PointName) ?? `行迹 ${pointId}`;
+          // Skill-tree rows whose PointName has no upstream text are the level-up
+          // nodes already surfaced by the skill list, plus unnamed stat nodes.
+          // Synthesizing "行迹 <id>" only produced placeholder noise in the UI.
+          const resolvedName = this.resolveHash(t.PointName);
+          if (!resolvedName) continue;
+          const name = normalizeStarRailLabel(resolvedName);
+          if (!name) continue;
           const description = this.resolveHash(t.PointDesc) ?? "";
           const costs: Array<{ id: number; count: number }> = [];
           if (Array.isArray(t.MaterialList)) {
@@ -190,10 +197,11 @@ export class StarRailCharacterExtractor {
       const path = String(a.AvatarBaseType ?? "Destruction");
       const element = String(a.DamageType ?? "Physical");
       // 开拓者多形态的名称是 {NICKNAME} 模板；用命途区分形态。
+      // 其余名称仍可能带 <unbreak> 等上游富文本标记，统一按展示标签清洗。
       const name =
         rawName === "{NICKNAME}" || rawName === "开拓者"
           ? `开拓者•${pathCn(path)}`
-          : rawName || `角色 ${id}`;
+          : normalizeStarRailLabel(rawName) || `角色 ${id}`;
       const rarity = a.Rarity === "CombatPowerAvatarRarityType5" || a.Rarity === 5 ? 5 : 4;
       const stats = baseStats.get(id);
 
@@ -217,7 +225,19 @@ export class StarRailCharacterExtractor {
     if (characters.length === 0 && this.fixture) {
       return this.getBaselineCharacters();
     }
-    return characters;
+    // The Trailblazer ships as a male/female pair per path (8001/8002, 8003/8004,
+    // ...) that differ only in gender, so the list showed each playable form
+    // twice under one name. Identity for display purposes is name + path +
+    // element; the two March 7th entries differ by path and element and survive.
+    const seenForms = new Set<string>();
+    const deduped: StarRailCharacter[] = [];
+    for (const character of characters) {
+      const formKey = `${character.name}::${character.path}::${character.element}`;
+      if (seenForms.has(formKey)) continue;
+      seenForms.add(formKey);
+      deduped.push(character);
+    }
+    return deduped;
   }
 
   private getBaselineCharacters(): StarRailCharacter[] {

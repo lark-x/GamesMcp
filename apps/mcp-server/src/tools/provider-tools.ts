@@ -26,13 +26,13 @@ export function registerGameProviderTools(
     "search_game_knowledge",
     "Search external game knowledge providers through the GamesMcp gateway.",
     {
-      game: gameInput,
+      game_id: gameInput,
       query: queryInput,
       mode: z.enum(["hybrid", "keyword"]).default("hybrid"),
       intent: z.enum(["balanced", "context", "variety", "lookup"]).default("balanced"),
       limit: z.number().int().min(1).max(10).default(5),
     },
-    async ({ game, query, mode, intent, limit }) => {
+    async ({ game_id: game, query, mode, intent, limit }) => {
       try {
         const provider = requireProvider(registry, game, "knowledge_search");
         if (mode === "keyword" && !provider.capabilities.includes("keyword_search"))
@@ -62,12 +62,12 @@ export function registerGameProviderTools(
     "get_game_document",
     "Read a provider document page by document id.",
     {
-      game: gameInput,
+      game_id: gameInput,
       document_id: documentIdInput,
       cursor: z.number().int().min(0).default(0),
       limit: z.number().int().min(1).max(100).default(20),
     },
-    async ({ game, document_id, cursor, limit }) => {
+    async ({ game_id: game, document_id, cursor, limit }) => {
       try {
         const provider = requireProvider(registry, game, "document_read");
         const response = await provider.getDocument({
@@ -96,8 +96,8 @@ export function registerGameProviderTools(
   server.tool(
     "get_game_document_hierarchy",
     "Read the hierarchy for a provider document.",
-    { game: gameInput, document_id: documentIdInput },
-    async ({ game, document_id }) => {
+    { game_id: gameInput, document_id: documentIdInput },
+    async ({ game_id: game, document_id }) => {
       try {
         const provider = requireProvider(registry, game, "document_hierarchy");
         if (!provider.getHierarchy) throw new GameProviderError("provider_not_supported");
@@ -119,8 +119,8 @@ export function registerGameProviderTools(
   server.tool(
     "get_game_provider_status",
     "Show external provider health for a game.",
-    { game: gameInput.optional() },
-    async ({ game }) => {
+    { game_id: gameInput.optional() },
+    async ({ game_id: game }) => {
       try {
         return textResult({
           game: game ? normalizeGameSlug(game) : undefined,

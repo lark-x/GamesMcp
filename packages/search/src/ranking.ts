@@ -16,6 +16,8 @@ export const SEARCH_TIERS = {
   exactTitle: 10,
   exactAlias: 9,
   titlePrefix: 8,
+  /** Literal substring hit: outranks FTS/trigram, below exact and prefix. */
+  substring: 7,
   ftsRank: 6,
   trigramTitle: 5,
   bodyFts: 4,
@@ -30,6 +32,7 @@ export const SEARCH_TIERS = {
 export const SEARCH_MATCH_TYPE_TIERS = {
   exact: SEARCH_TIERS.exactTitle,
   prefix: SEARCH_TIERS.titlePrefix,
+  substring: SEARCH_TIERS.substring,
   fts: SEARCH_TIERS.ftsRank,
   trgm: SEARCH_TIERS.bodyTrigram,
 } as const;

@@ -33,6 +33,7 @@ import {
 } from "./schema.js";
 import {
   asRecord,
+  hydrateManifestRecords,
   insertInChunks,
   normalize,
   recordLocale,
@@ -43,6 +44,153 @@ import {
 import { materializeStructuredRecords } from "./repository-import-publication.js";
 
 type TextBindingInsert = typeof textBindings.$inferInsert;
+
+type BulkColumn = {
+  property: string;
+  name: string;
+  pgType: string;
+};
+
+/**
+ * Insert a revision-scoped read-model batch through one JSONB parameter.
+ *
+ * PostgreSQL limits a regular INSERT's bind parameters to 65535.  The
+ * dialogue corpus can have tens of thousands of rows per flush, and the
+ * generated search/index columns make hundreds of small INSERT statements
+ * unnecessarily expensive.  jsonb_to_recordset keeps the payload bound as
+ * one parameter while retaining normal typed columns and FK/index checks.
+ */
+async function insertJsonbRows(
+  tx: { execute: (query: any) => any },
+  tableName: string,
+  columns: readonly BulkColumn[],
+  rows: unknown[],
+  chunkSize: number,
+): Promise<void> {
+  if (!rows.length) return;
+  const quotedTable = tableName
+    .split(".")
+    .map((part) => `"${part.replaceAll('"', '""')}"`)
+    .join(".");
+  const columnList = columns.map((column) => `"${column.name}"`).join(", ");
+  const selectList = columns.map((column) => `x."${column.name}"`).join(", ");
+  const definitions = columns
+    .map((column) => `"${column.name}" ${column.pgType}`)
+    .join(", ");
+
+  for (let offset = 0; offset < rows.length; offset += chunkSize) {
+    const chunk = rows.slice(offset, offset + chunkSize).map((row) => {
+      const source = row as Record<string, unknown>;
+      return Object.fromEntries(
+        columns.map((column) => [column.name, source[column.property]]),
+      );
+    });
+    await tx.execute(sql`
+      insert into ${sql.raw(quotedTable)} (${sql.raw(columnList)})
+      select ${sql.raw(selectList)}
+      from jsonb_to_recordset(${JSON.stringify(chunk)}::jsonb)
+        as x(${sql.raw(definitions)})
+    `);
+  }
+}
+
+const DOCUMENT_BULK_COLUMNS: BulkColumn[] = [
+  { property: "id", name: "id", pgType: "uuid" },
+  { property: "gameId", name: "game_id", pgType: "uuid" },
+  { property: "sourceKey", name: "source_key", pgType: "text" },
+  { property: "type", name: "type", pgType: "text" },
+  { property: "title", name: "title", pgType: "text" },
+  { property: "normalizedTitle", name: "normalized_title", pgType: "text" },
+  { property: "gameVersion", name: "game_version", pgType: "text" },
+  { property: "locale", name: "locale", pgType: "text" },
+  { property: "sourceSnapshotId", name: "source_snapshot_id", pgType: "uuid" },
+  { property: "body", name: "body", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "deleted", name: "deleted", pgType: "boolean" },
+];
+
+const SEGMENT_BULK_COLUMNS: BulkColumn[] = [
+  { property: "id", name: "id", pgType: "uuid" },
+  { property: "documentId", name: "document_id", pgType: "uuid" },
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "segmentKey", name: "segment_key", pgType: "text" },
+  { property: "ordinal", name: "ordinal", pgType: "integer" },
+  { property: "headingPath", name: "heading_path", pgType: "jsonb" },
+  { property: "headingKey", name: "heading_key", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+  { property: "body", name: "body", pgType: "text" },
+  { property: "startOffset", name: "start_offset", pgType: "integer" },
+  { property: "endOffset", name: "end_offset", pgType: "integer" },
+  { property: "tokenEstimate", name: "token_estimate", pgType: "integer" },
+  { property: "contentHash", name: "content_hash", pgType: "text" },
+  { property: "searchText", name: "search_text", pgType: "text" },
+];
+
+const MENTION_BULK_COLUMNS: BulkColumn[] = [
+  { property: "entityId", name: "entity_id", pgType: "uuid" },
+  { property: "segmentId", name: "segment_id", pgType: "uuid" },
+  { property: "rawText", name: "raw_text", pgType: "text" },
+  { property: "startOffset", name: "start_offset", pgType: "integer" },
+  { property: "endOffset", name: "end_offset", pgType: "integer" },
+  { property: "matchMethod", name: "match_method", pgType: "text" },
+  { property: "confidence", name: "confidence", pgType: "numeric" },
+];
+
+const SUBQUEST_BULK_COLUMNS: BulkColumn[] = [
+  { property: "documentId", name: "document_id", pgType: "uuid" },
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "questKey", name: "quest_key", pgType: "text" },
+  { property: "subquestKey", name: "subquest_key", pgType: "text" },
+  { property: "subquestId", name: "subquest_id", pgType: "text" },
+  { property: "ordinal", name: "ordinal", pgType: "integer" },
+  { property: "title", name: "title", pgType: "text" },
+  { property: "objective", name: "objective", pgType: "text" },
+  { property: "completeness", name: "completeness", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const DIALOGUE_NODE_BULK_COLUMNS: BulkColumn[] = [
+  { property: "documentId", name: "document_id", pgType: "uuid" },
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "questKey", name: "quest_key", pgType: "text" },
+  { property: "subquestKey", name: "subquest_key", pgType: "text" },
+  { property: "nodeKey", name: "node_key", pgType: "text" },
+  { property: "nodeId", name: "node_id", pgType: "text" },
+  { property: "nodeType", name: "node_type", pgType: "text" },
+  { property: "speakerKey", name: "speaker_key", pgType: "text" },
+  { property: "speakerName", name: "speaker_name", pgType: "text" },
+  { property: "body", name: "body", pgType: "text" },
+  { property: "segmentId", name: "segment_id", pgType: "uuid" },
+  { property: "ordinal", name: "ordinal", pgType: "integer" },
+  { property: "variants", name: "variants", pgType: "jsonb" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const DIALOGUE_EDGE_BULK_COLUMNS: BulkColumn[] = [
+  { property: "documentId", name: "document_id", pgType: "uuid" },
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "questKey", name: "quest_key", pgType: "text" },
+  { property: "fromNodeKey", name: "from_node_key", pgType: "text" },
+  { property: "toNodeKey", name: "to_node_key", pgType: "text" },
+  { property: "edgeType", name: "edge_type", pgType: "text" },
+  { property: "optionText", name: "option_text", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const TEXT_BINDING_BULK_COLUMNS: BulkColumn[] = [
+  { property: "id", name: "id", pgType: "uuid" },
+  { property: "gameId", name: "game_id", pgType: "uuid" },
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "entityType", name: "entity_type", pgType: "text" },
+  { property: "entityStableId", name: "entity_stable_id", pgType: "text" },
+  { property: "documentId", name: "document_id", pgType: "uuid" },
+  { property: "segmentId", name: "segment_id", pgType: "uuid" },
+  { property: "bindingType", name: "binding_type", pgType: "text" },
+  { property: "confidence", name: "confidence", pgType: "numeric" },
+  { property: "bindingSource", name: "binding_source", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
 
 function directBindingTypeForDocument(
   documentType: string | undefined,
@@ -63,7 +211,11 @@ function directBindingTypeForDocument(
  * job first clears only this preparing revision's rows, making worker retries
  * idempotent without changing the currently published revision.
  */
-export async function materializeRevision(db: Database, revisionId: string): Promise<void> {
+export async function materializeRevision(
+  db: Database,
+  revisionId: string,
+  options: { repairPublished?: boolean } = {},
+): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.execute(
       sql`select id from knowledge.dataset_revisions where id = ${revisionId}::uuid for update`,
@@ -78,8 +230,13 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
         "revision_materialization_missing",
         "Preparing revision payload is missing",
       );
-    if (revision.lifecycleStatus === "published" && revision.indexStatus === "ready") return;
-    if (revision.lifecycleStatus !== "preparing")
+    if (
+      !options.repairPublished &&
+      revision.lifecycleStatus === "published" &&
+      revision.indexStatus === "ready"
+    )
+      return;
+    if (!options.repairPublished && revision.lifecycleStatus !== "preparing")
       throw new DomainError(
         "revision_materialization_invalid_state",
         `Revision ${revisionId} is not preparing`,
@@ -87,7 +244,13 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
         409,
       );
 
-    const records = revision.normalizedRecords;
+    const records = revision.manifestId
+      ? await hydrateManifestRecords(
+          tx as Database,
+          revision.manifestId,
+          revision.normalizedRecords,
+        )
+      : revision.normalizedRecords;
     const provenance = asRecord(revision.provenance);
     const recordedBatchIds = Array.isArray(provenance.batchIds)
       ? provenance.batchIds.filter((value): value is string => typeof value === "string")
@@ -246,6 +409,12 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       string,
       { id: string; segments: Array<{ id: string; body: string }> }
     >();
+    const documentRows: Array<typeof documents.$inferInsert> = [];
+    const segmentRows: Array<typeof documentSegments.$inferInsert> = [];
+    const mentionRows: Array<typeof entityMentions.$inferInsert> = [];
+    const subquestRows: Array<typeof questSubquests.$inferInsert> = [];
+    const dialogueNodeRows: Array<typeof questDialogueNodes.$inferInsert> = [];
+    const dialogueEdgeRows: Array<typeof questDialogueEdges.$inferInsert> = [];
     const textBindingRows: TextBindingInsert[] = [];
     const addTextBinding = (input: Omit<TextBindingInsert, "id" | "gameId" | "revisionId">) => {
       textBindingRows.push({
@@ -265,6 +434,66 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
         ...input,
       });
     };
+    const flushDocumentRows = async (): Promise<void> => {
+      // Keep the transaction bounded while avoiding the parameter-heavy SQL
+      // generated by a regular multi-row INSERT. Documents must exist before
+      // their dependent segments; all remaining rows can then be inserted in
+      // the same order through jsonb_to_recordset.
+      if (documentRows.length) {
+        const rows = documentRows.splice(0);
+        await insertJsonbRows(tx, "knowledge.documents", DOCUMENT_BULK_COLUMNS, rows, 2_000);
+      }
+      if (segmentRows.length) {
+        const rows = segmentRows.splice(0);
+        await insertJsonbRows(
+          tx,
+          "knowledge.document_segments",
+          SEGMENT_BULK_COLUMNS,
+          rows,
+          20_000,
+        );
+      }
+      if (mentionRows.length) {
+        const rows = mentionRows.splice(0);
+        await insertJsonbRows(
+          tx,
+          "knowledge.entity_mentions",
+          MENTION_BULK_COLUMNS,
+          rows,
+          20_000,
+        );
+      }
+      if (subquestRows.length) {
+        const rows = subquestRows.splice(0);
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_subquests",
+          SUBQUEST_BULK_COLUMNS,
+          rows,
+          20_000,
+        );
+      }
+      if (dialogueNodeRows.length) {
+        const rows = dialogueNodeRows.splice(0);
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_dialogue_nodes",
+          DIALOGUE_NODE_BULK_COLUMNS,
+          rows,
+          20_000,
+        );
+      }
+      if (dialogueEdgeRows.length) {
+        const rows = dialogueEdgeRows.splice(0);
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_dialogue_edges",
+          DIALOGUE_EDGE_BULK_COLUMNS,
+          rows,
+          20_000,
+        );
+      }
+    };
     for (const record of records) {
       if (record.recordType === "entity" || record.entityType) continue;
       if (!record.title && !record.body) continue;
@@ -280,7 +509,7 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       const documentId = stableUuid(
         `${revision.gameId}:document:${record.sourceKey}:${revisionId}`,
       );
-      await tx.insert(documents).values({
+      documentRows.push({
         id: documentId,
         gameId: revision.gameId,
         sourceKey: record.sourceKey,
@@ -315,7 +544,7 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       for (const [ordinal, segment] of recordSegments(record, body).entries()) {
         const segmentId = stableUuid(`${documentId}:segment:${ordinal}:${record.contentHash}`);
         if (segment.segmentKey) segmentIdByKey.set(segment.segmentKey, segmentId);
-        await tx.insert(documentSegments).values({
+        segmentRows.push({
           id: segmentId,
           documentId,
           revisionId,
@@ -341,7 +570,7 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
             .map((name) => ({ name, offset: segment.body.indexOf(name) }))
             .find((value) => value.offset >= 0);
           if (!matched) continue;
-          await tx.insert(entityMentions).values({
+          mentionRows.push({
             entityId: entityIdBySourceKey.get(candidateValue.sourceKey)!,
             segmentId,
             rawText: matched.name,
@@ -369,8 +598,8 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       }
       if (record.quest) {
         if (record.quest.subquests.length)
-          await tx.insert(questSubquests).values(
-            record.quest.subquests.map((subquest) => ({
+          subquestRows.push(
+            ...record.quest.subquests.map((subquest) => ({
               documentId,
               revisionId,
               questKey: record.quest!.questKey,
@@ -384,10 +613,8 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
             })),
           );
         if (record.quest.dialogueNodes.length)
-          await insertInChunks(
-            tx,
-            questDialogueNodes,
-            record.quest.dialogueNodes.map((node, index) => ({
+          dialogueNodeRows.push(
+            ...record.quest.dialogueNodes.map((node, index) => ({
               documentId,
               revisionId,
               questKey: record.quest!.questKey,
@@ -423,10 +650,8 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
           });
         }
         if (record.quest.dialogueEdges.length)
-          await insertInChunks(
-            tx,
-            questDialogueEdges,
-            [
+          dialogueEdgeRows.push(
+            ...[
               ...new Map(
                 record.quest.dialogueEdges.map((edge) => [
                   [edge.fromNodeKey, edge.toNodeKey, edge.type, edge.optionText ?? ""].join(
@@ -448,7 +673,16 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
           );
       }
       documentBySourceKey.set(record.sourceKey, { id: documentId, segments: segmentRefs });
+      if (
+        documentRows.length >= 2_000 ||
+        segmentRows.length >= 20_000 ||
+        mentionRows.length >= 20_000 ||
+        dialogueNodeRows.length >= 20_000 ||
+        dialogueEdgeRows.length >= 20_000
+      )
+        await flushDocumentRows();
     }
+    await flushDocumentRows();
 
     for (const record of records) {
       for (const relation of record.relationships ?? []) {
@@ -543,7 +777,13 @@ export async function materializeRevision(db: Database, revisionId: string): Pro
       ...new Map(textBindingRows.map((row) => [row.id ?? "", row])).values(),
     ];
     if (uniqueTextBindingRows.length)
-      await insertInChunks(tx, textBindings, uniqueTextBindingRows);
+      await insertJsonbRows(
+        tx,
+        "knowledge.text_bindings",
+        TEXT_BINDING_BULK_COLUMNS,
+        uniqueTextBindingRows,
+        20_000,
+      );
 
     const expectedDocuments = records.filter(
       (record) =>

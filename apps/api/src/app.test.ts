@@ -321,6 +321,34 @@ describe("API", () => {
     await app.close();
   });
 
+  it("passes story catalog type and locale filters to the repository", async () => {
+    let seen: { revisionId?: string; locale?: string; questType?: string } = {};
+    const app = appWith({
+      getStoryCatalog: async (_gameId, requestedRevisionId, options) => {
+        seen = {
+          revisionId: requestedRevisionId,
+          locale: options?.locale,
+          questType: options?.questType,
+        };
+        return { gameId, revisionId: requestedRevisionId ?? null, regions: [] };
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/story/catalog?revisionId=${revisionId}&locale=en&type=world_quest`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(seen).toEqual({ revisionId, locale: "en", questType: "world_quest" });
+
+    const starRailResponse = await app.inject({
+      method: "GET",
+      url: `/api/games/${gameId}/story/catalog?revisionId=${revisionId}&locale=zh-CN&type=trailblaze_mission`,
+    });
+    expect(starRailResponse.statusCode).toBe(200);
+    expect(seen).toEqual({ revisionId, locale: "zh-CN", questType: "trailblaze_mission" });
+    await app.close();
+  });
+
   it("protects production admin routes with bearer authentication", async () => {
     const config = loadConfig({ NODE_ENV: "production", ADMIN_TOKEN: "test-admin-token" });
     const app = appWith({}, config);

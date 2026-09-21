@@ -53,6 +53,7 @@ import {
   type ReleaseCandidateBuild,
   type ReleaseCandidateDetail,
   type ReleaseCandidateReadiness,
+  type StoryCatalogRequest,
 } from "@gip/domain";
 import type { GameSummary } from "@gip/contracts";
 import type { Database } from "./client.js";
@@ -94,6 +95,7 @@ import * as revisionOperations from "./repository-revisions.js";
 
 import {
   mergeReleaseCandidateRecords,
+  hydrateManifestRecords,
   releaseCandidateChecksum,
   safeProvenance,
   stableEntityId,
@@ -369,8 +371,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return this.readModels.getQuest(gameId, request);
   }
 
-  async getStoryCatalog(gameId: string, revisionId?: string): Promise<StoryCatalog> {
-    return this.readModels.getStoryCatalog(gameId, revisionId);
+  async getStoryCatalog(
+    gameId: string,
+    revisionId?: string,
+    options?: StoryCatalogRequest,
+  ): Promise<StoryCatalog> {
+    return this.readModels.getStoryCatalog(gameId, revisionId, options);
   }
 
   async vectorSearch(
@@ -561,6 +567,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     parserVersion: string;
     stagedRecords?: NormalizedRecord[];
     structuredRecords?: StructuredImportRecords;
+    skipPreview?: boolean;
     errors: ValidationIssue[];
     warnings: ValidationIssue[];
     diff: ImportDiff;
@@ -579,8 +586,8 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return importOperations.getImport({ db: this.db }, batchId);
   }
 
-  async listImports(gameId?: string): Promise<ImportBatch[]> {
-    return importOperations.listImports({ db: this.db }, gameId);
+  async listImports(gameId?: string, options?: { includePayload?: boolean }): Promise<ImportBatch[]> {
+    return importOperations.listImports({ db: this.db }, gameId, options);
   }
 
   async reviewImport(
@@ -869,6 +876,12 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return revisionMaterializationOperations.materializeRevision(this.db, revisionId);
   }
 
+  async repairRevisionMaterialization(revisionId: string): Promise<void> {
+    return revisionMaterializationOperations.materializeRevision(this.db, revisionId, {
+      repairPublished: true,
+    });
+  }
+
   private async upsertObservationConflict(
     observations: SourceObservationRow[],
   ): Promise<ConflictKind | undefined> {
@@ -1021,7 +1034,11 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
   private async getRevisionRecords(
     revision: typeof datasetRevisions.$inferSelect,
   ): Promise<NormalizedRecord[]> {
-    if (revision.normalizedRecords) return revision.normalizedRecords;
+    if (revision.normalizedRecords) {
+      return revision.manifestId
+        ? hydrateManifestRecords(this.db, revision.manifestId, revision.normalizedRecords)
+        : revision.normalizedRecords;
+    }
     const rows = await this.db
       .select({ stagedRecords: importBatches.stagedRecords })
       .from(importBatches)

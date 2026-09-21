@@ -151,7 +151,7 @@ export const TEXT_KIND_REGISTRY: Record<TextKind, TextKindConfig> = {
   },
   tutorials: {
     id: "tutorials",
-    games: ["genshin"],
+    games: ["genshin", "starrail"],
     navLabel: "基础教程",
     itemNoun: "教程",
     groupLabel: "类别",
@@ -163,7 +163,7 @@ export const TEXT_KIND_REGISTRY: Record<TextKind, TextKindConfig> = {
   },
   guides: {
     id: "guides",
-    games: ["genshin"],
+    games: ["genshin", "starrail"],
     navLabel: "引导说明",
     itemNoun: "引导",
     groupLabel: "类别",

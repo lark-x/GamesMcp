@@ -113,6 +113,11 @@ export type QuestSearchHit = {
     | "event_quest"
     | "commission"
     | "hangout"
+    | "companion_mission"
+    | "daily_mission"
+    | "trailblaze_continuation"
+    | "trailblaze_mission"
+    | "adventure_quest"
     | "other";
   chapter?: string | null;
   series?: string | null;
@@ -194,9 +199,17 @@ export type QuestDetail = QuestSearchHit & {
 export type StoryQuestEntry = {
   questKey: string;
   title: string;
+  displayTitle?: string;
   order: number;
   completeness: "complete" | "partial" | "metadata_only";
   bodyAvailability: "dialogue" | "document" | "objective_only" | "unavailable";
+  qualityCode?:
+    | "complete"
+    | "partial_dialogue"
+    | "metadata_only"
+    | "source_missing"
+    | "parser_failed"
+    | "speaker_unresolved";
 };
 
 export type StoryChapter = {
@@ -207,10 +220,19 @@ export type StoryChapter = {
   quests: StoryQuestEntry[];
 };
 
+export type StoryFamily = {
+  id: string;
+  name: string;
+  order: number;
+  provenance: "upstream" | "derived" | "curated" | "fallback";
+  chapters: StoryChapter[];
+};
+
 export type StoryRegion = {
   id: string;
   name: string;
   order: number;
+  families: StoryFamily[];
   chapters: StoryChapter[];
 };
 
@@ -409,12 +431,22 @@ export const api = {
       `/api/games/${gameId}/quests/${encodeURIComponent(questId)}${query ? `?${query}` : ""}`,
     );
   },
-  storyCatalog: (gameId: string, options?: { revisionId?: string }) => {
+  storyCatalog: (
+    gameId: string,
+    options?: {
+      revisionId?: string;
+      locale?: string;
+      type?: QuestSearchHit["type"];
+      signal?: AbortSignal;
+    },
+  ) => {
     const params = new URLSearchParams();
     if (options?.revisionId) params.set("revisionId", options.revisionId);
+    if (options?.locale) params.set("locale", options.locale);
+    if (options?.type) params.set("type", options.type);
     const query = params.toString();
-    return request<StoryCatalog>(
-      `/api/games/${gameId}/story/catalog${query ? `?${query}` : ""}`,
-    );
+    return request<StoryCatalog>(`/api/games/${gameId}/story/catalog${query ? `?${query}` : ""}`, {
+      signal: options?.signal,
+    });
   },
 };

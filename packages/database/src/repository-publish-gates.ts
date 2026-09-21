@@ -334,6 +334,7 @@ export async function ensureAnimeAcquisitionIntegrity(
   const observationErrors: string[] = [];
   for (const observation of observations) {
     const provenance = safeProvenance(observation.provenance, observation.canonicalKey);
+    const bodyLineage = provenance.lineage?.body ?? provenance.lineage?.dialogue;
     if (
       !observation.canonicalKey.trim() ||
       !observation.category.trim() ||
@@ -346,7 +347,7 @@ export async function ensureAnimeAcquisitionIntegrity(
       provenance.rawContentHash !== observation.rawContentHash ||
       provenance.normalizedContentHash !== observation.normalizedContentHash ||
       !provenance.lineage?.title ||
-      !provenance.lineage.body
+      !bodyLineage
     )
       observationErrors.push(observation.id);
   }

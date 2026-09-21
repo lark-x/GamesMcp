@@ -1,6 +1,6 @@
 import type { ProtagonistPreferences } from "./story.types.js";
 import { DEFAULT_GENSHIN_PREFS } from "./story.types.js";
-import { formatStoryText } from "./story-format.js";
+import { formatStoryString, formatStoryText } from "./story-format.js";
 
 export type StoryTextNode = {
   nodeKey: string;
@@ -66,7 +66,20 @@ function resolveSpeakerName(
   prefs: ProtagonistPreferences,
 ): string {
   if (!speakerName) return "";
-  const trimmed = speakerName.trim();
+  // Speaker labels carry the same upstream macros as the body ({NICKNAME},
+  // {TEXTJOIN#N}, paired ruby). Run them through the shared resolver first so a
+  // raw template never reaches the reader as a speaker badge.
+  const trimmed = formatStoryString(speakerName, prefs)
+    // Ruby markup is meaningful in the body but would show as literal tags in a
+    // compact speaker badge, so keep only the annotated word itself.
+    .replace(/<ruby>(.*?)<rt>.*?<\/rt><\/ruby>/gu, "$1")
+    // Unresolvable leading macros such as {TEXTJOIN#255} leave a bare separator
+    // behind ("•兀鹫弓手"); drop it so the badge reads cleanly.
+    .replace(/^[\s·•:：,，、\-]+/u, "")
+    .trim();
+  // An unresolvable macro (for example a bare {TEXTJOIN#N} speaker row) must
+  // render as no speaker instead of an empty badge.
+  if (!trimmed) return "";
   const lower = trimmed.toLowerCase();
 
   if (prefs.game === "starrail") {
@@ -189,7 +202,9 @@ export function StoryTextBlock({
     <div className="story-script-row">
       <div className="story-script-speaker-col">
         {resolvedSpeaker ? (
-          <span className={getSpeakerBadgeClass(node.speakerName)}>{resolvedSpeaker}</span>
+          // Classify on the resolved label: a {NICKNAME} speaker must pick up the
+          // Trailblazer styling, which the raw macro text would never match.
+          <span className={getSpeakerBadgeClass(resolvedSpeaker)}>{resolvedSpeaker}</span>
         ) : (
           <span className="story-speaker-empty" />
         )}

@@ -16,6 +16,8 @@ export type SearchCoreStructuredHit = {
   kind: StructuredSearchKind;
   stableId: string;
   name: string;
+  /** Indexed searchable body (passive, set bonus, description). */
+  body?: string;
   score: number;
   matchedBy: string;
 };
@@ -122,6 +124,10 @@ export class SearchService {
           kind: item.kind,
           stableId: item.stableId,
           name: item.name,
+          // Carry the indexed body through so callers can show a real excerpt
+          // instead of only a bare name (weapon passives, artifact set bonuses,
+          // material descriptions all live here).
+          body: item.body,
           score: ranked.score,
           matchedBy: ranked.matchedBy,
         };

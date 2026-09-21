@@ -116,6 +116,8 @@ export async function createImport(
     parserVersion: string;
     stagedRecords?: NormalizedRecord[];
     structuredRecords?: StructuredImportRecords;
+    /** Defer the expensive aggregate preview build for chunked imports. */
+    skipPreview?: boolean;
     errors: ValidationIssue[];
     warnings: ValidationIssue[];
     diff: ImportDiff;
@@ -148,7 +150,7 @@ export async function createImport(
     );
   const batch = mapImport(row);
   await ctx.registerAcquisitionReview(batch);
-  await ctx.ensurePreviewForImport(batch);
+  if (!input.skipPreview) await ctx.ensurePreviewForImport(batch);
   return batch;
 }
 
@@ -171,7 +173,43 @@ export async function getImport(ctx: ImportContext, batchId: string): Promise<Im
   return rows[0] ? mapImport(rows[0]) : null;
 }
 
-export async function listImports(ctx: ImportContext, gameId?: string): Promise<ImportBatch[]> {
+export async function listImports(
+  ctx: ImportContext,
+  gameId?: string,
+  options: { includePayload?: boolean } = {},
+): Promise<ImportBatch[]> {
+  if (options.includePayload === false) {
+    const rows = await ctx.db
+      .select({
+        id: importBatches.id,
+        gameId: importBatches.gameId,
+        sourceId: importBatches.sourceId,
+        sourceSnapshotId: importBatches.sourceSnapshotId,
+        status: importBatches.status,
+        parserVersion: importBatches.parserVersion,
+        successCount: importBatches.successCount,
+        failureCount: importBatches.failureCount,
+        errors: importBatches.errors,
+        warnings: importBatches.warnings,
+        diff: importBatches.diff,
+        reviewNote: importBatches.reviewNote,
+        confirmedDeletionKeys: importBatches.confirmedDeletionKeys,
+        createdAt: importBatches.createdAt,
+        completedAt: importBatches.completedAt,
+      })
+      .from(importBatches)
+      .where(gameId ? eq(importBatches.gameId, gameId) : undefined)
+      .orderBy(desc(importBatches.createdAt))
+      .limit(100);
+    return rows.map((row) => ({
+      ...row,
+      status: row.status as ImportBatch["status"],
+      diff: row.diff ?? undefined,
+      stagedRecords: undefined,
+      structuredRecords: undefined,
+    }));
+  }
+
   const rows = await ctx.db
     .select()
     .from(importBatches)

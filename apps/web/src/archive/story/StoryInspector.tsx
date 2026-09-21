@@ -6,9 +6,11 @@ import type { QuestDetail } from "../../api.js";
 
 export function StoryInspector({
   quest,
+  isStarRail = false,
   onSelectCitation,
 }: {
   quest: QuestDetail | null;
+  isStarRail?: boolean;
   onSelectCitation?: (dialogueNodeKey: string) => void;
 }) {
   const [citationsExpanded, setCitationsExpanded] = useState(false);
@@ -26,7 +28,7 @@ export function StoryInspector({
   return (
     <ArchiveInspector title="任务信息">
       <InspectorSection title="基本信息">
-        <InspectorField label="任务类型" value={questTypeLabel(quest.type)} />
+        <InspectorField label="任务类型" value={questTypeLabel(quest.type, isStarRail)} />
         <InspectorField label="任务集" value={quest.series || quest.chapter || "—"} />
         <InspectorField label="语言" value={localeLabel} />
         <InspectorField label="游戏版本" value={quest.gameVersion ?? "未知"} />

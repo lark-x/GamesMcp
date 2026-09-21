@@ -84,6 +84,9 @@ const repository = {
             indexStatus: "not_ready",
           },
   getEntity: async () => null,
+  // resolve_entity reads candidates through this port; an empty candidate set is
+  // the production path for an unknown name and yields entity_not_found.
+  resolveEntityCandidates: async () => [],
   getDocument: async (_gameId: string, documentId: string) =>
     documentId === itemDocumentId ? itemTextDocument : null,
   getRelationships: async () => [],
@@ -100,6 +103,7 @@ const repository = {
       documentId: "00000000-0000-0000-0000-000000000020",
       revision: "r1",
       match: "text",
+      excerpt: "要寻找岩神的话，一年里只有这一次机会。",
     },
   ],
   searchDialogue: async () => [
@@ -213,29 +217,21 @@ describe("MCP server", () => {
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
       "get_character",
+      "get_document",
       "get_enemy",
-      "get_entity",
       "get_entity_texts",
       "get_equipment",
       "get_game_capabilities",
       "get_game_document",
       "get_game_document_hierarchy",
       "get_game_provider_status",
-      "get_item_text",
-      "get_lore_document",
       "get_material",
       "get_quest",
       "get_relationships",
-      "get_weapon",
       "list_games",
       "resolve_entity",
-      "search_dialogue",
-      "search_entities",
+      "search",
       "search_game_knowledge",
-      "search_items",
-      "search_lore",
-      "search_mechanics",
-      "search_quests",
     ]);
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((template) => template.uriTemplate).sort()).toEqual([
@@ -250,37 +246,40 @@ describe("MCP server", () => {
       "genshin-impact",
     );
     const notReady = await client.callTool({
-      name: "search_entities",
-      arguments: { game_id: gameId, query: "旅行者", limit: 5 },
+      name: "search",
+      arguments: { game_id: gameId, query: "旅行者", type: "structured", limit: 5 },
     });
     expect(notReady.isError).toBe(true);
     expect((resultJson(notReady) as { error?: { code?: string } })?.error?.code).toBe(
       "index_not_ready",
     );
     const missingEntity = await client.callTool({
-      name: "get_entity",
-      arguments: { game_id: gameId, entity_id: entityId },
+      name: "resolve_entity",
+      arguments: { game_id: gameId, query: "不存在的实体" },
     });
     expect(missingEntity.isError).toBe(true);
     expect((resultJson(missingEntity) as { error?: { code?: string } })?.error?.code).toBe(
       "entity_not_found",
     );
     const questSearch = await client.callTool({
-      name: "search_quests",
-      arguments: { game_id: gameId, query: "捕风", locale: "zh-CN", limit: 5 },
+      name: "search",
+      arguments: { game_id: gameId, query: "捕风", type: "quest", locale: "zh-CN", limit: 5 },
     });
-    expect(
-      (resultJson(questSearch) as { quests?: Array<{ questKey?: string }> }).quests?.[0]?.questKey,
-    ).toBe("quest/1001");
+    const questBody = resultJson(questSearch) as {
+      hits?: Array<{ type?: string; questKey?: string }>;
+    };
+    expect(questBody.hits?.[0]?.type).toBe("quest");
+    expect(questBody.hits?.[0]?.questKey).toBe("quest/1001");
     const dialogueSearch = await client.callTool({
-      name: "search_dialogue",
-      arguments: { game_id: gameId, query: "派蒙", limit: 5 },
+      name: "search",
+      arguments: { game_id: gameId, query: "派蒙", type: "dialogue", limit: 5 },
     });
     const dialogueBody = resultJson(dialogueSearch) as {
-      hits?: Array<{ speaker?: string; text?: string; dialogueNodeKey?: string }>;
+      hits?: Array<{ type?: string; speaker?: string; excerpt?: string; dialogueNodeKey?: string }>;
     };
+    expect(dialogueBody.hits?.[0]?.type).toBe("dialogue");
     expect(dialogueBody.hits?.[0]?.speaker).toBe("派蒙");
-    expect(dialogueBody.hits?.[0]?.text).toContain("旅行者");
+    expect(dialogueBody.hits?.[0]?.excerpt).toContain("旅行者");
     expect(dialogueBody.hits?.[0]?.dialogueNodeKey).toBe("quest/1001/dialog/1");
     const questRead = await client.callTool({
       name: "get_quest",
@@ -339,7 +338,7 @@ describe("MCP server", () => {
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     const response = await client.callTool({
-      name: "get_lore_document",
+      name: "get_document",
       arguments: {
         game_id: gameId,
         document_id: "00000000-0000-0000-0000-000000000020",
@@ -353,7 +352,7 @@ describe("MCP server", () => {
     expect(output.document?.segments?.[0]?.body).toHaveLength(100);
     expect(output.document?.truncated).toBe(true);
     const invalidSegment = await client.callTool({
-      name: "get_lore_document",
+      name: "get_document",
       arguments: {
         game_id: gameId,
         document_id: "00000000-0000-0000-0000-000000000020",
@@ -434,7 +433,7 @@ describe("MCP server", () => {
     await server.close();
   });
 
-  it("shapes search_lore results under the unified response budget (Sprint 20)", async () => {
+  it("shapes unified search results under the response budget (Sprint 20)", async () => {
     const many = Array.from({ length: 30 }, (_, index) => ({
       id: `doc-${index}`,
       title: `文档${index}`,
@@ -457,8 +456,8 @@ describe("MCP server", () => {
     await server.connect(st);
     await client.connect(ct);
     const result = await client.callTool({
-      name: "search_lore",
-      arguments: { game_id: gameId, query: "测试" },
+      name: "search",
+      arguments: { game_id: gameId, query: "测试", type: "document" },
     });
     expect(result.isError).toBeFalsy();
     const body = resultJson(result) as {
@@ -471,6 +470,70 @@ describe("MCP server", () => {
     for (const hit of body.hits ?? []) {
       expect(String(hit.excerpt).length).toBeLessThanOrEqual(501);
     }
+    await client.close();
+    await server.close();
+  });
+
+  it("merges every surface into one tagged result list and honours the type filter", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const mergeRepository = {
+      ...repository,
+      search: async (_gameId: string, request?: { documentTypes?: string[] }) => {
+        seen.push({ surface: "search", documentTypes: request?.documentTypes });
+        return {
+          entities: [],
+          documents: [],
+          segments: [],
+          revision: "r1",
+          indexStatus: "ready",
+        };
+      },
+    };
+    const server = createMcpServer(mergeRepository as unknown as KnowledgeRepository);
+    const client = new Client({ name: "merge-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    // Default type=all fans out across dialogue, quests and documents and tags
+    // every hit so the model knows which detail tool to drill into next.
+    const all = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "旅行者" },
+    });
+    expect(all.isError).toBeFalsy();
+    const allBody = resultJson(all) as {
+      type?: string;
+      hits?: Array<{ type?: string; title?: string; excerpt?: string }>;
+    };
+    expect(allBody.type).toBe("all");
+    const types = new Set((allBody.hits ?? []).map((hit) => hit.type));
+    expect(types.has("dialogue")).toBe(true);
+    expect(types.has("quest")).toBe(true);
+    for (const hit of allBody.hits ?? []) {
+      expect(typeof hit.type).toBe("string");
+      expect(typeof hit.title).toBe("string");
+    }
+
+    // The quest hit now carries a real body excerpt instead of the literal
+    // match-class token ("text") that the old search_quests returned.
+    const questHit = (allBody.hits ?? []).find((hit) => hit.type === "quest");
+    expect(questHit?.excerpt).toBeDefined();
+    expect(questHit?.excerpt).not.toBe("text");
+
+    // type=dialogue must not consult the document/quest surfaces at all.
+    seen.length = 0;
+    const dialogueOnly = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "旅行者", type: "dialogue" },
+    });
+    const dialogueBody = resultJson(dialogueOnly) as {
+      hits?: Array<{ type?: string }>;
+    };
+    expect(dialogueOnly.isError).toBeFalsy();
+    expect(dialogueBody.hits?.every((hit) => hit.type === "dialogue")).toBe(true);
+    expect(seen).toEqual([]);
+
     await client.close();
     await server.close();
   });
@@ -611,11 +674,11 @@ describe("MCP server", () => {
     expect(materialBody.material?.name).toBe("霓裳花");
 
     const weaponResult = await client.callTool({
-      name: "get_weapon",
+      name: "get_equipment",
       arguments: { game_id: gameId, name: "无锋剑" },
     });
-    const weaponBody = resultJson(weaponResult) as { weapon?: { weaponType?: string } };
-    expect(weaponBody.weapon?.weaponType).toBe("sword");
+    const weaponBody = resultJson(weaponResult) as { equipment?: { weaponType?: string } };
+    expect(weaponBody.equipment?.weaponType).toBe("sword");
 
     const enemyResult = await client.callTool({
       name: "get_enemy",
@@ -696,45 +759,44 @@ describe("MCP server", () => {
     expect(textsBody.bindings?.[0]?.documentId).toBe("00000000-0000-0000-0000-000000000020");
 
     const searchItems = await client.callTool({
-      name: "search_items",
-      arguments: { query: "霓裳" },
+      name: "search",
+      arguments: { game_id: gameId, query: "霓裳", type: "item" },
     });
     const itemsBody = resultJson(searchItems) as {
-      items?: Array<{ stableId?: string; materialStableId?: string; name?: string }>;
+      hits?: Array<{ type?: string; title?: string; documentId?: string }>;
       truncated?: boolean;
     };
     expect(searchItems.isError).toBeFalsy();
-    expect(itemsBody.items?.[0]?.name).toBe("霓裳花");
-    expect(itemsBody.items?.[0]?.stableId).toBe(itemDocumentId);
-    expect(itemsBody.items?.[0]?.materialStableId).toBe("material/nichang");
-    expect(itemsBody.truncated).toBe(false);
+    expect(itemsBody.hits?.[0]?.type).toBe("item");
+    expect(itemsBody.hits?.[0]?.title).toBe("霓裳花");
+    expect(itemsBody.hits?.[0]?.documentId).toBe(itemDocumentId);
 
     const itemText = await client.callTool({
-      name: "get_item_text",
-      arguments: { item_id: itemDocumentId },
+      name: "get_document",
+      arguments: { game_id: gameId, document_id: itemDocumentId },
     });
-    const itemBody = resultJson(itemText) as { item?: { stableId?: string; description?: string } };
-    expect(itemBody.item?.stableId).toBe(itemDocumentId);
-    expect(itemBody.item?.description).toContain("常被用于角色培养");
+    const itemBody = resultJson(itemText) as { document?: { id?: string; body?: string } };
+    expect(itemBody.document?.id).toBe(itemDocumentId);
+    expect(itemBody.document?.body).toContain("常被用于角色培养");
 
+    // A non-document id is no longer readable through get_document: the unified
+    // search returns document ids, and structured material facts come from get_material.
     const legacyItemText = await client.callTool({
-      name: "get_item_text",
-      arguments: { item_id: "material/nichang" },
+      name: "get_document",
+      arguments: { game_id: gameId, document_id: "material/nichang" },
     });
-    const legacyItemBody = resultJson(legacyItemText) as { item?: { stableId?: string } };
-    expect(legacyItemBody.item?.stableId).toBe("material/nichang");
+    expect(legacyItemText.isError).toBe(true);
 
     const mechanics = await client.callTool({
-      name: "search_mechanics",
-      arguments: { query: "超载" },
+      name: "search",
+      arguments: { game_id: gameId, query: "超载", type: "mechanism" },
     });
     const mechanicsBody = resultJson(mechanics) as {
-      hits?: Array<{ sourceKey?: string }>;
-      corpusStatus?: string;
+      hits?: Array<{ type?: string; title?: string }>;
     };
     expect(mechanics.isError).toBeFalsy();
-    expect(mechanicsBody.corpusStatus).toBe("available");
-    expect(mechanicsBody.hits?.[0]?.sourceKey).toBe("mechanism/Tutorial/1001");
+    expect(mechanicsBody.hits?.[0]?.type).toBe("mechanism");
+    expect(mechanicsBody.hits?.[0]?.title).toBe("超载");
 
     await client.close();
     await server.close();
@@ -805,6 +867,295 @@ describe("MCP server", () => {
     },
   );
 
+  /**
+   * Regression: each surface scores on its own scale (structured/document
+   * reach ~8.8, dialogue caps near 6.6). Pure score ordering let a surface
+   * with many high-scoring look-alikes evict the surface holding the prose
+   * answer, so a query like 水仙十字 returned only card/tutorial rows and no
+   * quest or dialogue text at all. Every matching surface now keeps a share
+   * of the page.
+   */
+  it("keeps every matching surface represented instead of letting one evict the rest", async () => {
+    const crowdedRepository = {
+      ...repository,
+      // Many high-scoring structured/document rows, one low-scoring dialogue
+      // and one low-scoring quest, mirroring the real failure shape.
+      search: async (_gameId: string, request?: { documentTypes?: string[] }) => {
+        if (request?.documentTypes?.length) {
+          return {
+            entities: [],
+            documents: [],
+            segments: [],
+            revision: "r1",
+            indexStatus: "ready",
+            coreHits: { structured: [], lore: [] },
+          };
+        }
+        return {
+          entities: [],
+          documents: Array.from({ length: 6 }, (_, i) => ({
+            id: "doc-" + i,
+            title: "水仙十字之剑" + i,
+            type: "mechanism",
+            snippet: "水仙十字之剑",
+            score: 8.8,
+            revision: "r1",
+          })),
+          segments: [],
+          revision: "r1",
+          indexStatus: "ready",
+          coreHits: {
+            structured: Array.from({ length: 6 }, (_, i) => ({
+              kind: "material",
+              stableId: "mat-" + i,
+              name: "水仙十字大冒险" + i,
+              body: "水仙十字大冒险",
+              score: 8.8,
+              matchedBy: "exact",
+            })),
+            lore: [],
+          },
+        };
+      },
+      searchDialogue: async () => [
+        {
+          quest: "命运的回声",
+          subquest: null,
+          speaker: "阿兰",
+          text: "他们三人曾经在「水仙十字院」里共度过童年的时光。",
+          dialogueNodeKey: "quest/6020/dialog/60202045",
+          citation: {
+            documentId: "d-6020",
+            locale: "zh-CN",
+            questKey: "quest/6020",
+            dialogueNodeKey: "quest/6020/dialog/60202045",
+            revision: "r1",
+          },
+          score: 6.6,
+        },
+      ],
+      searchQuests: async () => [
+        {
+          questKey: "quest/6023",
+          mainQuestId: "6023",
+          title: "循着过往的足迹",
+          type: "archon_quest" as const,
+          chapter: "第七幕",
+          series: "空月之歌",
+          completeness: "complete" as const,
+          locale: "zh-CN",
+          documentId: "d-6023",
+          revision: "r1",
+          match: "text",
+          excerpt: "水仙十字",
+        },
+      ],
+    };
+    const server = createMcpServer(crowdedRepository as unknown as KnowledgeRepository);
+    const client = new Client({ name: "quota-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    const result = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "水仙十字", limit: 10 },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = resultJson(result) as { hits?: Array<{ type?: string; title?: string }> };
+    const types = new Set((body.hits ?? []).map((hit) => hit.type));
+    // The low-scoring prose surfaces must survive the high-scoring crowd.
+    expect(types.has("dialogue")).toBe(true);
+    expect(types.has("quest")).toBe(true);
+    expect((body.hits ?? []).some((hit) => hit.title === "命运的回声")).toBe(true);
+    expect((body.hits ?? []).some((hit) => hit.title === "循着过往的足迹")).toBe(true);
+
+    await client.close();
+    await server.close();
+  });
+
+  /**
+   * Regression: the response shaper clamped every result set back to its
+   * 10-item / 10KB default, so a caller asking for limit 30 silently got 10.
+   * The page size must drive both the item cap and the byte ceiling.
+   */
+  it("honours the requested page size beyond the default ten items", async () => {
+    const manyRepository = {
+      ...repository,
+      search: async () => ({
+        entities: [],
+        documents: Array.from({ length: 40 }, (_, i) => ({
+          id: "doc-" + i,
+          title: "文档" + i,
+          type: "book" as const,
+          // Long excerpts so the default 10KB byte ceiling really binds: a
+          // 30-item page of these cannot fit inside the 10-item allowance.
+          snippet: ("摘要" + i + "。").repeat(60),
+          score: 5,
+          revision: "r1",
+        })),
+        segments: [],
+        revision: "r1",
+        indexStatus: "ready",
+        coreHits: { structured: [], lore: [] },
+      }),
+      searchDialogue: async () => [],
+      searchQuests: async () => [],
+    };
+    const server = createMcpServer(manyRepository as unknown as KnowledgeRepository);
+    const client = new Client({ name: "page-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    for (const limit of [10, 20, 30]) {
+      const result = await client.callTool({
+        name: "search",
+        arguments: { game_id: gameId, query: "文档", limit },
+      });
+      const body = resultJson(result) as { hits?: unknown[] };
+      expect(body.hits?.length).toBe(limit);
+    }
+
+    await client.close();
+    await server.close();
+  });
+
+  /**
+   * Regression: the corpus is bilingual (Genshin stores each quest twice,
+   * zh-CN plus an en twin with identical dialogue). An unfiltered search used
+   * to return English rows for an English query and could mix both languages
+   * in one result list. Chinese is now the default reading language and a
+   * non-default language must be requested explicitly.
+   */
+  it("scopes search to Chinese by default and honours an explicit locale", async () => {
+    const seen: Array<{ locales?: string[]; locale?: string }> = [];
+    const localeRepository = {
+      ...repository,
+      search: async (_gameId: string, request?: { locales?: string[] }) => {
+        seen.push({ locales: request?.locales });
+        return {
+          entities: [],
+          documents: [],
+          segments: [],
+          revision: "r1",
+          indexStatus: "ready",
+          coreHits: { structured: [], lore: [] },
+        };
+      },
+      searchDialogue: async (_gameId: string, request: { locale?: string }) => {
+        seen.push({ locale: request?.locale });
+        return [];
+      },
+      searchQuests: async (_gameId: string, request: { locale?: string }) => {
+        seen.push({ locale: request?.locale });
+        return [];
+      },
+    };
+    const server = createMcpServer(localeRepository as unknown as KnowledgeRepository);
+    const client = new Client({ name: "locale-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    // Default: every surface is pinned to Chinese.
+    seen.length = 0;
+    await client.callTool({ name: "search", arguments: { game_id: gameId, query: "请仙" } });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const call of seen) {
+      if (call.locales) expect(call.locales).toEqual(["zh-CN"]);
+      if (call.locale) expect(call.locale).toBe("zh-CN");
+    }
+
+    // Explicit request: the caller 's language wins.
+    seen.length = 0;
+    await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "Rite of Descension", locale: "en" },
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const call of seen) {
+      if (call.locales) expect(call.locales).toEqual(["en"]);
+      if (call.locale) expect(call.locale).toBe("en");
+    }
+
+    await client.close();
+    await server.close();
+  });
+
+  /**
+   * Regression: structured hits used to be read from the legacy `entities`
+   * index, which only carries npc/quest/item rows. Weapons, artifacts and relic
+   * sets were therefore unreachable from `search` even though they are real
+   * published records, and every structured hit was forced to score 0 so it
+   * always sorted last with an empty excerpt.
+   */
+  it("returns weapons and artifact sets from the unified search with excerpts", async () => {
+    const weapon = {
+      kind: "weapon" as const,
+      stableId: "genshin:weapon:13501",
+      name: "护摩之杖",
+      body: "在早已失落的古老祭仪中，使用的朱赤「柴火杖」。",
+      score: 11,
+      matchedBy: "exact",
+    };
+    const relicSet = {
+      kind: "artifact_set" as const,
+      stableId: "sr_relic_set_302",
+      name: "不老者的仙舟",
+      body: "使装备者的生命上限提高12%。",
+      score: 11,
+      matchedBy: "exact",
+    };
+    const structuredRepository = {
+      ...repository,
+      search: async () => ({
+        entities: [],
+        documents: [],
+        segments: [],
+        revision: "r1",
+        indexStatus: "ready",
+        coreHits: { structured: [weapon, relicSet], lore: [] },
+      }),
+    };
+    const server = createMcpServer(structuredRepository as unknown as KnowledgeRepository);
+    const client = new Client(
+      { name: "structured-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    const result = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "护摩之杖", type: "structured" },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = resultJson(result) as {
+      hits?: Array<{
+        type?: string;
+        title?: string;
+        excerpt?: string;
+        stableId?: string;
+        structuredKind?: string;
+        score?: number;
+      }>;
+    };
+    const names = (body.hits ?? []).map((hit) => hit.title);
+    expect(names).toContain("护摩之杖");
+    expect(names).toContain("不老者的仙舟");
+
+    const artifact = (body.hits ?? []).find((hit) => hit.title === "不老者的仙舟");
+    expect(artifact?.structuredKind).toBe("artifact_set");
+    expect(artifact?.excerpt).toContain("生命上限");
+    // A real score keeps structured rows competitive instead of pinned to 0.
+    expect(artifact?.score).toBeGreaterThan(0);
+
+    await client.close();
+    await server.close();
+  });
+
   it("routes provider gateway tools through the registry and shapes results", async () => {
     const registry = new GameProviderRegistry();
     registry.register(fakeKnowledgeProvider());
@@ -819,7 +1170,7 @@ describe("MCP server", () => {
 
     const search = await client.callTool({
       name: "search_game_knowledge",
-      arguments: { game: "genshin", query: "芙宁娜 枫丹预言", mode: "hybrid", limit: 2 },
+      arguments: { game_id: "genshin", query: "芙宁娜 枫丹预言", mode: "hybrid", limit: 2 },
     });
     const searchJson = resultJson(search) as {
       hits?: Array<{ documentId?: string; excerpt?: string }>;
@@ -834,7 +1185,7 @@ describe("MCP server", () => {
 
     const document = await client.callTool({
       name: "get_game_document",
-      arguments: { game: "genshin-impact", document_id: "doc-1", cursor: 1, limit: 2 },
+      arguments: { game_id: "genshin-impact", document_id: "doc-1", cursor: 1, limit: 2 },
     });
     expect(resultJson(document)).toMatchObject({
       game: "genshin",
@@ -846,7 +1197,7 @@ describe("MCP server", () => {
 
     const hierarchy = await client.callTool({
       name: "get_game_document_hierarchy",
-      arguments: { game: "genshin", document_id: "doc-1" },
+      arguments: { game_id: "genshin", document_id: "doc-1" },
     });
     expect(resultJson(hierarchy)).toMatchObject({
       documentId: "doc-1",
@@ -855,7 +1206,7 @@ describe("MCP server", () => {
 
     const status = await client.callTool({
       name: "get_game_provider_status",
-      arguments: { game: "genshin" },
+      arguments: { game_id: "genshin" },
     });
     expect(resultJson(status)).toMatchObject({
       game: "genshin",
@@ -878,7 +1229,7 @@ describe("MCP server", () => {
 
     const providerResult = await client.callTool({
       name: "search_game_knowledge",
-      arguments: { game: "genshin", query: "芙宁娜" },
+      arguments: { game_id: "genshin", query: "芙宁娜" },
     });
     expect(providerResult.isError).toBe(true);
     expect((resultJson(providerResult) as { error?: { code?: string } }).error?.code).toBe(
@@ -909,7 +1260,7 @@ describe("MCP server", () => {
 
     const genshin = await client.callTool({
       name: "search_game_knowledge",
-      arguments: { game: "genshin-impact", query: "摩拉克斯", limit: 1 },
+      arguments: { game_id: "genshin-impact", query: "摩拉克斯", limit: 1 },
     });
     expect(resultJson(genshin)).toMatchObject({
       game: "genshin",
@@ -919,7 +1270,7 @@ describe("MCP server", () => {
 
     const starrail = await client.callTool({
       name: "search_game_knowledge",
-      arguments: { game: "hsr", query: "摩拉克斯", limit: 5 },
+      arguments: { game_id: "hsr", query: "摩拉克斯", limit: 5 },
     });
     const starrailJson = resultJson(starrail) as {
       game?: string;
@@ -933,7 +1284,7 @@ describe("MCP server", () => {
 
     const wrongDocument = await client.callTool({
       name: "get_game_document",
-      arguments: { game: "starrail", document_id: "doc-1", cursor: 0, limit: 2 },
+      arguments: { game_id: "starrail", document_id: "doc-1", cursor: 0, limit: 2 },
     });
     expect(wrongDocument.isError).toBe(true);
     expect((resultJson(wrongDocument) as { error?: { code?: string } }).error?.code).toBe(

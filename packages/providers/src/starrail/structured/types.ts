@@ -53,13 +53,18 @@ export interface StarRailStoryQuest {
   mainMissionId: number;
   questKey: string;
   title: string;
-  type: string; // e.g. "archon_quest" (开拓任务), "companion_mission" (同行任务), "world_quest" (冒险/散篇)
+  type: string;
   seriesTitle?: string;
+  storyFamilyId?: string;
+  storyFamilyTitle?: string;
+  storyFamilyProvenance?: "upstream" | "derived" | "curated" | "fallback";
+  storyFamilyOrder?: number;
   worldId?: number | string;
   worldTitle?: string;
   worldName?: string;
   chapterId?: number | string;
   chapterTitle?: string;
+  chapterOrder?: number;
   previousMissionIds: number[];
   nextMissionIds: number[];
   sequence?: number;
@@ -68,6 +73,13 @@ export interface StarRailStoryQuest {
   subquests?: StarRailSubMission[];
   dialogueNodes: StarRailDialogueNode[];
   completeness: StoryCompleteness;
+  qualityCode?:
+    | "complete"
+    | "partial_dialogue"
+    | "metadata_only"
+    | "source_missing"
+    | "parser_failed"
+    | "speaker_unresolved";
   visibility: StoryVisibility;
   provenance: Record<string, unknown>;
 }

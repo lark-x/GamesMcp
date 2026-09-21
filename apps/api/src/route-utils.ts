@@ -9,6 +9,11 @@ export const questTypeSchema = z.enum([
   "event_quest",
   "commission",
   "hangout",
+  "companion_mission",
+  "daily_mission",
+  "trailblaze_continuation",
+  "trailblaze_mission",
+  "adventure_quest",
   "other",
 ]);
 

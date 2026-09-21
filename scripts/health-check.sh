@@ -65,6 +65,19 @@ else
   echo "WARNING: Search index is still building or pending (non-blocking). Response: ${search_res}"
 fi
 
+# 5b. Check GamesMcp MCP Streamable HTTP endpoint (liveness + readiness)
+MCP_BASE_URL="${GAMESMCP_MCP_URL:-http://127.0.0.1:4200}"
+echo -n "==> [5b/6] Checking GamesMcp MCP endpoint (${MCP_BASE_URL})... "
+if ! curl -sf "${MCP_BASE_URL}/health" > /dev/null 2>&1; then
+  echo "FAILED: MCP liveness probe not responding at ${MCP_BASE_URL}/health"
+  exit 1
+fi
+if ! curl -sf "${MCP_BASE_URL}/ready" > /dev/null 2>&1; then
+  echo "FAILED: MCP readiness probe not responding at ${MCP_BASE_URL}/ready"
+  exit 1
+fi
+echo "OK"
+
 # Helper function to check MCP Streamable HTTP endpoint
 check_mcp_endpoint() {
   local url="$1"

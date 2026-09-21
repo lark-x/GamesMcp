@@ -68,26 +68,26 @@ async function main() {
 
   const genshinQuests = textOf(
     await client.callTool({
-      name: "search_quests",
-      arguments: { game_id: genshin.id, query: "魔神任务", limit: 5 },
+      name: "search",
+      arguments: { game_id: genshin.id, query: "魔神任务", type: "quest", limit: 5 },
     }),
-  ) as { quests?: unknown[]; error?: unknown };
+  ) as { hits?: unknown[]; error?: unknown };
   record(
-    "genshin search_quests 魔神任务",
-    !("error" in genshinQuests) && (genshinQuests.quests?.length ?? 0) > 0,
-    `hits=${genshinQuests.quests?.length ?? 0}`,
+    "genshin search quest 魔神任务",
+    !("error" in genshinQuests) && (genshinQuests.hits?.length ?? 0) > 0,
+    `hits=${genshinQuests.hits?.length ?? 0}`,
   );
 
   const genshinItems = textOf(
     await client.callTool({
-      name: "search_items",
-      arguments: { game_id: genshin.id, query: "摩拉", limit: 5 },
+      name: "search",
+      arguments: { game_id: genshin.id, query: "摩拉", type: "item", limit: 5 },
     }),
-  ) as { items?: unknown[]; error?: unknown };
+  ) as { hits?: unknown[]; error?: unknown };
   record(
-    "genshin search_items 摩拉",
-    !("error" in genshinItems) && (genshinItems.items?.length ?? 0) > 0,
-    `hits=${genshinItems.items?.length ?? 0}`,
+    "genshin search item 摩拉",
+    !("error" in genshinItems) && (genshinItems.hits?.length ?? 0) > 0,
+    `hits=${genshinItems.hits?.length ?? 0}`,
   );
 
   // StarRail E2E.
@@ -112,26 +112,32 @@ async function main() {
 
   const cocolia = textOf(
     await client.callTool({
-      name: "search_dialogue",
-      arguments: { game_id: starrail.id, query: "星核", speaker: "可可利亚", limit: 5 },
+      name: "search",
+      arguments: {
+        game_id: starrail.id,
+        query: "星核",
+        type: "dialogue",
+        speaker: "可可利亚",
+        limit: 5,
+      },
     }),
   ) as { hits?: unknown[]; error?: unknown };
   record(
-    "starrail search_dialogue 可可利亚+星核",
+    "starrail search dialogue 可可利亚+星核",
     !("error" in cocolia) && (cocolia.hits?.length ?? 0) > 0,
     `hits=${cocolia.hits?.length ?? 0}`,
   );
 
   const starrailQuests = textOf(
     await client.callTool({
-      name: "search_quests",
-      arguments: { game_id: starrail.id, query: "混乱行至深处", limit: 5 },
+      name: "search",
+      arguments: { game_id: starrail.id, query: "混乱行至深处", type: "quest", limit: 5 },
     }),
-  ) as { quests?: unknown[]; error?: unknown };
+  ) as { hits?: unknown[]; error?: unknown };
   record(
-    "starrail search_quests 混乱行至深处",
-    !("error" in starrailQuests) && (starrailQuests.quests?.length ?? 0) > 0,
-    `hits=${starrailQuests.quests?.length ?? 0}`,
+    "starrail search quest 混乱行至深处",
+    !("error" in starrailQuests) && (starrailQuests.hits?.length ?? 0) > 0,
+    `hits=${starrailQuests.hits?.length ?? 0}`,
   );
 
   await client.close();

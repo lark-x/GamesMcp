@@ -18,7 +18,8 @@ export type StarRailCorpusCategory =
   | "sr_character_story"
   | "sr_voiceline"
   | "sr_item_lore"
-  | "sr_story_atlas";
+  | "sr_story_atlas"
+  | "sr_tutorial";
 
 export interface StarRailCorpusDocument {
   category: StarRailCorpusCategory;

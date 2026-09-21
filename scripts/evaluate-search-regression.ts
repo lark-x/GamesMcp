@@ -2,6 +2,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { format as formatJson } from "prettier";
 import type { DocumentType, GenshinAchievement } from "../packages/contracts/src/index.ts";
@@ -73,6 +74,11 @@ const QUEST_TYPES = new Set<DocumentType>([
   "story_quest",
   "world_quest",
   "event_quest",
+  "companion_mission",
+  "daily_mission",
+  "trailblaze_continuation",
+  "trailblaze_mission",
+  "adventure_quest",
   "commission",
   "hangout",
   "other",
@@ -981,4 +987,9 @@ async function main(): Promise<void> {
   );
 }
 
-await main();
+// Other scripts (story eval, golden expansion) import `loadRealCorpus` and
+// `deterministicUuid` from this module. Running the regression on import would
+// silently overwrite the checked-in baseline, so only execute when invoked directly.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await main();
+}

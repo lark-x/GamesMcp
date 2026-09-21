@@ -77,19 +77,9 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
 
     // 2. Audit Genshin Impact
     console.log("\n--- Auditing Genshin Impact Coverage ---");
-    const genshinKinds: TextKind[] = [
-      "books",
-      "character-stories",
-      "voices",
-      "item-texts",
-      "tutorials",
-      "guides",
-      "exploration-tips",
-      "loading-tips",
-      "mechanics",
-      "gcg",
-      "activity-tutorials",
-    ];
+    // Enumerate every canonical Text Kind instead of a hand-maintained list so a
+    // newly populated kind can never be silently skipped by this audit.
+    const allKinds: TextKind[] = [...textKindSchema.options];
 
     const genshinReport: GameTextCoverageReport = {
       gameId: GENSHIN_GAME_ID,
@@ -128,13 +118,31 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
       tutorials: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/TutorialExcelConfigData.json")).length,
       guides: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/GuideV2ExcelConfigData.json")).length,
       "exploration-tips": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/PushTipsConfigData.json")).length,
+      "system-tips": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/NewActivityPushTipsConfigData.json")).length,
       "loading-tips": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/LoadingTipsExcelConfigData.json")).length,
       gcg: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/GCGTutorialTextExcelConfigData.json")).length,
       "activity-tutorials": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/ActivitySnowRaceHideTutorialExcelConfigData.json")).length,
       mechanics: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/TutorialCatalogExcelConfigData.json")).length,
     };
 
-    for (const kind of genshinKinds) {
+    // Kinds whose upstream source tables belong to Genshin. Star Rail-only kinds
+    // are expected to be empty here and must not be reported as a gap.
+    const genshinOwnedKinds: TextKind[] = [
+      "books",
+      "character-stories",
+      "voices",
+      "item-texts",
+      "tutorials",
+      "guides",
+      "exploration-tips",
+      "system-tips",
+      "loading-tips",
+      "mechanics",
+      "gcg",
+      "activity-tutorials",
+    ];
+
+    for (const kind of genshinOwnedKinds) {
       const catalog = await repository.listTextCatalog(GENSHIN_GAME_ID, { kind, limit: 1 });
       const totalAcrossGroups = catalog.groups.reduce((sum, g) => sum + g.count, 0) || catalog.total;
       const rawCount = gsSourceCounts[kind] ?? totalAcrossGroups;
@@ -150,15 +158,27 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
         groupsCount: catalog.groups.length,
       };
       genshinReport.kinds[kind] = metrics;
-      console.log(`  - [${kind}] DB/API: ${totalAcrossGroups} records across ${catalog.groups.length} groups`);
+      // An owned kind with zero published records is an unexplained gap, not a
+      // neutral "pipeline ready" state.
+      if (totalAcrossGroups === 0) {
+        metrics.unexplainedMissing = 1;
+        genshinReport.qualityGates.unexplainedMissingZero = false;
+        genshinReport.qualityGates.allKindsValid = false;
+      }
+      console.log(
+        `  - [${kind}] DB/API: ${totalAcrossGroups} records across ${catalog.groups.length} groups${totalAcrossGroups === 0 ? "  <== EMPTY (unexpected)" : ""}`,
+      );
     }
 
     // 3. Audit Honkai: Star Rail
     console.log("\n--- Auditing Honkai: Star Rail Coverage ---");
-    const starrailKinds: TextKind[] = [
+    // Kinds whose upstream source tables belong to Star Rail.
+    const starrailOwnedKinds: TextKind[] = [
       "books",
       "character-stories",
       "voices",
+      "tutorials",
+      "guides",
       "messages",
       "train-visitors",
       "story-atlas",
@@ -207,9 +227,11 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
       "item-texts": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfig.json")).length,
       "lightcone-lore": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfigEquipment.json")).length,
       "relic-lore": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfigRelic.json")).length,
+      tutorials: safeReadJsonArray(resolve(srUpstreamDir, "TutorialGuideGroup.json")).length,
+      guides: safeReadJsonArray(resolve(srUpstreamDir, "GameplayGuideData.json")).length,
     };
 
-    for (const kind of starrailKinds) {
+    for (const kind of starrailOwnedKinds) {
       const catalog = await repository.listTextCatalog(STARRAIL_GAME_ID, { kind, limit: 1 });
       const totalAcrossGroups = catalog.groups.reduce((sum, g) => sum + g.count, 0) || catalog.total;
       const rawCount = srSourceCounts[kind] ?? totalAcrossGroups;
@@ -225,7 +247,14 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
         groupsCount: catalog.groups.length,
       };
       starrailReport.kinds[kind] = metrics;
-      console.log(`  - [${kind}] DB/API: ${totalAcrossGroups} records across ${catalog.groups.length} groups`);
+      if (totalAcrossGroups === 0) {
+        metrics.unexplainedMissing = 1;
+        starrailReport.qualityGates.unexplainedMissingZero = false;
+        starrailReport.qualityGates.allKindsValid = false;
+      }
+      console.log(
+        `  - [${kind}] DB/API: ${totalAcrossGroups} records across ${catalog.groups.length} groups${totalAcrossGroups === 0 ? "  <== EMPTY (unexpected)" : ""}`,
+      );
     }
 
     genshinReport.qualityGates.passed =

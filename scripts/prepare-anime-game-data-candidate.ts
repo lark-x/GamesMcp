@@ -10,6 +10,7 @@ const categories = [
   "book",
   "character_story",
   "item_description",
+  "mechanism",
   "quest",
   "structured",
 ] as const;
@@ -36,21 +37,38 @@ try {
 
   const sources = await repository.listSources(game.id);
   const sourceById = new Map(sources.map((source) => [source.id, source]));
-  const imports = await repository.listImports(game.id);
-  const selected = new Map<Category, (typeof imports)[number]>();
+  // Candidate selection only needs batch metadata. Loading every historical
+  // staged JSONB payload here can materialize multiple generations of the
+  // full quest export before the selected batches are read by the builder.
+  const imports = await repository.listImports(game.id, { includePayload: false });
+  const selected = new Map<Category, Array<(typeof imports)[number]>>();
   for (const batch of imports) {
     if (batch.status === "cancelled") continue;
     const parserType = sourceById.get(batch.sourceId)?.parserType;
     const category = parserType?.replace(/^anime-game-data:/, "") as Category | undefined;
-    if (!category || !categories.includes(category) || selected.has(category)) continue;
-    if (!batch.stagedRecords && !batch.structuredRecords) continue;
-    selected.set(category, batch);
+    if (!category || !categories.includes(category)) continue;
+    if (batch.successCount <= 0) continue;
+    const candidates = selected.get(category) ?? [];
+    candidates.push(batch);
+    selected.set(category, candidates);
   }
   const missing = categories.filter((category) => !selected.has(category));
   if (missing.length)
     throw new Error(`Missing latest AnimeGameData import batches: ${missing.join(", ")}`);
 
-  const selectedBatches = categories.map((category) => selected.get(category)!);
+  const selectedBatches = categories.flatMap((category) => {
+    const candidates = selected.get(category)!;
+    const newest = candidates[0]!;
+    // Large imports may be stored as several batches sharing one immutable
+    // source snapshot.  Keep that complete generation together, while
+    // ignoring older snapshots from prior imports of the same category.
+    if (!newest.sourceSnapshotId) return [newest];
+    return candidates.filter(
+      (candidate) =>
+        candidate.sourceId === newest.sourceId &&
+        candidate.sourceSnapshotId === newest.sourceSnapshotId,
+    );
+  });
   const confirmed = [] as Array<{ id: string; deletionCount: number }>;
   for (const batch of selectedBatches) {
     const deletions = batch.diff?.deletionCandidates ?? [];
@@ -88,7 +106,7 @@ try {
         batches: selectedBatches.map((batch) => ({
           id: batch.id,
           category: sourceById.get(batch.sourceId)?.parserType?.replace("anime-game-data:", ""),
-          records: batch.stagedRecords?.length ?? 0,
+          records: batch.successCount,
         })),
         confirmedDeletions: confirmed,
         readiness,

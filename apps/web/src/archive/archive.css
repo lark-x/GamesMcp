@@ -1873,6 +1873,35 @@ ruby.story-ruby rt.story-rt {
   color: var(--archive-text-secondary);
 }
 
+/* Star Rail character skills / traces / eidolons read as a stacked list. */
+.data-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.data-skill-item {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--archive-surface-alt);
+  border-left: 3px solid var(--archive-accent);
+}
+
+.data-skill-item p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--archive-text-secondary);
+}
+
+.data-skill-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
 .data-article-highlight {
   font-size: 14px;
   line-height: 1.6;
@@ -3045,5 +3074,4 @@ ruby.story-ruby rt.story-rt {
   cursor: not-allowed;
   color: var(--archive-muted);
 }
-
 

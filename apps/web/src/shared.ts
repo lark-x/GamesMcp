@@ -26,19 +26,18 @@ export const questTypeOptions = [
   ["world_quest", "世界任务"],
   ["event_quest", "活动任务"],
   ["commission", "委托"],
-  ["hangout", "邀约任务"],
+  ["hangout", "邀约事件"],
   ["other", "其他任务"],
 ] as const;
 
 export const starRailQuestTypeOptions = [
   ["", "全部任务"],
-  ["archon_quest", "开拓任务"],
-  ["story_quest", "同行任务"],
-  ["hangout", "开拓续闻"],
-  ["world_quest", "冒险任务"],
-  ["commission", "日常任务"],
+  ["trailblaze_mission", "开拓任务"],
+  ["companion_mission", "同行任务"],
+  ["trailblaze_continuation", "开拓续闻"],
+  ["adventure_quest", "冒险任务"],
+  ["daily_mission", "日常任务"],
   ["event_quest", "活动任务"],
-  ["story", "散篇剧情"],
   ["other", "其他任务"],
 ] as const;
 
@@ -54,6 +53,11 @@ export function questTypeLabel(
     | "event_quest"
     | "commission"
     | "hangout"
+    | "companion_mission"
+    | "daily_mission"
+    | "trailblaze_continuation"
+    | "trailblaze_mission"
+    | "adventure_quest"
     | "other"
     | string,
   isStarRail = false,
@@ -61,12 +65,13 @@ export function questTypeLabel(
   if (isStarRail) {
     const srMap: Record<string, string> = {
       archon_quest: "开拓任务",
-      story_quest: "同行任务",
-      hangout: "开拓续闻",
+      trailblaze_mission: "开拓任务",
+      companion_mission: "同行任务",
+      trailblaze_continuation: "开拓续闻",
       world_quest: "冒险任务",
-      commission: "日常任务",
+      adventure_quest: "冒险任务",
+      daily_mission: "日常任务",
       event_quest: "活动任务",
-      story: "散篇剧情",
       other: "其他任务",
     };
     return srMap[type] ?? type;
@@ -78,7 +83,7 @@ export function questTypeLabel(
       world_quest: "世界任务",
       event_quest: "活动任务",
       commission: "委托",
-      hangout: "邀约任务",
+      hangout: "邀约事件",
       other: "其他任务",
     }[type] ?? type
   );
@@ -93,4 +98,3 @@ export function completenessLabel(value: "complete" | "partial" | "metadata_only
     }[value] ?? value
   );
 }
-

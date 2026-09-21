@@ -23,6 +23,7 @@ export default defineConfig({
       "scripts/anime-game-data-quest-converter.test.ts",
       "scripts/anime-game-data-import-helpers.test.ts",
       "scripts/backup-acquisition.test.ts",
+      "scripts/docker-stack.test.ts",
       "scripts/ingest-starrail-full.test.ts",
     ],
     environment: "node",

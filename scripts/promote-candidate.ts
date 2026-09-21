@@ -7,8 +7,15 @@ async function main() {
   const repository = new SqlKnowledgeRepository(createDatabase(pool), config.dataDir);
 
   try {
-    const candidateId = "9114ed40-d185-4863-97b0-707160141586";
-    const buildId = "03ff75ba-d99a-4b68-9330-8a6a52750d68";
+    // Accept explicit ids so this script can promote any reviewed candidate
+    // instead of only the one hardcoded during the original P0 rebuild.
+    const flag = (name: string): string | undefined => {
+      const prefix = `--${name}=`;
+      return process.argv.slice(2).find((value) => value.startsWith(prefix))?.slice(prefix.length);
+    };
+    const candidateId = flag("candidate") ?? "9114ed40-d185-4863-97b0-707160141586";
+    const buildId = flag("build") ?? "03ff75ba-d99a-4b68-9330-8a6a52750d68";
+    const releaseNote = flag("note") ?? "P0 Archive Correctness Rebuild - AnimeGameData 7.0.0";
 
     console.log(`Fetching candidate ${candidateId}...`);
     const candidate = await repository.getReleaseCandidate(candidateId);
@@ -46,7 +53,7 @@ async function main() {
         candidateId,
         buildId,
         contentChecksum: build.contentChecksum,
-        releaseNote: "P0 Archive Correctness Rebuild - AnimeGameData 7.0.0",
+        releaseNote,
         idempotencyKey: `promote-p0-${Date.now()}`,
       });
       console.log(`Preparing revision created: ${preparingRevision.id}, status: ${preparingRevision.lifecycleStatus}`);

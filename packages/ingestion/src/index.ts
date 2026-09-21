@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 import type {
   ClaimCandidate,
   EntityCandidate,
@@ -96,18 +98,158 @@ async function snapshotFiles(
   files: Array<{ relativePath: string; content: string }>,
   metadata: Record<string, unknown>,
 ): Promise<SourceSnapshotData> {
-  const manifest = JSON.stringify(
-    files.map((file) => ({
-      path: file.relativePath,
-      hash: sha256(file.content),
-      bytes: Buffer.byteLength(file.content),
-    })),
-  );
-  const contentHash = sha256(`${manifest}\n${files.map((file) => file.content).join("\n")}`);
+  const fileManifest = files.map((file) => ({
+    path: file.relativePath,
+    hash: sha256(file.content),
+    bytes: Buffer.byteLength(file.content),
+  }));
+  const manifest = JSON.stringify(fileManifest);
+  const contentHasher = createHash("sha256");
+  contentHasher.update(manifest);
+  for (const file of files) {
+    contentHasher.update("\n");
+    contentHasher.update(file.content);
+  }
+  const contentHash = contentHasher.digest("hex");
   const snapshotDirectory = resolve(input.storageDir, "snapshots", input.sourceId);
   await mkdir(snapshotDirectory, { recursive: true });
   const storagePath = resolve(snapshotDirectory, `${contentHash}.json`);
-  const serialized = JSON.stringify({ files, metadata, contentHash });
+  let serialized: string | undefined;
+  try {
+    // Keep the historical single-file format for ordinary imports.  JSON
+    // strings have a platform-dependent maximum length, so large normalized
+    // quest exports use the sidecar format below instead of concatenating a
+    // 500MB+ JSON string.
+    serialized = JSON.stringify({ files, metadata, contentHash });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+  }
+
+  if (serialized !== undefined) {
+    try {
+      await writeFile(storagePath, serialized, { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let existing: unknown;
+      try {
+        existing = JSON.parse(await readFile(storagePath, "utf8"));
+      } catch {
+        throw new Error(`Immutable snapshot is unreadable: ${storagePath}`);
+      }
+      const existingObject = asObject(existing);
+      const existingFiles = Array.isArray(existingObject.files)
+        ? (existingObject.files as Array<{ relativePath: string; content: string }>)
+        : [];
+      const filesMismatch =
+        existingFiles.length !== files.length ||
+        existingFiles.some(
+          (file, index) =>
+            file.relativePath !== files[index]?.relativePath ||
+            file.content !== files[index]?.content,
+        );
+      if (existingObject.contentHash !== contentHash || filesMismatch)
+        throw new Error(`Immutable snapshot content mismatch: ${storagePath}`);
+    }
+  } else {
+    const sidecarFiles = files.map((file, index) => ({
+      ...fileManifest[index]!,
+      storageFile: `${contentHash}.file-${index}`,
+    }));
+    const sidecarManifest = JSON.stringify({
+      format: "sidecar-v1",
+      files: sidecarFiles,
+      metadata,
+      contentHash,
+    });
+    for (const [index, file] of files.entries()) {
+      const sidecarPath = resolve(snapshotDirectory, sidecarFiles[index]!.storageFile);
+      try {
+        await writeFile(sidecarPath, file.content, { encoding: "utf8", flag: "wx" });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        const existingContent = await readFile(sidecarPath, "utf8");
+        if (sha256(existingContent) !== sidecarFiles[index]!.hash)
+          throw new Error(`Immutable snapshot content mismatch: ${sidecarPath}`);
+      }
+    }
+    try {
+      await writeFile(storagePath, sidecarManifest, { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let existing: unknown;
+      try {
+        existing = JSON.parse(await readFile(storagePath, "utf8"));
+      } catch {
+        throw new Error(`Immutable snapshot is unreadable: ${storagePath}`);
+      }
+      const existingObject = asObject(existing);
+      if (
+        existingObject.contentHash !== contentHash ||
+        existingObject.format !== "sidecar-v1" ||
+        JSON.stringify(existingObject.files) !== JSON.stringify(sidecarFiles)
+      )
+        throw new Error(`Immutable snapshot content mismatch: ${storagePath}`);
+    }
+  }
+  return {
+    sourceId: input.sourceId,
+    contentHash,
+    storagePath,
+    capturedAt: new Date(),
+    metadata: { ...metadata, fileCount: files.length },
+    files,
+  };
+}
+
+const LARGE_LOCAL_JSON_BYTES = 32 * 1024 * 1024;
+
+async function hashFile(path: string): Promise<{ hash: string; bytes: number }> {
+  const hasher = createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of createReadStream(path)) {
+    hasher.update(chunk);
+    bytes += Buffer.byteLength(chunk);
+  }
+  return { hash: hasher.digest("hex"), bytes };
+}
+
+/**
+ * Keep very large pre-normalized JSON inputs out of V8's single-string limit.
+ * The database only needs an immutable snapshot manifest; the importer can
+ * stream the source records independently.
+ */
+async function snapshotStreamedLocalJson(input: SourceInput, bytes: number) {
+  const fileName = basename(input.path);
+  const fileInfo = await hashFile(input.path);
+  if (fileInfo.bytes !== bytes) bytes = fileInfo.bytes;
+  const fileManifest = [{ path: fileName, hash: fileInfo.hash, bytes }];
+  const manifest = JSON.stringify(fileManifest);
+  const contentHasher = createHash("sha256");
+  contentHasher.update(manifest);
+  for await (const chunk of createReadStream(input.path)) {
+    contentHasher.update("\n");
+    contentHasher.update(chunk);
+  }
+  const contentHash = contentHasher.digest("hex");
+  const snapshotDirectory = resolve(input.storageDir, "snapshots", input.sourceId);
+  await mkdir(snapshotDirectory, { recursive: true });
+  const storagePath = resolve(snapshotDirectory, `${contentHash}.json`);
+  const storageFile = `${contentHash}.file-0`;
+  const sidecarPath = resolve(snapshotDirectory, storageFile);
+  try {
+    await pipeline(createReadStream(input.path), createWriteStream(sidecarPath, { flags: "wx" }));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existing = await hashFile(sidecarPath);
+    if (existing.hash !== fileInfo.hash || existing.bytes !== fileInfo.bytes)
+      throw new Error(`Immutable snapshot content mismatch: ${sidecarPath}`);
+  }
+  const serialized = JSON.stringify({
+    format: "stream-v1",
+    files: [{ ...fileManifest[0], storageFile }],
+    metadata: { adapter: "local_json", snapshotFormat: "stream-v1" },
+    contentHash,
+  });
   try {
     await writeFile(storagePath, serialized, { encoding: "utf8", flag: "wx" });
   } catch (error) {
@@ -119,15 +261,11 @@ async function snapshotFiles(
       throw new Error(`Immutable snapshot is unreadable: ${storagePath}`);
     }
     const existingObject = asObject(existing);
-    const existingFiles = Array.isArray(existingObject.files)
-      ? (existingObject.files as Array<{ relativePath: string; content: string }>)
-      : [];
-    const filesMismatch =
-      existingFiles.length !== files.length ||
-      existingFiles.some(
-        (f, idx) => f.relativePath !== files[idx]?.relativePath || f.content !== files[idx]?.content,
-      );
-    if (existingObject.contentHash !== contentHash || filesMismatch)
+    if (
+      existingObject.contentHash !== contentHash ||
+      existingObject.format !== "stream-v1" ||
+      JSON.stringify(existingObject.files) !== JSON.stringify([{ ...fileManifest[0], storageFile }])
+    )
       throw new Error(`Immutable snapshot content mismatch: ${storagePath}`);
   }
   return {
@@ -135,9 +273,9 @@ async function snapshotFiles(
     contentHash,
     storagePath,
     capturedAt: new Date(),
-    metadata: { ...metadata, fileCount: files.length },
-    files,
-  };
+    metadata: { adapter: "local_json", snapshotFormat: "stream-v1", fileCount: 1 },
+    files: [{ relativePath: fileName, content: "" }],
+  } satisfies SourceSnapshotData;
 }
 
 export class LocalJsonAdapter implements SourceAdapter {
@@ -154,13 +292,26 @@ export class LocalJsonAdapter implements SourceAdapter {
   }
 
   async snapshot(input: SourceInput): Promise<SourceSnapshotData> {
+    const info = await stat(input.path);
+    if (info.size > LARGE_LOCAL_JSON_BYTES) return snapshotStreamedLocalJson(input, info.size);
     return snapshotFiles(input, [await fileEntry(input.path)], { adapter: "local_json" });
   }
 
   async *parse(snapshot: SourceSnapshotData): AsyncIterable<RawRecord> {
     const file = snapshot.files[0];
     if (!file) return;
-    const parsed: unknown = JSON.parse(file.content);
+    const content =
+      file.content ||
+      (snapshot.metadata.snapshotFormat === "stream-v1"
+        ? await readFile(
+            resolve(
+              dirname(snapshot.storagePath),
+              `${snapshot.contentHash}.file-0`,
+            ),
+            "utf8",
+          )
+        : file.content);
+    const parsed: unknown = JSON.parse(content);
     const records = Array.isArray(parsed) ? parsed : [parsed];
     for (let index = 0; index < records.length; index += 1) {
       const payload = asObject(records[index]);

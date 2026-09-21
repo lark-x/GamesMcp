@@ -36,7 +36,7 @@
     {
       "id": "dull-blade-type",
       "question": "无锋之剑是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1
@@ -600,7 +600,7 @@
     {
       "id": "sprint27-golden-mcp-061",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -609,7 +609,7 @@
     {
       "id": "sprint27-golden-mcp-062",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -618,7 +618,7 @@
     {
       "id": "sprint27-golden-mcp-063",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -627,7 +627,7 @@
     {
       "id": "sprint27-golden-mcp-064",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -636,7 +636,7 @@
     {
       "id": "sprint27-golden-mcp-065",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -645,7 +645,7 @@
     {
       "id": "sprint27-golden-mcp-066",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -654,7 +654,7 @@
     {
       "id": "sprint27-golden-mcp-067",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -663,7 +663,7 @@
     {
       "id": "sprint27-golden-mcp-068",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -672,7 +672,7 @@
     {
       "id": "sprint27-golden-mcp-069",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -681,7 +681,7 @@
     {
       "id": "sprint27-golden-mcp-070",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -690,7 +690,7 @@
     {
       "id": "sprint27-golden-mcp-071",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -699,7 +699,7 @@
     {
       "id": "sprint27-golden-mcp-072",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -708,7 +708,7 @@
     {
       "id": "sprint27-golden-mcp-073",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -717,7 +717,7 @@
     {
       "id": "sprint27-golden-mcp-074",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -726,7 +726,7 @@
     {
       "id": "sprint27-golden-mcp-075",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -735,7 +735,7 @@
     {
       "id": "sprint27-golden-mcp-076",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -744,7 +744,7 @@
     {
       "id": "sprint27-golden-mcp-077",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -753,7 +753,7 @@
     {
       "id": "sprint27-golden-mcp-078",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -762,7 +762,7 @@
     {
       "id": "sprint27-golden-mcp-079",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -771,7 +771,7 @@
     {
       "id": "sprint27-golden-mcp-080",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -780,7 +780,7 @@
     {
       "id": "sprint27-golden-mcp-081",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -789,7 +789,7 @@
     {
       "id": "sprint27-golden-mcp-082",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -798,7 +798,7 @@
     {
       "id": "sprint27-golden-mcp-083",
       "question": "「Dull Blade」是什么武器类型",
-      "expectedTool": "get_weapon",
+      "expectedTool": "get_equipment",
       "entityName": "Dull Blade",
       "requiredField": "weaponType",
       "maxToolCalls": 1,
@@ -1176,7 +1176,7 @@
     {
       "id": "sprint27-golden-mcp-125",
       "question": "搜索台词「要寻找岩神的话」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "要寻找岩神的话",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1185,7 +1185,7 @@
     {
       "id": "sprint27-golden-mcp-126",
       "question": "搜索台词「多亏之前温迪提醒」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "多亏之前温迪提醒",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1194,7 +1194,7 @@
     {
       "id": "sprint27-golden-mcp-127",
       "question": "搜索台词「派蒙知道具体时间」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "派蒙知道具体时间",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1203,7 +1203,7 @@
     {
       "id": "sprint27-golden-mcp-128",
       "question": "搜索台词「说不定是今天」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "说不定是今天",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1212,7 +1212,7 @@
     {
       "id": "sprint27-golden-mcp-129",
       "question": "搜索台词「派蒙知道具体地点」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "派蒙知道具体地点",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1221,7 +1221,7 @@
     {
       "id": "sprint27-golden-mcp-130",
       "question": "搜索台词「既然时间都是温迪」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "既然时间都是温迪",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1230,7 +1230,7 @@
     {
       "id": "sprint27-golden-mcp-131",
       "question": "搜索台词「既然来了璃月」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "既然来了璃月",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1239,7 +1239,7 @@
     {
       "id": "sprint27-golden-mcp-132",
       "question": "搜索台词「关于岩神」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "关于岩神",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1248,7 +1248,7 @@
     {
       "id": "sprint27-golden-mcp-133",
       "question": "搜索台词「你知道吗」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "你知道吗",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1257,7 +1257,7 @@
     {
       "id": "sprint27-golden-mcp-134",
       "question": "搜索台词「但我们这些外国人」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "但我们这些外国人",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1266,7 +1266,7 @@
     {
       "id": "sprint27-golden-mcp-135",
       "question": "搜索台词「还是和璃月人一样」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "还是和璃月人一样",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1275,7 +1275,7 @@
     {
       "id": "sprint27-golden-mcp-136",
       "question": "搜索台词「你们也是想看」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "你们也是想看",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1284,7 +1284,7 @@
     {
       "id": "sprint27-golden-mcp-137",
       "question": "搜索台词「真有行动力啊」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "真有行动力啊",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1293,7 +1293,7 @@
     {
       "id": "sprint27-golden-mcp-138",
       "question": "搜索台词「这就是所谓」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "这就是所谓",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1302,7 +1302,7 @@
     {
       "id": "sprint27-golden-mcp-139",
       "question": "搜索台词「希望你们的行程愉」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "希望你们的行程愉",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1311,7 +1311,7 @@
     {
       "id": "sprint27-golden-mcp-140",
       "question": "搜索台词「那么请问在哪里才」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "那么请问在哪里才",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1320,7 +1320,7 @@
     {
       "id": "sprint27-golden-mcp-141",
       "question": "搜索台词「这么远的路」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "这么远的路",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1329,7 +1329,7 @@
     {
       "id": "sprint27-golden-mcp-142",
       "question": "搜索台词「总之就往」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "总之就往",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1338,7 +1338,7 @@
     {
       "id": "sprint27-golden-mcp-143",
       "question": "搜索台词「那是这座港口的最」",
-      "expectedTool": "search_dialogue",
+      "expectedTool": "search",
       "entityName": "那是这座港口的最",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1347,223 +1347,223 @@
     {
       "id": "sprint27-golden-mcp-144",
       "question": "搜索实体「神里绫华 · 角色详细」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 角色详细",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-145",
       "question": "搜索实体「神里绫华 · 角色故事1」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 角色故事1",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-146",
       "question": "搜索实体「神里绫华 · 角色故事2」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 角色故事2",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-147",
       "question": "搜索实体「神里绫华 · 角色故事3」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 角色故事3",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-148",
       "question": "搜索实体「神里绫华 · 角色故事4」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 角色故事4",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-149",
       "question": "搜索实体「神里绫华 · 角色故事5」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 角色故事5",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-150",
       "question": "搜索实体「神里绫华 · 杜若丸」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 杜若丸",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-151",
       "question": "搜索实体「神里绫华 · 神之眼」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "神里绫华 · 神之眼",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-152",
       "question": "搜索实体「琴 · 角色详细」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "琴 · 角色详细",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-153",
       "question": "搜索实体「琴 · 角色故事1」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "琴 · 角色故事1",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-154",
       "question": "搜索实体「琴 · 角色故事2」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "琴 · 角色故事2",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-155",
       "question": "搜索实体「琴 · 角色故事3」",
-      "expectedTool": "search_entities",
+      "expectedTool": "search",
       "entityName": "琴 · 角色故事3",
-      "requiredField": "entities",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-156",
-      "question": "读取实体「54362661-667c-5441-bb52-8e7638ce0913」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「54362661-667c-5441-bb52-8e7638ce0913」",
+      "expectedTool": "get_document",
       "entityName": "54362661-667c-5441-bb52-8e7638ce0913",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-157",
-      "question": "读取实体「bb204b9a-0038-5234-aeed-932397dbb1a7」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「bb204b9a-0038-5234-aeed-932397dbb1a7」",
+      "expectedTool": "get_document",
       "entityName": "bb204b9a-0038-5234-aeed-932397dbb1a7",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-158",
-      "question": "读取实体「a31b0696-3694-5569-b5af-4264f0c2bd99」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「a31b0696-3694-5569-b5af-4264f0c2bd99」",
+      "expectedTool": "get_document",
       "entityName": "a31b0696-3694-5569-b5af-4264f0c2bd99",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-159",
-      "question": "读取实体「6d2428e4-2969-5d12-a40a-7ed53c9d2c71」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「6d2428e4-2969-5d12-a40a-7ed53c9d2c71」",
+      "expectedTool": "get_document",
       "entityName": "6d2428e4-2969-5d12-a40a-7ed53c9d2c71",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-160",
-      "question": "读取实体「5d8ed35d-d3ee-58ce-a47f-441a0497dac7」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「5d8ed35d-d3ee-58ce-a47f-441a0497dac7」",
+      "expectedTool": "get_document",
       "entityName": "5d8ed35d-d3ee-58ce-a47f-441a0497dac7",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-161",
-      "question": "读取实体「4c8bc829-e749-5cd6-ad8a-53faeb1929d1」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「4c8bc829-e749-5cd6-ad8a-53faeb1929d1」",
+      "expectedTool": "get_document",
       "entityName": "4c8bc829-e749-5cd6-ad8a-53faeb1929d1",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-162",
-      "question": "读取实体「1c30c985-6c97-5e5c-af30-58a3c78f8992」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「1c30c985-6c97-5e5c-af30-58a3c78f8992」",
+      "expectedTool": "get_document",
       "entityName": "1c30c985-6c97-5e5c-af30-58a3c78f8992",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-163",
-      "question": "读取实体「dc20bb69-1df4-57a0-adb0-db541cbf5ea0」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「dc20bb69-1df4-57a0-adb0-db541cbf5ea0」",
+      "expectedTool": "get_document",
       "entityName": "dc20bb69-1df4-57a0-adb0-db541cbf5ea0",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-164",
-      "question": "读取实体「4197513a-efe0-5730-ad89-7a1238d9c8ae」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「4197513a-efe0-5730-ad89-7a1238d9c8ae」",
+      "expectedTool": "get_document",
       "entityName": "4197513a-efe0-5730-ad89-7a1238d9c8ae",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-165",
-      "question": "读取实体「28682cba-1481-57ac-9ca4-ba83a9ebcd20」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「28682cba-1481-57ac-9ca4-ba83a9ebcd20」",
+      "expectedTool": "get_document",
       "entityName": "28682cba-1481-57ac-9ca4-ba83a9ebcd20",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-166",
-      "question": "读取实体「c0decfa3-9744-5b43-b9e5-c89643446eed」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「c0decfa3-9744-5b43-b9e5-c89643446eed」",
+      "expectedTool": "get_document",
       "entityName": "c0decfa3-9744-5b43-b9e5-c89643446eed",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-167",
-      "question": "读取实体「2a055ddb-e677-5d0c-96c1-4493521be8cc」",
-      "expectedTool": "get_entity",
+      "question": "读取文档「2a055ddb-e677-5d0c-96c1-4493521be8cc」",
+      "expectedTool": "get_document",
       "entityName": "2a055ddb-e677-5d0c-96c1-4493521be8cc",
-      "requiredField": "entity",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "character_story"
     },
     {
       "id": "sprint27-golden-mcp-168",
       "question": "搜索文档「少女薇拉的忧郁·卷一」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "少女薇拉的忧郁·卷一",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1572,7 +1572,7 @@
     {
       "id": "sprint27-golden-mcp-169",
       "question": "搜索文档「少女薇拉的忧郁·卷二」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "少女薇拉的忧郁·卷二",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1581,7 +1581,7 @@
     {
       "id": "sprint27-golden-mcp-170",
       "question": "搜索文档「少女薇拉的忧郁·卷三」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "少女薇拉的忧郁·卷三",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1590,7 +1590,7 @@
     {
       "id": "sprint27-golden-mcp-171",
       "question": "搜索文档「温妮莎传奇·上篇」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "温妮莎传奇·上篇",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1599,7 +1599,7 @@
     {
       "id": "sprint27-golden-mcp-172",
       "question": "搜索文档「温妮莎传奇·下篇」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "温妮莎传奇·下篇",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1608,7 +1608,7 @@
     {
       "id": "sprint27-golden-mcp-173",
       "question": "搜索文档「蒲公英海的狐狸·卷一」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷一",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1617,7 +1617,7 @@
     {
       "id": "sprint27-golden-mcp-174",
       "question": "搜索文档「蒲公英海的狐狸·卷二」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷二",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1626,7 +1626,7 @@
     {
       "id": "sprint27-golden-mcp-175",
       "question": "搜索文档「蒲公英海的狐狸·卷三」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷三",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1635,7 +1635,7 @@
     {
       "id": "sprint27-golden-mcp-176",
       "question": "搜索文档「蒲公英海的狐狸·卷五」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷五",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1644,7 +1644,7 @@
     {
       "id": "sprint27-golden-mcp-177",
       "question": "搜索文档「蒲公英海的狐狸·卷六」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷六",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1653,7 +1653,7 @@
     {
       "id": "sprint27-golden-mcp-178",
       "question": "搜索文档「蒲公英海的狐狸·卷七」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷七",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1662,7 +1662,7 @@
     {
       "id": "sprint27-golden-mcp-179",
       "question": "搜索文档「蒲公英海的狐狸·卷十」",
-      "expectedTool": "search_lore",
+      "expectedTool": "search",
       "entityName": "蒲公英海的狐狸·卷十",
       "requiredField": "hits",
       "maxToolCalls": 1,
@@ -1671,108 +1671,108 @@
     {
       "id": "sprint27-golden-mcp-180",
       "question": "搜索任务「请仙」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "请仙",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-181",
       "question": "搜索任务「惊变」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "惊变",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-182",
       "question": "搜索任务「望舒」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "望舒",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-183",
       "question": "搜索任务「叠山」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "叠山",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-184",
       "question": "搜索任务「留云」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "留云",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-185",
       "question": "搜索任务「往生」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "往生",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-186",
       "question": "搜索任务「麻烦的工作」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "麻烦的工作",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-187",
       "question": "搜索任务「遗失之书」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "遗失之书",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-188",
       "question": "搜索任务「指月」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "指月",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-189",
       "question": "搜索任务「童心的隐秘」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "童心的隐秘",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-190",
       "question": "搜索任务「南风与冒险」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "南风与冒险",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
     {
       "id": "sprint27-golden-mcp-191",
       "question": "搜索任务「狮牙之牙」",
-      "expectedTool": "search_quests",
+      "expectedTool": "search",
       "entityName": "狮牙之牙",
-      "requiredField": "quests",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "quest"
     },
@@ -1851,7 +1851,7 @@
     {
       "id": "sprint27-golden-mcp-200",
       "question": "读取文档「少女薇拉的忧郁·卷一」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "少女薇拉的忧郁·卷一",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1860,7 +1860,7 @@
     {
       "id": "sprint27-golden-mcp-201",
       "question": "读取文档「少女薇拉的忧郁·卷二」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "少女薇拉的忧郁·卷二",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1869,7 +1869,7 @@
     {
       "id": "sprint27-golden-mcp-202",
       "question": "读取文档「少女薇拉的忧郁·卷三」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "少女薇拉的忧郁·卷三",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1878,7 +1878,7 @@
     {
       "id": "sprint27-golden-mcp-203",
       "question": "读取文档「温妮莎传奇·上篇」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "温妮莎传奇·上篇",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1887,7 +1887,7 @@
     {
       "id": "sprint27-golden-mcp-204",
       "question": "读取文档「温妮莎传奇·下篇」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "温妮莎传奇·下篇",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1896,7 +1896,7 @@
     {
       "id": "sprint27-golden-mcp-205",
       "question": "读取文档「蒲公英海的狐狸·卷一」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "蒲公英海的狐狸·卷一",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1905,7 +1905,7 @@
     {
       "id": "sprint27-golden-mcp-206",
       "question": "读取文档「蒲公英海的狐狸·卷二」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "蒲公英海的狐狸·卷二",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -1914,7 +1914,7 @@
     {
       "id": "sprint27-golden-mcp-207",
       "question": "读取文档「蒲公英海的狐狸·卷三」",
-      "expectedTool": "get_lore_document",
+      "expectedTool": "get_document",
       "entityName": "蒲公英海的狐狸·卷三",
       "requiredField": "document",
       "maxToolCalls": 1,
@@ -2067,151 +2067,151 @@
     {
       "id": "sprint27-golden-mcp-224",
       "question": "搜索物品「苹果」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "苹果",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-225",
       "question": "搜索物品「日落果」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "日落果",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-226",
       "question": "搜索物品「纸条」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "纸条",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-227",
       "question": "搜索物品「掠夺的货物」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "掠夺的货物",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-228",
       "question": "搜索物品「丘丘人解药」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "丘丘人解药",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-229",
       "question": "搜索物品「攀爬终点花环」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "攀爬终点花环",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-230",
       "question": "搜索物品「飞行终点花环」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "飞行终点花环",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-231",
       "question": "搜索物品「飞行冠军奖杯」",
-      "expectedTool": "search_items",
+      "expectedTool": "search",
       "entityName": "飞行冠军奖杯",
-      "requiredField": "items",
+      "requiredField": "hits",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-232",
-      "question": "读取物品「苹果」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「苹果」",
+      "expectedTool": "get_document",
       "entityName": "苹果",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-233",
-      "question": "读取物品「日落果」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「日落果」",
+      "expectedTool": "get_document",
       "entityName": "日落果",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-234",
-      "question": "读取物品「纸条」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「纸条」",
+      "expectedTool": "get_document",
       "entityName": "纸条",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-235",
-      "question": "读取物品「掠夺的货物」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「掠夺的货物」",
+      "expectedTool": "get_document",
       "entityName": "掠夺的货物",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-236",
-      "question": "读取物品「丘丘人解药」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「丘丘人解药」",
+      "expectedTool": "get_document",
       "entityName": "丘丘人解药",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-237",
-      "question": "读取物品「攀爬终点花环」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「攀爬终点花环」",
+      "expectedTool": "get_document",
       "entityName": "攀爬终点花环",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-238",
-      "question": "读取物品「飞行终点花环」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「飞行终点花环」",
+      "expectedTool": "get_document",
       "entityName": "飞行终点花环",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-239",
-      "question": "读取物品「飞行冠军奖杯」文本",
-      "expectedTool": "get_item_text",
+      "question": "读取文档「飞行冠军奖杯」",
+      "expectedTool": "get_document",
       "entityName": "飞行冠军奖杯",
-      "requiredField": "item",
+      "requiredField": "document",
       "maxToolCalls": 1,
       "sourceDomain": "item"
     },
     {
       "id": "sprint27-golden-mcp-240",
       "question": "搜索机制说明「爽脆可口的酸甜果」",
-      "expectedTool": "search_mechanics",
+      "expectedTool": "search",
       "entityName": "苹果",
       "requiredField": "hits",
       "maxToolCalls": 1,

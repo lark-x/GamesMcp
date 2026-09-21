@@ -17,6 +17,7 @@ import {
   extractTrainVisitorDocuments,
   extractVoiceLineDocuments,
   extractStoryAtlasDocuments,
+  extractTutorialDocuments,
 } from "../packages/providers/src/starrail/extractors/index.js";
 import {
   normalizeStarRailText,
@@ -24,21 +25,28 @@ import {
 } from "../packages/providers/src/starrail/corpus/normalizer.js";
 import type { StarRailCorpusDocument } from "../packages/providers/src/starrail/corpus/types.js";
 import { StarRailWorldChapterResolver } from "../packages/providers/src/starrail/structured/world-chapter.js";
+import { StarRailStoryResolver } from "../packages/providers/src/starrail/structured/story-resolver.js";
 import { StarRailCharacterExtractor } from "../packages/providers/src/starrail/structured/character.js";
 import { StarRailLightConeExtractor } from "../packages/providers/src/starrail/structured/lightcone.js";
 import { StarRailRelicExtractor } from "../packages/providers/src/starrail/structured/relic.js";
 import { StarRailEnemyExtractor } from "../packages/providers/src/starrail/structured/enemy.js";
 import { StarRailMaterialExtractor } from "../packages/providers/src/starrail/structured/material.js";
 import { StarRailAchievementExtractor } from "../packages/providers/src/starrail/structured/achievement.js";
-import type { StarRailCharacter } from "../packages/providers/src/starrail/structured/types.js";
+import type {
+  StarRailCharacter,
+  StarRailStoryQuest,
+} from "../packages/providers/src/starrail/structured/types.js";
 import { readSafeJsonFile } from "../packages/providers/src/starrail/extractors/shared.js";
 
 const GAME_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd2"; // Honkai: Star Rail
 const SOURCE_ID = "c1000000-0000-4000-8000-000000000001";
+// The source commit is identical to r1; source snapshots are immutable and
+// unique by (source_id, content_hash), so the second revision reuses r1's
+// snapshot instead of trying to create a duplicate hash row.
 const SNAPSHOT_ID = "c2000000-0000-4000-8000-000000000001";
-const BATCH_ID = "c4000000-0000-4000-8000-000000000001";
-const MANIFEST_ID = "c5000000-0000-4000-8000-000000000001";
-const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd3";
+const BATCH_ID = "c4000000-0000-4000-8000-000000000002";
+const MANIFEST_ID = "c5000000-0000-4000-8000-000000000002";
+const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd4";
 
 // 星铁命途/属性 -> 中文展示名（共用 genshin_* 结构化表，与既有中文数据保持一致）。
 const PATH_CN: Record<string, string> = {
@@ -77,6 +85,39 @@ interface StructuredCodex {
   enemies: Array<Record<string, unknown>>;
   materials: Array<Record<string, unknown>>;
   achievements: Array<Record<string, unknown>>;
+}
+
+function starRailMissionType(rawType: unknown): string {
+  const type = String(rawType ?? "").toLowerCase();
+  if (type.includes("main") || type === "1") return "trailblaze_mission";
+  if (type.includes("companion") || type === "2") return "companion_mission";
+  if (type.includes("daily") || type === "3") return "daily_mission";
+  if (type.includes("gap") || type === "4") return "trailblaze_continuation";
+  if (type.includes("event")) return "event_quest";
+  return "adventure_quest";
+}
+
+function structuredMissionContent(quest: StarRailStoryQuest): string {
+  const lines = [`# ${quest.title}`, ""];
+  if (quest.worldTitle) lines.push(`世界：${quest.worldTitle}`);
+  if (quest.chapterTitle) lines.push(`章节：${quest.chapterTitle}`);
+  if (quest.seriesTitle) lines.push(`任务类型：${quest.seriesTitle}`);
+  if (lines.length > 2) lines.push("");
+
+  for (const sub of [...quest.subMissions].sort((a, b) => a.sequence - b.sequence)) {
+    if (sub.targetText) lines.push(`### 阶段目标：${sub.targetText}`);
+    if (sub.descriptionText) lines.push(sub.descriptionText);
+    if (sub.targetText || sub.descriptionText) lines.push("");
+  }
+
+  const dialogue = [...quest.dialogueNodes].sort((a, b) => a.order - b.order);
+  if (dialogue.length > 0) {
+    lines.push("## 剧情对白", "");
+    for (const node of dialogue) {
+      lines.push(node.speakerName ? `${node.speakerName}：${node.body}` : node.body);
+    }
+  }
+  return normalizeStarRailText(lines.join("\n"));
 }
 
 async function extractStructuredCodex(input: {
@@ -490,6 +531,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
   let sourceCommit = "unknown";
   const extractionIssues: Array<{ code: string; message: string }> = [];
   let worldChapterResolver: StarRailWorldChapterResolver | undefined;
+  let structuredQuests: StarRailStoryQuest[] = [];
+  const structuredQuestMap = new Map<number, StarRailStoryQuest>();
   let structuredCodex: StructuredCodex | undefined;
   const mainMissionMap = new Map<number, Record<string, unknown>>();
 
@@ -516,6 +559,20 @@ export async function runStarRailIngestion(options: IngestOptions) {
     });
     await worldChapterResolver.initialize();
 
+    const structuredStory = await new StarRailStoryResolver({
+      dataDir: targetDir,
+      sourceRef: snapshot.ref,
+      inventory,
+      resolver,
+      worldChapterResolver,
+      fixture: sourceMode === "fixture",
+    }).resolveQuests();
+    structuredQuests = structuredStory.quests;
+    for (const quest of structuredQuests) {
+      structuredQuestMap.set(quest.mainMissionId, quest);
+    }
+    console.log("Structured narrative summary:", JSON.stringify(structuredStory.stats));
+
     const mainItem = inventory.items.find((i) => i.path === "ExcelOutput/MainMission.json");
     if (mainItem) {
       const parsed = await readSafeJsonFile<Array<Record<string, unknown>>>(
@@ -539,7 +596,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       locale: "CHS",
     };
 
-    console.log("Extracting 9 categories with upgraded extractors...");
+    console.log("Extracting 10 categories with upgraded extractors...");
     const [
       missions,
       stories,
@@ -550,6 +607,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       voicelines,
       itemLores,
       storyAtlas,
+      tutorials,
     ] = await Promise.all([
       extractMissionDocuments(extractorInput),
       extractStoryDocuments(extractorInput),
@@ -560,6 +618,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       extractVoiceLineDocuments(extractorInput),
       extractItemLoreDocuments(extractorInput),
       extractStoryAtlasDocuments(extractorInput),
+      extractTutorialDocuments(extractorInput),
     ]);
 
     extractionIssues.push(
@@ -573,6 +632,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
         voicelines,
         itemLores,
         storyAtlas,
+        tutorials,
       ].flatMap((result) => result.issues),
     );
     allDocuments.push(
@@ -585,7 +645,50 @@ export async function runStarRailIngestion(options: IngestOptions) {
       ...voicelines.documents,
       ...itemLores.documents,
       ...storyAtlas.documents,
+      ...tutorials.documents,
     );
+
+    // The flat extractor intentionally skips MainMission rows that have no
+    // localized prose.  Keep the structured mission/sub-mission projection as
+    // a metadata-only or dialogue-bearing document so those tasks do not
+    // disappear from the archive merely because their text lives in another
+    // source family.
+    const extractedMissionIds = new Set(missions.documents.map((doc) => doc.id));
+    for (const quest of structuredQuests) {
+      if (
+        extractedMissionIds.has(quest.mainMissionId) ||
+        quest.visibility !== "public" ||
+        quest.completeness === "unresolved" ||
+        (quest.subMissions.length === 0 && quest.dialogueNodes.length === 0)
+      ) {
+        continue;
+      }
+      const content = structuredMissionContent(quest);
+      allDocuments.push({
+        category: "sr_mission",
+        id: quest.mainMissionId,
+        relativePath: `sr_mission/${quest.mainMissionId}.txt`,
+        title: quest.title,
+        content,
+        sourceFiles: [
+          String(quest.provenance.mainMissionPath ?? "ExcelOutput/MainMission.json"),
+          "ExcelOutput/SubMission.json",
+          ...quest.dialogueNodes.map((node) => node.sourceFile),
+        ].filter((value, index, values) => values.indexOf(value) === index),
+        sourceIds: [`MainMissionID:${quest.mainMissionId}`],
+        metadata: {
+          source: "turn-based-game-data",
+          sourceCommit,
+          sourcePath: quest.provenance.mainMissionPath,
+          structuredProjection: true,
+        },
+        hierarchy: {
+          parentId: quest.chapterId ? `sr_chapter:${quest.chapterId}` : "sr_mission",
+          label: "Mission",
+          order: quest.displayPriority ?? quest.mainMissionId,
+        },
+      });
+    }
 
     console.log("Extracting structured codex data...");
     structuredCodex = await extractStructuredCodex(extractorInput);
@@ -603,6 +706,12 @@ export async function runStarRailIngestion(options: IngestOptions) {
       // 标题与正文统一清洗：剥离富文本标签、替换 {NICKNAME} 等模板占位符。
       doc.title = normalizeStarRailLabel(doc.title);
       doc.content = normalizeStarRailText(doc.content).replace(INTERNAL_ID_LINE, "");
+      // 分组名同样面向读者展示，需与标题使用同一套清洗规则，否则目录里
+      // 会残留 {NICKNAME}、<unbreak> 这类上游模板标记。
+      const docMetadata = doc.metadata as Record<string, unknown> | undefined;
+      if (docMetadata && typeof docMetadata.groupName === "string") {
+        docMetadata.groupName = normalizeStarRailLabel(docMetadata.groupName);
+      }
       uniqueDocuments.push(doc);
     }
   }
@@ -752,7 +861,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
       [
         REVISION_ID,
         GAME_ID,
-        1,
+        2,
         BATCH_ID,
         "published",
         "ready",
@@ -782,12 +891,13 @@ export async function runStarRailIngestion(options: IngestOptions) {
     const seenSourceKeys = new Set<string>();
 
     for (const doc of docsToInsert) {
-      const isQuest = doc.category === "sr_mission" || doc.category === "sr_story";
+      const isQuest = doc.category === "sr_mission";
+      const structuredQuest = isQuest ? structuredQuestMap.get(doc.id) : undefined;
       const docType =
         doc.category === "sr_mission"
-          ? "archon_quest"
+          ? (structuredQuest?.type ?? starRailMissionType(mainMissionMap.get(doc.id)?.Type))
           : doc.category === "sr_story"
-            ? "world_quest"
+            ? "discussion"
             : doc.category === "sr_book"
               ? "book"
               : doc.category === "sr_character_story"
@@ -800,17 +910,17 @@ export async function runStarRailIngestion(options: IngestOptions) {
                       ? "train_visitor"
                       : doc.category === "sr_story_atlas"
                         ? "story_atlas"
-                        : doc.metadata?.itemType === "Equipment"
-                          ? "lightcone_lore"
-                          : doc.metadata?.itemType === "Relic"
-                            ? "relic_lore"
-                            : "item_lore";
+                        : doc.category === "sr_tutorial"
+                          ? doc.metadata?.textKind === "guides"
+                            ? "guide"
+                            : "tutorial"
+                          : doc.metadata?.itemType === "Equipment"
+                            ? "lightcone_lore"
+                            : doc.metadata?.itemType === "Relic"
+                              ? "relic_lore"
+                              : "item_lore";
 
-      const questKey = isQuest
-        ? doc.category === "sr_mission"
-          ? `mission/${doc.id}`
-          : `story/${doc.id}`
-        : undefined;
+      const questKey = isQuest ? `mission/${doc.id}` : undefined;
 
       const metadata: Record<string, unknown> = {
         category: doc.category,
@@ -849,50 +959,86 @@ export async function runStarRailIngestion(options: IngestOptions) {
         metadata.textKind ??= "item-texts";
       } else if (docType === "story_atlas") {
         metadata.textKind ??= "story-atlas";
+      } else if (docType === "tutorial") {
+        metadata.textKind ??= "tutorials";
+        metadata.groupId ??= "tutorial/basic";
+        metadata.groupName ??= "基础教程";
+      } else if (docType === "guide") {
+        metadata.textKind ??= "guides";
+        metadata.groupId ??= "guide/gameplay";
+        metadata.groupName ??= "引导指南";
       }
 
       if (questKey) {
-        // sr_story fragments live under Story/Discussion/Mission/<mainMissionId>/;
-        // attach them to that mission so they inherit its world/chapter placement.
-        let missionId = doc.id;
-        if (doc.category === "sr_story") {
-          const discussionPath = doc.sourceFiles.find((p) => p.startsWith("Story/Discussion/"));
-          const match = discussionPath?.match(/Story\/Discussion\/Mission\/(\d+)/u);
-          if (match) missionId = Number(match[1]);
-        }
-        const mm = mainMissionMap.get(missionId);
-        const cId = mm?.ChapterID ? Number(mm.ChapterID) : undefined;
+        const mm = mainMissionMap.get(doc.id);
+        const structured = structuredQuestMap.get(doc.id);
+        const cId = structured?.chapterId
+          ? Number(structured.chapterId)
+          : mm?.ChapterID
+            ? Number(mm.ChapterID)
+            : undefined;
         const chap = cId && worldChapterResolver ? worldChapterResolver.getChapter(cId) : undefined;
         // Chapter placement wins over the per-mission WorldID, which is noisy
         // for activity chapters whose entry missions sit in another world.
-        const worldId =
-          chap && chap.worldId > 0 ? chap.worldId : mm?.WorldID ? Number(mm.WorldID) : undefined;
+        const worldId = structured?.worldId
+          ? Number(structured.worldId)
+          : chap && chap.worldId > 0
+            ? chap.worldId
+            : mm?.WorldID
+              ? Number(mm.WorldID)
+              : undefined;
         const wld =
           worldId && worldChapterResolver ? worldChapterResolver.getWorld(worldId) : undefined;
 
-        const rawType = String(mm?.Type ?? "");
-        let series = doc.category === "sr_story" ? "散篇剧情" : "冒险任务";
-        if (rawType === "Main" || rawType === "1") {
-          series = "开拓任务";
-        } else if (rawType === "Companion" || rawType === "2") {
-          series = "同行任务";
-        } else if (rawType === "Daily" || rawType === "3") {
-          series = "日常任务";
-        }
-
-        const region = wld?.name ?? (worldId ? `世界 ${worldId}` : "其他世界");
+        const series =
+          structured?.seriesTitle ??
+          (
+            {
+              trailblaze_mission: "开拓任务",
+              companion_mission: "同行任务",
+              daily_mission: "日常任务",
+              trailblaze_continuation: "开拓续闻",
+              event_quest: "活动任务",
+              adventure_quest: "冒险任务",
+            } as Record<string, string>
+          )[String(docType)] ??
+          "冒险任务";
+        const familyTitle = structured?.storyFamilyTitle ?? series;
+        const region =
+          structured?.worldTitle ??
+          structured?.worldName ??
+          wld?.name ??
+          (worldId ? `世界 ${worldId}` : "其他世界");
         const regionId = `world_${worldId ?? 0}`;
-        // Missions without a chapter group under their series label instead of
-        // a numeric placeholder.
-        const chapter = chap?.name ?? (cId ? `章节 ${cId}` : series);
-        const chapterId = `chapter_${cId ?? `none_${series}`}`;
+        const chapter =
+          structured?.chapterTitle ?? chap?.name ?? (cId ? `章节 ${cId}` : `${region}散篇任务`);
+        const chapterId = structured?.chapterId
+          ? `chapter_${structured.chapterId}`
+          : `chapter_${cId ?? `none_${String(docType)}`}`;
 
-        // Unnamed internal missions and raw discussion fragments are not story
-        // navigation entries; keep them out of the public quest tree while the
-        // bodies stay searchable.
+        const hasDialogue =
+          (structured?.dialogueNodes.length ?? 0) > 0 ||
+          /(?:^|\n)## 剧情对白(?:\n|$)/u.test(doc.content);
+        const hasStages =
+          (structured?.subMissions.length ?? 0) > 0 || doc.content.includes("阶段目标");
+        const completeness = hasDialogue
+          ? structured?.completeness === "complete"
+            ? "complete"
+            : "partial"
+          : hasStages || structured?.completeness === "metadata_only"
+            ? "metadata_only"
+            : "partial";
+
+        // Unnamed internal missions stay searchable but never enter the public
+        // story tree.  The structured resolver also knows about test/hidden
+        // rows that do have a localized title.
         const unnamed = /^任务 \d+$/u.test(doc.title);
-        const visibility = unnamed || doc.category === "sr_story" ? "hidden" : "public";
-
+        const visibility =
+          structured && structured.visibility !== "public"
+            ? structured.visibility
+            : unnamed
+              ? "hidden"
+              : "public";
         const questData = {
           questKey,
           mainQuestId: doc.id,
@@ -905,22 +1051,36 @@ export async function runStarRailIngestion(options: IngestOptions) {
           chapter,
           chapterId,
           chapterTitle: chapter,
-          series,
-          seriesTitle: series,
-          order: doc.hierarchy?.order ?? doc.id,
-          completeness: "partial",
+          storyFamilyId: structured?.storyFamilyId,
+          storyFamilyTitle: familyTitle,
+          storyFamilyProvenance: structured?.storyFamilyProvenance ?? "derived",
+          storyFamilyOrder: structured?.storyFamilyOrder,
+          series: familyTitle,
+          seriesTitle: familyTitle,
+          order: structured?.sequence ?? doc.hierarchy?.order ?? doc.id,
+          chapterOrder: structured?.chapterOrder,
+          storyPosition: structured?.sequence ?? doc.hierarchy?.order ?? doc.id,
+          completeness,
+          qualityCode: structured?.qualityCode,
           visibility,
+          dialogueNodes: hasDialogue ? [{ nodeId: "has_dialogue" }] : [],
+          subquests: hasStages ? [{ subquestId: "has_subquests" }] : [],
         };
 
         metadata.quest = questData;
         metadata.questPayload = questData;
         metadata.questKey = questKey;
-        metadata.completeness = "partial";
+        metadata.completeness = completeness;
         metadata.visibility = visibility;
         metadata.region = region;
         metadata.regionId = regionId;
         metadata.series = series;
         metadata.chapter = chapter;
+      } else if (doc.category === "sr_story") {
+        const discussionPath = doc.sourceFiles.find((p) => p.startsWith("Story/Discussion/"));
+        const match = discussionPath?.match(/Story\/Discussion\/Mission\/(\d+)/u);
+        metadata.textKind ??= "discussion";
+        if (match) metadata.relatedQuestKey = `mission/${match[1]}`;
       } else if (docType === "book") {
         // 同一系列的书归入一个分组，目录按系列聚合、按卷内序号排序
         const seriesMatch = /^sr_book_series:(\d+)$/u.exec(String(doc.hierarchy?.parentId ?? ""));
@@ -1017,19 +1177,61 @@ export async function runStarRailIngestion(options: IngestOptions) {
 
       // If quest, also create subquests and dialogue nodes
       if (questKey) {
-        const subIdRes = await client.query("SELECT gen_random_uuid() AS id");
-        const subId = subIdRes.rows[0].id;
-        const subKey = `${questKey}/subquest/1`;
+        const structured = structuredQuestMap.get(doc.id);
+        const structuredSubquests = structured?.subMissions ?? [];
+        const subquestRows =
+          structuredSubquests.length > 0
+            ? [...structuredSubquests]
+                .sort((a, b) => a.sequence - b.sequence)
+                .map((sub, index) => ({
+                  key: `${questKey}/subquest/${sub.subMissionId}`,
+                  id: sub.subMissionId,
+                  ordinal: index + 1,
+                  title: sub.targetText ?? `阶段 ${index + 1}`,
+                  objective: sub.descriptionText ?? sub.targetText ?? "完成剧情推进",
+                  completeness: sub.targetText || sub.descriptionText ? "complete" : "partial",
+                  metadata: {
+                    source: "structured_star_rail_mission",
+                    subMissionId: sub.subMissionId,
+                  },
+                }))
+            : [
+                {
+                  key: `${questKey}/subquest/1`,
+                  id: 1,
+                  ordinal: 1,
+                  title: doc.title,
+                  objective: "完成剧情推进",
+                  completeness: "partial",
+                  metadata: { synthetic: true, reason: "flat_mission_projection" },
+                },
+              ];
 
-        await client.query(
-          `
-          INSERT INTO knowledge.quest_subquests (
-            id, document_id, revision_id, quest_key, subquest_key, subquest_id,
-            ordinal, title, objective, completeness, metadata
-          ) VALUES ($1, $2, $3, $4, $5, 1, 1, $6, $7, 'partial', '{}'::jsonb)
-        `,
-          [subId, docId, REVISION_ID, questKey, subKey, doc.title, "完成剧情推进"],
-        );
+        for (const subquest of subquestRows) {
+          const subIdRes = await client.query("SELECT gen_random_uuid() AS id");
+          await client.query(
+            `
+            INSERT INTO knowledge.quest_subquests (
+              id, document_id, revision_id, quest_key, subquest_key, subquest_id,
+              ordinal, title, objective, completeness, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+          `,
+            [
+              subIdRes.rows[0].id,
+              docId,
+              REVISION_ID,
+              questKey,
+              subquest.key,
+              subquest.id,
+              subquest.ordinal,
+              subquest.title,
+              subquest.objective,
+              subquest.completeness,
+              JSON.stringify(subquest.metadata),
+            ],
+          );
+        }
+        const subKey = subquestRows[0]!.key;
 
         // Parse conversation lines from content
         const lines = doc.content.split("\n");

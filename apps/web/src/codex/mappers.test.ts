@@ -88,6 +88,23 @@ describe("Game Codex response mappers", () => {
     expect(quest.totalDialogueNodes).toBe(1);
   });
 
+  it("preserves Star Rail mission types in the detail mapper", () => {
+    const quest = mapQuestDetail({
+      questKey: "mission/2021701",
+      mainQuestId: "2021701",
+      title: "游园惊梦",
+      type: "trailblaze_continuation",
+      completeness: "complete",
+      locale: "zh-CN",
+      documentId: "document-1",
+      revision: "r1",
+      dialogueNodes: [],
+      citations: [],
+    });
+
+    expect(quest.type).toBe("trailblaze_continuation");
+  });
+
   it("merges cursor pages without duplicating nodes, edges, participants, or citations", () => {
     const first = mapQuestDetail({
       questKey: "quest/1001",

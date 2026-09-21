@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -61,7 +61,7 @@ describe("AnimeGameData quest converter", () => {
     expect(first.records).toEqual(second.records);
     expect(first.manifest.failures).toEqual([]);
     expect(first.manifest.schemaVersion).toBe(2);
-    expect(first.manifest.converterVersion).toBe("anime-game-data-quests-v1");
+    expect(first.manifest.converterVersion).toBe("anime-game-data-quests-v2");
     expect(first.manifest.counts).toMatchObject({
       mainQuests: 1,
       documents: { "zh-CN": 1, en: 1 },
@@ -166,9 +166,25 @@ describe("AnimeGameData quest converter", () => {
   });
 
   it("covers commission and hangout quest type aliases", () => {
+    expect(questType("IQ")).toBe("commission");
     expect(questType("commission_quest")).toBe("commission");
     expect(questType("HANGOUT")).toBe("hangout");
     expect(questType("WQ")).toBe("world_quest");
+  });
+
+  it("uses the coop chapter style to classify hangout events", async () => {
+    const result = await withFixtureVariant(async (root) => {
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/MainQuestExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, type: "LQ" })),
+      );
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/ChapterExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, LINLPCFFGFC: "CHAPTER_STYLE_TYPE_COOP_QUEST" })),
+      );
+    });
+
+    expect(result.records.every((record) => record.quest?.questType === "hangout")).toBe(true);
+    expect(result.records.every((record) => record.documentType === "hangout")).toBe(true);
+    expect(result.manifest.counts.discoveredByType.hangout).toBe(1);
   });
 
   it("maps unknown showType to unresolved and records a warning", async () => {
@@ -210,11 +226,78 @@ describe("AnimeGameData quest converter", () => {
         { sourceKey: "quest/1001/locale/en", reasons: ["missingDialogue"] },
       ]),
     );
-    expect(result.manifest.excluded).toEqual(
+    expect(result.records).toHaveLength(2);
+    expect(result.records.every((record) => record.quest?.completeness === "partial")).toBe(true);
+    expect(result.manifest.excluded).toEqual([]);
+  });
+
+  it("uses opaque quest-talk rows when legacy dialogue hashes are stale", async () => {
+    const result = await withFixtureVariant(async (root) => {
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/TalkExcelConfigData_0.json", (rows) => [
+        ...rows,
+        { id: 43, initDialog: 3, questId: 1001 },
+      ]);
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/DialogExcelConfigData.json", (rows) => [
+        ...rows,
+        {
+          GFLDJMJKIKE: 3,
+          nextDialogs: [4],
+          talkRole: { type: "TALK_ROLE_NONE", id: "" },
+          talkContentTextMapHash: 99909,
+        },
+      ]);
+      await updateJson<JsonRow>(root, "BinOutput/CodexQuest/1001.json", (row) => ({
+        ...row,
+        EBNBLBEIFFJ: [],
+      }));
+      await updateJson<Record<string, unknown>>(root, "TextMap/TextMapCHS.json", (map) => ({
+        ...map,
+        "10008": "来自新对白表的正文。",
+      }));
+      await updateJson<Record<string, unknown>>(root, "TextMap/TextMapEN.json", (map) => ({
+        ...map,
+        "10008": "Dialogue from the new table.",
+      }));
+      await mkdir(join(root, "BinOutput/Talk/Quest"), { recursive: true });
+      await writeFile(
+        join(root, "BinOutput/Talk/Quest/opaque.json"),
+        JSON.stringify(
+          {
+            PFALHAKIILD: [
+              {
+                OIFGMOHKPOI: 3,
+                KMLAFCBMFEI: [4],
+                LFGCLPAPB: { _type: "TALK_ROLE_NONE", _id: "" },
+                BKABCBAFIKD: 0,
+                OACNIBLFFDI: 0,
+              },
+              {
+                OIFGMOHKPOI: 4,
+                KMLAFCBMFEI: [],
+                LFGCLPAPB: { _type: "TALK_ROLE_NPC", _id: "2001" },
+                BKABCBAFIKD: 10007,
+                OACNIBLFFDI: 10008,
+              },
+            ],
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    });
+
+    const zh = result.records.find((record) => record.locale === "zh-CN");
+    expect(zh?.quest?.dialogueNodes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ reason: "incomplete_content:partial:missingDialogue" }),
+        expect.objectContaining({
+          body: "来自新对白表的正文。",
+          metadata: expect.objectContaining({
+            sourceFile: "BinOutput/Talk/Quest/opaque.json",
+          }),
+        }),
       ]),
     );
+    expect(zh?.quest?.dialogueNodes).toHaveLength(1);
   });
 
   it("classifies temporary rows without relying on numeric id guesses", () => {

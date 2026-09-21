@@ -236,7 +236,12 @@ export function registerPublicRoutes(
     const revisionId = query.revisionId
       ? revisionIdSchema.parse(String(query.revisionId))
       : undefined;
-    const catalog = await repository.getStoryCatalog(gameId, revisionId);
+    const questType = query.type ? questTypeSchema.parse(String(query.type)) : undefined;
+    const locale = typeof query.locale === "string" ? query.locale : "zh-CN";
+    const catalog = await repository.getStoryCatalog(gameId, revisionId, {
+      locale,
+      questType,
+    });
     return catalog;
   });
 

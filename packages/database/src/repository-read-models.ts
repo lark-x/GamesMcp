@@ -29,6 +29,8 @@ import {
   type QuestSearchRequest,
   type RelationshipView,
   type StoryCatalog,
+  type StoryCatalogRequest,
+  type StoryFamily,
   type StoryRegion,
   type StoryChapter,
   type StoryQuestEntry,
@@ -67,6 +69,7 @@ import {
   defaultLimit,
   encodeQuestCursor,
   escapeLike,
+  hydrateManifestRecords,
   lexicalScore,
   mainQuestIdFromKey,
   normalize,
@@ -407,6 +410,11 @@ export class RepositoryReadModels {
         "event_quest",
         "commission",
         "hangout",
+        "companion_mission",
+        "daily_mission",
+        "trailblaze_continuation",
+        "trailblaze_mission",
+        "adventure_quest",
         "other",
       ]),
       dialogueCategory(),
@@ -1248,16 +1256,18 @@ export class RepositoryReadModels {
     return result;
   }
 
-  async getStoryCatalog(gameId: string, revisionId?: string): Promise<StoryCatalog> {
+  async getStoryCatalog(
+    gameId: string,
+    revisionId?: string,
+    options?: StoryCatalogRequest,
+  ): Promise<StoryCatalog> {
     const revision = revisionId
       ? await this.getRevisionMeta(revisionId, gameId)
       : await (async () => {
           const current = await this.getCurrentRevision(gameId);
           return current ? this.getSearchableRevision(gameId, current) : null;
         })();
-    if (!revision) {
-      return { gameId, revisionId: null, regions: [] };
-    }
+    if (!revision) return { gameId, revisionId: null, regions: [] };
 
     const game = await this.getGame(gameId);
     const isStarRail =
@@ -1272,11 +1282,19 @@ export class RepositoryReadModels {
       "event_quest",
       "commission",
       "hangout",
+      "companion_mission",
+      "daily_mission",
+      "trailblaze_continuation",
+      "trailblaze_mission",
+      "adventure_quest",
       "other",
     ] as const;
+    const selectedQuestTypes = options?.questType ? [options.questType] : questTypes;
+    const locale = options?.locale ?? "zh-CN";
 
     const docRows = await this.db
       .select({
+        documentId: documents.id,
         sourceKey: documents.sourceKey,
         title: documents.title,
         metadata: documents.metadata,
@@ -1288,13 +1306,55 @@ export class RepositoryReadModels {
           eq(documents.gameId, gameId),
           eq(documents.revisionId, revision.id),
           eq(documents.deleted, false),
-          inArray(documents.type, [...questTypes]),
+          inArray(documents.type, [...selectedQuestTypes]),
           publicQuestCondition(),
-          eq(documents.locale, "zh-CN"),
+          eq(documents.locale, locale),
         ),
       );
 
-    if (isStarRail && docRows.length === 0) {
+    const documentIds = docRows.map((row) => row.documentId);
+    const dialogueCountRows = documentIds.length
+      ? await this.db
+          .select({
+            documentId: questDialogueNodes.documentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(questDialogueNodes)
+          .where(
+            and(
+              eq(questDialogueNodes.revisionId, revision.id),
+              inArray(questDialogueNodes.documentId, documentIds),
+            ),
+          )
+          .groupBy(questDialogueNodes.documentId)
+      : [];
+    const subquestCountRows = documentIds.length
+      ? await this.db
+          .select({
+            documentId: questSubquests.documentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(questSubquests)
+          .where(
+            and(
+              eq(questSubquests.revisionId, revision.id),
+              inArray(questSubquests.documentId, documentIds),
+            ),
+          )
+          .groupBy(questSubquests.documentId)
+      : [];
+    const dialogueCounts = new Map(
+      dialogueCountRows.map((row) => [row.documentId, Number(row.count)]),
+    );
+    const subquestCounts = new Map(
+      subquestCountRows.map((row) => [row.documentId, Number(row.count)]),
+    );
+
+    // The fallback is only a last-resort catalogue for an unpopulated Star Rail
+    // revision.  It must not turn an intentional type filter into a fabricated
+    // result (for example, asking Star Rail for the legacy `world_quest` type
+    // should return an empty catalogue).
+    if (isStarRail && docRows.length === 0 && !options?.questType) {
       return {
         gameId,
         revisionId: revision.id,
@@ -1303,6 +1363,31 @@ export class RepositoryReadModels {
             id: "penacony",
             name: "匹诺康尼",
             order: 1,
+            families: [
+              {
+                id: "family:trailblaze",
+                name: "开拓任务",
+                order: 1,
+                provenance: "fallback",
+                chapters: [
+                  {
+                    id: "chapter_1001",
+                    name: "长日入夜行",
+                    order: 1,
+                    series: "开拓任务",
+                    quests: [
+                      {
+                        questKey: "mission/1001",
+                        title: "长日入夜行",
+                        order: 1,
+                        completeness: "complete",
+                        bodyAvailability: "dialogue",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
             chapters: [
               {
                 id: "chapter_1001",
@@ -1343,15 +1428,40 @@ export class RepositoryReadModels {
       other_region: 99,
     };
 
+    const genericFamilyNames = new Set([
+      "连续任务",
+      "Quest Series",
+      "开拓任务",
+      "同行任务",
+      "开拓续闻",
+      "冒险任务",
+      "日常任务",
+      "活动任务",
+      "散篇剧情",
+      "散篇任务",
+    ]);
+    const cleanName = (value: unknown): string | undefined => {
+      const name = typeof value === "string" ? value.trim() : "";
+      return name && name !== "未分类章节" ? name : undefined;
+    };
     const regionsMap = new Map<
       string,
       {
         id: string;
         name: string;
         order: number;
-        chaptersMap: Map<
+        familiesMap: Map<
           string,
-          { id: string; name: string; order: number; series?: string; quests: StoryQuestEntry[] }
+          {
+            id: string;
+            name: string;
+            order: number;
+            provenance: StoryFamily["provenance"];
+            chaptersMap: Map<
+              string,
+              { id: string; name: string; order: number; series?: string; quests: StoryQuestEntry[] }
+            >;
+          }
         >;
       }
     >();
@@ -1361,22 +1471,37 @@ export class RepositoryReadModels {
       const questKey = meta.questKey ?? questKeyFromInput(row.sourceKey);
       const regionId = String(meta.regionId ?? "other_region");
       const regionName = String(meta.regionName ?? meta.region ?? "其他地区");
-      const chapterId = String(meta.chapterId ?? meta.chapter ?? "default_chapter");
+      const rawChapterId = meta.chapterId ?? meta.chapter;
       const chapterMeta = (meta.metadata as Record<string, unknown> | undefined)?.chapter as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const metaRec = meta as Record<string, unknown>;
       const chapterNum =
         (typeof chapterMeta?.num === "string" ? chapterMeta.num : undefined) ??
         (typeof metaRec.chapterNum === "string" ? metaRec.chapterNum : undefined);
-      let chapterName = String(meta.chapterTitle ?? meta.chapter ?? "未分类章节");
+      const rawSeries = cleanName(meta.storyFamilyTitle ?? meta.seriesTitle ?? meta.series);
+      const series = rawSeries && !/^\d+$/.test(rawSeries) ? rawSeries : undefined;
+      const explicitFamilyId = cleanName(meta.storyFamilyId);
+      const genericSeries = Boolean(series && genericFamilyNames.has(series));
+      const hasNamedChapter =
+        rawChapterId !== undefined &&
+        rawChapterId !== null &&
+        String(rawChapterId).trim() !== "" &&
+        String(meta.chapterTitle ?? meta.chapter ?? "").trim() !== "未分类章节";
+      const fallbackChapterKey = series && !genericSeries
+        ? `series_${series.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/giu, "_")}`
+        : "standalone";
+      const chapterId = hasNamedChapter
+        ? String(rawChapterId)
+        : `fallback_${regionId}_${fallbackChapterKey}`;
+      let chapterName = hasNamedChapter
+        ? String(meta.chapterTitle ?? meta.chapter ?? series ?? `${regionName}散篇任务`)
+        : (series ?? `${regionName}散篇任务`);
+      chapterName = cleanName(chapterName) ?? `${regionName}散篇任务`;
       if (chapterNum && !chapterName.startsWith(chapterNum)) {
         chapterName = `${chapterNum} ${chapterName}`;
       }
-      const rawSeries = meta.seriesTitle ?? meta.series;
-      const series =
-        rawSeries && !/^\d+$/.test(String(rawSeries).trim()) ? String(rawSeries) : undefined;
-      const order = Number(meta.order ?? 0);
+      const order = Number(meta.storyPosition ?? meta.order ?? 0);
+      const familyOrderValue = Number(meta.storyFamilyOrder ?? order ?? 0);
       const completeness: "complete" | "partial" | "metadata_only" =
         meta.completeness === "complete" ||
         meta.completeness === "partial" ||
@@ -1384,65 +1509,131 @@ export class RepositoryReadModels {
           ? meta.completeness
           : "complete";
 
-      const bodyAvail: BodyAvailability =
-        meta.dialogueNodes && meta.dialogueNodes.length > 0
-          ? "dialogue"
-          : row.hasBody
-            ? "document"
+      const dialogueCount = dialogueCounts.get(row.documentId) ?? 0;
+      const subquestCount = subquestCounts.get(row.documentId) ?? 0;
+      const bodyAvail: BodyAvailability = dialogueCount > 0
+        ? "dialogue"
+        : row.hasBody
+          ? "document"
+          : subquestCount > 0
+            ? "objective_only"
             : "none";
+      const qualityCode =
+        meta.qualityCode ??
+        (completeness === "complete"
+          ? "complete"
+          : completeness === "metadata_only"
+            ? "metadata_only"
+            : dialogueCount > 0
+              ? "partial_dialogue"
+              : "source_missing");
+      const familyName =
+        cleanName(meta.storyFamilyTitle) ??
+        (series && !genericSeries ? series : "散篇任务");
+      const familyId =
+        explicitFamilyId ??
+        (series && !genericSeries
+          ? `family:${series.toLocaleLowerCase("zh-Hans-CN").replace(/[^a-z0-9\u4e00-\u9fff]+/giu, "_")}`
+          : `standalone:${regionId}`);
+      const familyProvenance: StoryFamily["provenance"] = meta.storyFamilyProvenance ??
+        (explicitFamilyId || meta.storyFamilyTitle
+          ? "upstream"
+          : series && !genericSeries
+            ? "derived"
+            : "fallback");
 
       if (!regionsMap.has(regionId)) {
         regionsMap.set(regionId, {
           id: regionId,
           name: regionName,
           order: regionOrder[regionId] ?? 50,
-          chaptersMap: new Map(),
+          familiesMap: new Map(),
         });
       }
       const reg = regionsMap.get(regionId)!;
-      if (!reg.chaptersMap.has(chapterId)) {
-        const numChapterId = Number(chapterId);
-        const initialOrder =
-          Number.isFinite(numChapterId) && numChapterId > 0 ? numChapterId : order;
-        reg.chaptersMap.set(chapterId, {
+      if (!reg.familiesMap.has(familyId)) {
+        reg.familiesMap.set(familyId, {
+          id: familyId,
+          name: familyName,
+          order: familyOrderValue > 0 ? familyOrderValue : 999999,
+          provenance: familyProvenance,
+          chaptersMap: new Map(),
+        });
+      }
+      const family = reg.familiesMap.get(familyId)!;
+      if (familyOrderValue > 0 && (family.order === 0 || familyOrderValue < family.order)) {
+        family.order = familyOrderValue;
+      }
+      if (!family.chaptersMap.has(chapterId)) {
+        const chapterOrder = Number(meta.chapterOrder ?? order ?? 0);
+        family.chaptersMap.set(chapterId, {
           id: chapterId,
           name: chapterName,
-          order: initialOrder,
-          series,
+          order: chapterOrder > 0 ? chapterOrder : 999999,
+          series: familyName,
           quests: [],
         });
       }
-      const chap = reg.chaptersMap.get(chapterId)!;
-      if (order > 0 && (chap.order === 0 || order < chap.order)) {
-        chap.order = order;
-      }
+      const chap = family.chaptersMap.get(chapterId)!;
+      if (order > 0 && (chap.order === 0 || order < chap.order)) chap.order = order;
       chap.quests.push({
         questKey,
         title: row.title,
+        displayTitle: cleanName(meta.displayTitle),
         order,
         completeness,
         bodyAvailability: bodyAvail,
+        qualityCode,
       });
     }
 
     const regions: StoryRegion[] = [...regionsMap.values()]
       .sort((a, b) => a.order - b.order)
-      .map((reg) => ({
-        id: reg.id,
-        name: reg.name,
-        order: reg.order,
-        chapters: [...reg.chaptersMap.values()]
-          .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
-          .map((chap) => ({
-            id: chap.id,
-            name: chap.name,
-            order: chap.order,
-            series: chap.series,
-            quests: chap.quests.sort(
-              (a, b) => a.order - b.order || a.title.localeCompare(b.title, "zh-Hans-CN"),
-            ),
-          })),
-      }));
+      .map((reg) => {
+        const families = [...reg.familiesMap.values()]
+          .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN") || a.id.localeCompare(b.id))
+          .map((family) => {
+            const chapters = [...family.chaptersMap.values()]
+              .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN") || a.id.localeCompare(b.id))
+              .map((chapter) => {
+                const titleCounts = new Map<string, number>();
+                for (const quest of chapter.quests) {
+                  titleCounts.set(quest.title, (titleCounts.get(quest.title) ?? 0) + 1);
+                }
+                const quests = chapter.quests
+                  .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, "zh-Hans-CN") || a.questKey.localeCompare(b.questKey))
+                  .map((quest) => ({
+                    ...quest,
+                    displayTitle:
+                      quest.displayTitle ??
+                      (titleCounts.get(quest.title)! > 1
+                        ? `${quest.title}（任务 ${quest.questKey.split("/").pop()}）`
+                        : quest.title),
+                  }));
+                return {
+                  id: chapter.id,
+                  name: chapter.name,
+                  order: chapter.order,
+                  series: chapter.series,
+                  quests,
+                };
+              });
+            return {
+              id: family.id,
+              name: family.name,
+              order: family.order,
+              provenance: family.provenance,
+              chapters,
+            };
+          });
+        return {
+          id: reg.id,
+          name: reg.name,
+          order: reg.order,
+          families,
+          chapters: families.flatMap((family) => family.chapters),
+        };
+      });
 
     return {
       gameId,
@@ -1477,6 +1668,11 @@ export class RepositoryReadModels {
           "event_quest",
           "commission",
           "hangout",
+          "companion_mission",
+          "daily_mission",
+          "trailblaze_continuation",
+          "trailblaze_mission",
+          "adventure_quest",
           "other",
         ] as const);
     const baseConditions = [
@@ -1497,7 +1693,7 @@ export class RepositoryReadModels {
           .where(and(...baseConditions))
           .orderBy(asc(documents.title))
           .limit(request.limit)
-      : (await (async () => {
+      : await (async () => {
           const titleRows = await this.db
             .select()
             .from(documents)
@@ -1524,16 +1720,25 @@ export class RepositoryReadModels {
                 ...baseConditions,
                 or(
                   sql`${documents.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
+                  // Chinese is not segmented by the `simple` config, so a literal
+                  // substring match is required for CJK body queries to hit at all.
+                  sql`${documents.body} ilike ${`%${escapeLike(request.query.trim())}%`} escape '\\'`,
                   sql`${documents.normalizedTitle} % ${normalizedQuery}`,
                 ),
               ),
             )
             .orderBy(asc(documents.title))
             .limit(request.limit);
-        })());
+        })();
     return rows.map((row) => {
       const metadata = questMetadata(row);
       const questKey = metadata.questKey ?? questKeyFromInput(row.sourceKey);
+      // The excerpt must be reader-visible text; `match` only classifies how the
+      // row was found. Slicing the body also keeps the MCP payload bounded.
+      const body = String(row.body ?? "")
+        .replace(/^#.*$/gmu, "")
+        .replace(/\\s+/gu, " ")
+        .trim();
       return {
         questKey,
         mainQuestId: String(metadata.mainQuestId ?? mainQuestIdFromKey(questKey)),
@@ -1554,6 +1759,7 @@ export class RepositoryReadModels {
         documentId: row.id,
         revision: revisionLabel(revision.revisionNumber),
         match: row.sourceKey.includes(request.query) ? "source_key" : "text",
+        excerpt: body ? body.slice(0, 200) : null,
       };
     });
   }
@@ -1974,7 +2180,7 @@ export class RepositoryReadModels {
         and d.game_id = ${gameId}
         and d.deleted = false
         and (
-          d.type not in ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'other')
+          d.type not in ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'companion_mission', 'daily_mission', 'trailblaze_continuation', 'trailblaze_mission', 'adventure_quest', 'other')
           or (
             coalesce(d.metadata->'questPayload'->>'visibility', d.metadata->'quest'->>'visibility') = 'public'
             or (
@@ -2170,17 +2376,22 @@ export class RepositoryReadModels {
     return rows[0] as unknown as typeof datasetRevisions.$inferSelect | undefined;
   }
 
-  private async getRevisionRecords(
-    revision: { id: string },
-  ): Promise<NormalizedRecord[]> {
+  private async getRevisionRecords(revision: { id: string }): Promise<NormalizedRecord[]> {
     const cached = this.revisionRecordsCache.get(revision.id);
     if (cached) return cached;
     const rows = await this.db
-      .select({ normalizedRecords: datasetRevisions.normalizedRecords })
+      .select({
+        normalizedRecords: datasetRevisions.normalizedRecords,
+        manifestId: datasetRevisions.manifestId,
+      })
       .from(datasetRevisions)
       .where(eq(datasetRevisions.id, revision.id))
       .limit(1);
-    const records = rows[0]?.normalizedRecords ?? [];
+    const row = rows[0];
+    const records =
+      row?.normalizedRecords && row.manifestId
+        ? await hydrateManifestRecords(this.db, row.manifestId, row.normalizedRecords)
+        : (row?.normalizedRecords ?? []);
     this.revisionRecordsCache.set(revision.id, Promise.resolve(records));
     return records;
   }
@@ -2334,10 +2545,28 @@ export class RepositoryReadModels {
     const isGenshin = Boolean((game?.slug || "").includes("genshin"));
 
     if (options.kind === "voices" && isGenshin) {
-      return this.listGenshinVoiceCatalog(gameId, revision, locale, options.group, options.q, offset, limit);
+      return this.listGenshinVoiceCatalog(
+        gameId,
+        revision,
+        locale,
+        options.group,
+        options.q,
+        offset,
+        limit,
+      );
     }
 
-    return this.listDocumentsTextCatalog(gameId, revision, locale, options.kind, isGenshin, options.group, options.q, offset, limit);
+    return this.listDocumentsTextCatalog(
+      gameId,
+      revision,
+      locale,
+      options.kind,
+      isGenshin,
+      options.group,
+      options.q,
+      offset,
+      limit,
+    );
   }
 
   private async listGenshinVoiceCatalog(
@@ -2369,7 +2598,7 @@ export class RepositoryReadModels {
 
     const groupRows = Array.isArray(groupResult)
       ? groupResult
-      : (groupResult && typeof groupResult === "object" && "rows" in groupResult)
+      : groupResult && typeof groupResult === "object" && "rows" in groupResult
         ? (groupResult as { rows: any[] }).rows
         : [];
 
@@ -2426,7 +2655,7 @@ export class RepositoryReadModels {
     `);
     const countRows = Array.isArray(countRes)
       ? countRes
-      : (countRes && typeof countRes === "object" && "rows" in countRes)
+      : countRes && typeof countRes === "object" && "rows" in countRes
         ? (countRes as { rows: any[] }).rows
         : [];
     const total = Number(countRows[0]?.total ?? 0);
@@ -2449,7 +2678,7 @@ export class RepositoryReadModels {
 
     const entryRows = Array.isArray(entryRes)
       ? entryRes
-      : (entryRes && typeof entryRes === "object" && "rows" in entryRes)
+      : entryRes && typeof entryRes === "object" && "rows" in entryRes
         ? (entryRes as { rows: any[] }).rows
         : [];
 
@@ -2540,7 +2769,7 @@ export class RepositoryReadModels {
 
     const groupRows = Array.isArray(groupResult)
       ? groupResult
-      : (groupResult && typeof groupResult === "object" && "rows" in groupResult)
+      : groupResult && typeof groupResult === "object" && "rows" in groupResult
         ? (groupResult as { rows: any[] }).rows
         : [];
 
@@ -2610,7 +2839,7 @@ export class RepositoryReadModels {
     `);
     const countRows = Array.isArray(countRes)
       ? countRes
-      : (countRes && typeof countRes === "object" && "rows" in countRes)
+      : countRes && typeof countRes === "object" && "rows" in countRes
         ? (countRes as { rows: any[] }).rows
         : [];
     const total = Number(countRows[0]?.total ?? 0);
@@ -2632,7 +2861,7 @@ export class RepositoryReadModels {
 
     const entryRows = Array.isArray(entryRes)
       ? entryRes
-      : (entryRes && typeof entryRes === "object" && "rows" in entryRes)
+      : entryRes && typeof entryRes === "object" && "rows" in entryRes
         ? (entryRes as { rows: any[] }).rows
         : [];
 

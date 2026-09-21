@@ -873,7 +873,10 @@ function mechanismSourcePath(record: MechanismRecord, inputHashes: Record<string
   return Object.keys(inputHashes).sort()[0] ?? "ExcelBinOutput/MechanismUnknownSource.json";
 }
 
-export function classifyMechanismDocument(stableId: string): {
+export function classifyMechanismDocument(
+  stableId: string,
+  sourceSubtype?: string,
+): {
   documentType: DocumentType;
   textKind: TextKind;
   groupId: string;
@@ -881,6 +884,17 @@ export function classifyMechanismDocument(stableId: string): {
 } {
   const parts = stableId.split("/");
   const sourceTable = parts[1] ?? "";
+
+  // PushTips mixes gameplay tutorials with enemy-intro rows; the subtype keeps
+  // the two apart instead of filing every row under exploration tips.
+  if (sourceTable.startsWith("PushTips") && /MONSTER/i.test(sourceSubtype ?? "")) {
+    return {
+      documentType: "mechanism",
+      textKind: "mechanics",
+      groupId: "mechanism/enemy",
+      groupName: "敌人机制",
+    };
+  }
 
   if (sourceTable.startsWith("Tutorial")) {
     return {
@@ -898,12 +912,35 @@ export function classifyMechanismDocument(stableId: string): {
       groupName: "引导指南",
     };
   }
+  if (
+    sourceTable.startsWith("TreasureGainTips") ||
+    sourceTable.startsWith("BadmintonInstruction") ||
+    sourceTable.startsWith("DreamSwitchingInstruction") ||
+    sourceTable.startsWith("ActivityNatlanDrillRulePreview") ||
+    sourceTable.startsWith("ResortGuideMapText") ||
+    sourceTable.startsWith("ReunionGuide")
+  ) {
+    return {
+      documentType: "guide",
+      textKind: "guides",
+      groupId: "guide/gameplay",
+      groupName: "引导指南",
+    };
+  }
   if (sourceTable.startsWith("PushTips")) {
     return {
       documentType: "exploration_tip",
       textKind: "exploration-tips",
       groupId: "push_tips/exploration",
       groupName: "探索提示",
+    };
+  }
+  if (sourceTable.startsWith("NewActivityPushTips")) {
+    return {
+      documentType: "system_tip",
+      textKind: "system-tips",
+      groupId: "system_tips/activity",
+      groupName: "系统提示",
     };
   }
   if (sourceTable.startsWith("LoadingTips")) {
@@ -914,7 +951,11 @@ export function classifyMechanismDocument(stableId: string): {
       groupName: "加载提示",
     };
   }
-  if (sourceTable.startsWith("GCGTutorialText")) {
+  if (
+    sourceTable.startsWith("GCGCard") ||
+    sourceTable.startsWith("GCGRule") ||
+    sourceTable.startsWith("GCGTutorialText")
+  ) {
     return {
       documentType: "gcg",
       textKind: "gcg",
@@ -942,6 +983,28 @@ export function classifyMechanismDocument(stableId: string): {
   };
 }
 
+/** 物品类别的中文分组名；未知类别归入「其他物品」。 */
+const ITEM_MATERIAL_GROUP_NAMES: Record<string, string> = {
+  MATERIAL_AVATAR_MATERIAL: "角色培养素材",
+  MATERIAL_FOOD: "食物与料理",
+  MATERIAL_NOTICE_ADD_HP: "恢复类料理",
+  MATERIAL_EXCHANGE: "通用兑换材料",
+  MATERIAL_WIDGET: "小道具",
+  MATERIAL_QUEST: "任务道具",
+  MATERIAL_CONSUME: "消耗品",
+  MATERIAL_ELEM_CRYSTAL: "元素晶石",
+};
+
+export function classifyItemMaterialGroup(materialType: string | undefined): {
+  groupId: string;
+  groupName: string;
+} {
+  const key = materialType ?? "";
+  const name = ITEM_MATERIAL_GROUP_NAMES[key];
+  if (name) return { groupId: `item/${key.toLowerCase()}`, groupName: name };
+  return { groupId: "item/other", groupName: "其他物品" };
+}
+
 function mechanismDocumentFromRecord(
   context: ConverterContext,
   record: MechanismRecord,
@@ -950,7 +1013,10 @@ function mechanismDocumentFromRecord(
   const sourceFile = mechanismSourcePath(record, inputHashes);
   const sourceFileHash = inputHashes[sourceFile] ?? rawHashFor(record);
   const rawContentHash = rawHashFor(record);
-  const classification = classifyMechanismDocument(record.mechanismStableId);
+  const classification = classifyMechanismDocument(
+    record.mechanismStableId,
+    record.sourceSubtype,
+  );
   return makeRecord(
     context,
     {
@@ -986,12 +1052,17 @@ function mechanismDocumentFromRecord(
     rawContentHash,
     ["MechanismExtractor field whitelist", "TextMap fallback resolution"],
     {
-      canonicalKey: record.mechanismStableId,
-      mechanismStableId: record.mechanismStableId,
-      mechanismCategory: record.category,
-      textResolution: record.textResolution,
+          canonicalKey: record.mechanismStableId,
+          mechanismStableId: record.mechanismStableId,
+          mechanismCategory: record.category,
+          ...(record.sourceSubtype ? { sourceSubtype: record.sourceSubtype } : {}),
+          textResolution: record.textResolution,
       relatedEntities: record.relatedEntities ?? [],
-      sourceFiles: Object.keys(inputHashes).sort(),
+      // Each record cites only the table that actually owns its text. Writing
+      // the full input set here inflates every mechanism row with unrelated
+      // paths and pushed the merged candidate payload past PostgreSQL's jsonb
+      // element limit.
+      sourceFiles: [sourceFile],
       groupId: classification.groupId,
       groupName: classification.groupName,
       textKind: classification.textKind,
@@ -1212,6 +1283,9 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
           bookSuitId: suitId,
           volumeId: codexId,
           sortOrder: idValue(codex.sortOrder),
+          textKind: "books" as const,
+          groupId: stableBookId,
+          groupName: bookTitle,
           verificationRiskFlags,
         },
       ),
@@ -1395,6 +1469,10 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
             body: bodyValue.hash,
             ...(summaryValue ? { summary: summaryValue.hash } : {}),
           },
+          textKind: "character-stories" as const,
+          groupId: `character/${avatarId}`,
+          groupName: nameValue.value,
+          storyKey: sourceKey,
           verificationRiskFlags,
         },
       ),
@@ -1546,6 +1624,8 @@ export async function convertAnimeGameData(options: ConvertOptions): Promise<Con
               .map((paragraph) => paragraph.hash),
           },
           sortOrder: idValue(codex.sortOrder),
+          textKind: "item-texts" as const,
+          ...classifyItemMaterialGroup(stringValue(material.materialType)),
           verificationRiskFlags,
         },
       ),

@@ -35,6 +35,16 @@ export const MECHANISM_INPUTS = {
   pushTipsCodex: "ExcelBinOutput/PushTipsCodexExcelConfigData.json",
   loadingTips: "ExcelBinOutput/LoadingTipsExcelConfigData.json",
   gcgTutorial: "ExcelBinOutput/GCGTutorialTextExcelConfigData.json",
+  gcgCard: "ExcelBinOutput/GCGCardExcelConfigData.json",
+  gcgRule: "ExcelBinOutput/GCGRuleTextDetailExcelConfigData.json",
+  newActivityPushTips: "ExcelBinOutput/NewActivityPushTipsConfigData.json",
+  // Gameplay instruction/guide tables that carry a real title and body.
+  treasureGainTips: "ExcelBinOutput/TreasureGainTipsExcelConfigData.json",
+  badmintonInstruction: "ExcelBinOutput/BadmintonInstructionExcelConfigData.json",
+  dreamSwitchingInstruction: "ExcelBinOutput/DreamSwitchingInstructionExcelConfigData.json",
+  drillRulePreview: "ExcelBinOutput/ActivityNatlanDrillRulePreviewExcelConfigData.json",
+  resortGuideMapText: "ExcelBinOutput/ResortGuideMapTextExcelConfigData.json",
+  reunionGuide: "ExcelBinOutput/ReunionGuideExcelConfigData.json",
   activitySnowRaceTutorial: "ExcelBinOutput/ActivitySnowRaceHideTutorialExcelConfigData.json",
   alchemySimPotionTutorial: "ExcelBinOutput/AlchemySimPotionTutorialExcelConfigData.json",
   ugcTutorial: "ExcelBinOutput/UgcTutorialExcelConfigData.json",
@@ -42,6 +52,21 @@ export const MECHANISM_INPUTS = {
 } as const;
 
 export const MECHANISM_SOURCE_PATHS = Object.values(MECHANISM_INPUTS);
+
+/**
+ * Reference tables whose rows only point at text another table already owns.
+ * They stay in the input set for hashing and lineage, but their own rows are
+ * not emitted: doing so duplicates the owning table and yields rows with no
+ * resolvable title.
+ */
+export const MECHANISM_JOIN_ONLY_INPUTS = new Set<string>([
+  MECHANISM_INPUTS.tutorialDetail,
+  MECHANISM_INPUTS.tutorialCatalog,
+  MECHANISM_INPUTS.pushTipsCodex,
+  // GCGTutorialText carries only control captions ("回到投掷界面") with no
+  // title; GCGCardExcelConfigData is the readable card text and owns this kind.
+  MECHANISM_INPUTS.gcgTutorial,
+]);
 
 /**
  * Localization is normally only an asset-path index. It is probed as a
@@ -84,6 +109,12 @@ export type MechanismRecord = {
   body: string;
   relatedEntities?: string[];
   textResolution: MechanismTextResolution;
+  /**
+   * Upstream discriminator for tables that mix several kinds of text under one
+   * source file (for example PushTips tutorial vs monster rows). Preserved so
+   * downstream classification can split them without re-reading the source.
+   */
+  sourceSubtype?: string;
 };
 
 export type MechanismExtractionResult = ExtractionResult<MechanismRecord> & {
@@ -185,6 +216,9 @@ const RELATED_ENTITY_FIELDS = [
   "relatedEntityStableId",
   "relatedEntity",
 ] as const;
+
+/** Fields that distinguish kinds of text mixed inside a single source table. */
+const SUBTYPE_FIELDS = ["pushTipsType", "type", "guideType", "category"] as const;
 
 function asObject(value: unknown): JsonObject | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -324,6 +358,94 @@ function hasTextPayload(source: SourceFile<unknown>): boolean {
       (field) => row[field] !== undefined && row[field] !== null,
     ),
   );
+}
+
+/**
+ * Some canonical entries split their text across tables: a Tutorial index row
+ * owns neither title nor body, while TutorialDetail carries the body and
+ * TutorialCatalog carries the title. Index the referenced tables so those rows
+ * can be materialized instead of being dropped as title-less.
+ */
+function indexJoinSource(
+  sources: SourceWithMethod[],
+  relativePath: string,
+  keyField: string,
+): Map<string, JsonObject> {
+  const index = new Map<string, JsonObject>();
+  const source = sources.find((candidate) => candidate.relativePath === relativePath);
+  if (!source) return index;
+  for (const { row } of rows(source.value, source.relativePath)) {
+    const key = idText(row[keyField]);
+    if (key) index.set(key, row);
+  }
+  return index;
+}
+
+/**
+ * PushTips rows carry a tutorialId back-reference, which is the only reliable
+ * title source for the Tutorial index: TutorialCatalog covers just a handful of
+ * entries. First writer wins so a title stays stable across duplicate ids.
+ */
+function indexTutorialTitlesByPushTips(
+  sources: SourceWithMethod[],
+): Map<string, JsonObject> {
+  const index = new Map<string, JsonObject>();
+  const source = sources.find(
+    (candidate) => candidate.relativePath === MECHANISM_INPUTS.pushTips,
+  );
+  if (!source) return index;
+  for (const { row } of rows(source.value, source.relativePath)) {
+    const tutorialId = idText(row.tutorialId);
+    if (tutorialId && !index.has(tutorialId)) index.set(tutorialId, row);
+  }
+  return index;
+}
+
+/**
+ * Resolve an entry whose readable text lives in joined tables. Returns the
+ * resolved title/body strings, or undefined when the row must stay generic.
+ */
+function materializeJoinedText(
+  ctx: AnimeContext,
+  sourceRow: SourceRow,
+  joins: {
+    tutorialDetail: Map<string, JsonObject>;
+    tutorialCatalog: Map<string, JsonObject>;
+    pushTipsByTutorial: Map<string, JsonObject>;
+  },
+): { title: string | null; body: string | null } | undefined {
+  if (sourceRow.sourcePath !== MECHANISM_INPUTS.tutorial) return undefined;
+
+  const detailIds = Array.isArray(sourceRow.row.detailIdList)
+    ? (sourceRow.row.detailIdList as unknown[])
+    : [];
+  const bodies: string[] = [];
+  for (const rawId of detailIds) {
+    const detail = joins.tutorialDetail.get(idText(rawId) ?? "");
+    if (!detail) continue;
+    const resolved = resolveText(ctx, detail, BODY_FIELDS);
+    if (resolved.resolved && resolved.value) bodies.push(resolved.value);
+  }
+  if (!bodies.length) return { title: null, body: null };
+
+  // Title resolution order: the catalog row keyed by the tutorial's own id is
+  // authoritative; otherwise fall back to the PushTips row that references this
+  // tutorial. Without either, the entry stays title-less instead of fabricated.
+  const selfId = idText(sourceRow.row.id) ?? "";
+  const catalog = joins.tutorialCatalog.get(selfId);
+  const catalogTitle = catalog ? resolveText(ctx, catalog, TITLE_FIELDS) : undefined;
+  const pushTips = joins.pushTipsByTutorial.get(selfId);
+  const pushTitle = pushTips ? resolveText(ctx, pushTips, TITLE_FIELDS) : undefined;
+  const resolvedTitle =
+    catalogTitle?.resolved && catalogTitle.value
+      ? catalogTitle
+      : pushTitle?.resolved && pushTitle.value
+        ? pushTitle
+        : undefined;
+  return {
+    title: resolvedTitle?.value ?? null,
+    body: bodies.join("\n\n"),
+  };
 }
 
 function normalizeCategoryValue(value: string): string {
@@ -567,7 +689,22 @@ async function extractMechanismRecords(ctx: AnimeContext): Promise<MechanismExtr
     );
   }
 
-  const sourceRows = sources.flatMap((source) => rows(source.value, source.relativePath));
+  const joins = {
+    tutorialDetail: indexJoinSource(
+      sources,
+      MECHANISM_INPUTS.tutorialDetail,
+      "id",
+    ),
+    tutorialCatalog: indexJoinSource(
+      sources,
+      MECHANISM_INPUTS.tutorialCatalog,
+      "id",
+    ),
+    pushTipsByTutorial: indexTutorialTitlesByPushTips(sources),
+  };
+  const sourceRows = sources
+    .filter((source) => !MECHANISM_JOIN_ONLY_INPUTS.has(source.relativePath))
+    .flatMap((source) => rows(source.value, source.relativePath));
   if (!sourceRows.length) {
     return emptyResult(
       ctx,
@@ -650,8 +787,16 @@ async function extractMechanismRecords(ctx: AnimeContext): Promise<MechanismExtr
     }
     seenStableIds.add(stableId);
 
+    // Entries whose text is split across tables are materialized first; the
+    // generic title/body lookup below stays the fallback for every other table.
+    const joined = materializeJoinedText(ctx, sourceRow, joins);
     const title = resolveText(ctx, sourceRow.row, TITLE_FIELDS);
-    if (!title.resolved || !title.value) {
+    const joinedTitle =
+      joined?.title && joined.title.trim()
+        ? { value: joined.title, locale: ctx.locale, method: "source" as const, resolved: true }
+        : undefined;
+    const effectiveTitle = joinedTitle ?? title;
+    if (!effectiveTitle.resolved || !effectiveTitle.value) {
       increment(fieldCoverage, "missingTitle");
       failure(
         failures,
@@ -662,7 +807,12 @@ async function extractMechanismRecords(ctx: AnimeContext): Promise<MechanismExtr
       continue;
     }
     const body = resolveText(ctx, sourceRow.row, BODY_FIELDS);
-    if (!body.resolved || !body.value) {
+    const joinedBody =
+      joined?.body && joined.body.trim()
+        ? { value: joined.body, locale: ctx.locale, method: "source" as const, resolved: true }
+        : undefined;
+    const effectiveBody = joinedBody ?? body;
+    if (!effectiveBody.resolved || !effectiveBody.value) {
       increment(fieldCoverage, "missingBody");
       failure(
         failures,
@@ -690,24 +840,26 @@ async function extractMechanismRecords(ctx: AnimeContext): Promise<MechanismExtr
 
     const textResolution: MechanismTextResolution = {
       method:
-        title.method === "textmap" || body.method === "textmap"
+        effectiveTitle.method === "textmap" || effectiveBody.method === "textmap"
           ? "textmap"
-          : title.method === "source" || body.method === "source"
+          : effectiveTitle.method === "source" || effectiveBody.method === "source"
             ? "source"
             : "unresolved",
-      locale: title.locale ?? body.locale,
-      resolved: title.resolved && body.resolved,
+      locale: effectiveTitle.locale ?? effectiveBody.locale,
+      resolved: effectiveTitle.resolved && effectiveBody.resolved,
     };
     if (!textResolution.resolved) increment(fieldCoverage, "unresolvedText");
 
     const related = relatedEntities(sourceRow.row);
+    const subtype = SUBTYPE_FIELDS.map((field) => text(sourceRow.row[field])).find(Boolean);
     records.push({
       documentType: "mechanism",
       mechanismStableId: stableId,
       category: category.category,
-      title: title.value,
-      body: body.value,
+      title: effectiveTitle.value ?? "",
+      body: effectiveBody.value ?? "",
       ...(related ? { relatedEntities: related } : {}),
+      ...(subtype ? { sourceSubtype: subtype } : {}),
       textResolution,
     });
   }

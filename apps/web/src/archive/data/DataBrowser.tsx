@@ -57,6 +57,73 @@ function pickField(
   return undefined;
 }
 
+/** 上游把技能/行迹存成对象数组；只保留有可读名称的条目。 */
+function normalizeNamedEntries(
+  value: unknown,
+): Array<{ id?: number; name?: string; type?: string; description?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      const rec = (entry ?? {}) as UnknownRecord;
+      const name = typeof rec.name === "string" ? rec.name.trim() : "";
+      if (!name) return null;
+      return {
+        id: typeof rec.id === "number" ? rec.id : undefined,
+        name,
+        type: typeof rec.type === "string" ? rec.type : undefined,
+        description:
+          typeof rec.description === "string" && rec.description.trim()
+            ? rec.description
+            : undefined,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+}
+
+/** 星魂按 rank 升序展示，并丢掉上游的空条目。 */
+function normalizeEidolons(
+  value: unknown,
+): Array<{ rank?: number; name?: string; description?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      const rec = (entry ?? {}) as UnknownRecord;
+      const name = typeof rec.name === "string" ? rec.name.trim() : "";
+      if (!name) return null;
+      return {
+        rank: typeof rec.rank === "number" ? rec.rank : undefined,
+        name,
+        description:
+          typeof rec.description === "string" && rec.description.trim()
+            ? rec.description
+            : undefined,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+}
+
+/** 基础战斗属性：上游用 baseHp/baseAtk 这类键，按游戏习惯给出中文标签。 */
+function normalizeBaseStats(
+  profile: UnknownRecord | null,
+): Array<{ label: string; value: string }> {
+  if (!profile) return [];
+  const defs: Array<[string, string]> = [
+    ["baseHp", "生命值"],
+    ["baseAtk", "攻击力"],
+    ["baseDef", "防御力"],
+    ["baseSpeed", "速度"],
+  ];
+  const out: Array<{ label: string; value: string }> = [];
+  for (const [key, label] of defs) {
+    const raw = profile[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      out.push({ label, value: String(raw) });
+    }
+  }
+  return out;
+}
+
 export function DataBrowser({
   gameId,
   gameSlug,
@@ -96,23 +163,30 @@ export function DataBrowser({
 
       let parsed: DataItemSummary[] = [];
       if (dataKind === "characters" && Array.isArray(res.characters)) {
-        parsed = (res.characters as UnknownRecord[]).map((c) => ({
-          stableId: String(c.stableId),
-          name: String(c.name),
-          title: typeof c.title === "string" ? c.title : undefined,
-          rarity: typeof c.rarity === "number" ? c.rarity : undefined,
-          element: typeof c.element === "string" ? c.element : undefined,
-          weaponType: typeof c.weaponType === "string" ? c.weaponType : undefined,
-          region: typeof c.region === "string" ? c.region : undefined,
-          affiliation: typeof c.affiliation === "string" ? c.affiliation : undefined,
-          description:
-            typeof c.description === "string"
-              ? c.description
-              : pickField(c as UnknownRecord, ["desc"]),
-          birthday: pickField(c as UnknownRecord, ["birthday"]),
-          constellation: pickField(c as UnknownRecord, ["constellation"]),
-          raw: c,
-        }));
+        parsed = (res.characters as UnknownRecord[]).map((c) => {
+          const profile = (c.profile ?? null) as UnknownRecord | null;
+          return {
+            stableId: String(c.stableId),
+            name: String(c.name),
+            title: typeof c.title === "string" ? c.title : undefined,
+            rarity: typeof c.rarity === "number" ? c.rarity : undefined,
+            element: typeof c.element === "string" ? c.element : undefined,
+            weaponType: typeof c.weaponType === "string" ? c.weaponType : undefined,
+            region: typeof c.region === "string" ? c.region : undefined,
+            affiliation: typeof c.affiliation === "string" ? c.affiliation : undefined,
+            description:
+              typeof c.description === "string"
+                ? c.description
+                : pickField(c as UnknownRecord, ["desc"]),
+            birthday: pickField(c as UnknownRecord, ["birthday"]),
+            constellation: pickField(c as UnknownRecord, ["constellation"]),
+            skills: normalizeNamedEntries(profile?.skills),
+            traces: normalizeNamedEntries(profile?.traces),
+            eidolons: normalizeEidolons(profile?.eidolons),
+            baseStats: normalizeBaseStats(profile),
+            raw: c,
+          };
+        });
       } else if (dataKind === "weapons" && Array.isArray(res.weapons)) {
         parsed = (res.weapons as UnknownRecord[]).map((w) => ({
           stableId: String(w.stableId),
@@ -134,11 +208,17 @@ export function DataBrowser({
           stableId: String(s.stableId),
           name: String(s.name),
           rarity: typeof s.maxRarity === "number" ? s.maxRarity : undefined,
-          description: s.twoPieceBonus
-            ? `【2件套】${s.twoPieceBonus}\n【4件套】${s.fourPieceBonus ?? ""}`
-            : typeof s.description === "string"
-              ? s.description
-              : undefined,
+          // Planar ornament sets genuinely have no 4-piece effect upstream, so
+          // only emit the lines that exist instead of an empty 【4件套】 heading.
+          description: (() => {
+            const lines: string[] = [];
+            if (typeof s.twoPieceBonus === "string" && s.twoPieceBonus.trim())
+              lines.push(`【2件套】${s.twoPieceBonus}`);
+            if (typeof s.fourPieceBonus === "string" && s.fourPieceBonus.trim())
+              lines.push(`【4件套】${s.fourPieceBonus}`);
+            if (lines.length > 0) return lines.join("\n");
+            return typeof s.description === "string" ? s.description : undefined;
+          })(),
           raw: s,
         }));
       } else if (dataKind === "enemies" && Array.isArray(res.enemies)) {
@@ -458,6 +538,72 @@ export function DataBrowser({
                     {activeItem.weaknesses.map((weakness) => (
                       <div key={weakness} className="data-prop-pill">
                         <span className="data-prop-v">{weakness}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {activeItem.baseStats && activeItem.baseStats.length > 0 && (
+                <section className="data-article-section">
+                  <h2>基础属性</h2>
+                  <div className="data-article-props">
+                    {activeItem.baseStats.map((stat) => (
+                      <div key={stat.label} className="data-prop-pill">
+                        <span className="data-prop-k">{stat.label}</span>
+                        <span className="data-prop-v">{stat.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {activeItem.skills && activeItem.skills.length > 0 && (
+                <section className="data-article-section">
+                  <h2>技能</h2>
+                  <div className="data-skill-list">
+                    {activeItem.skills.map((skill, idx) => (
+                      <div className="data-skill-item" key={skill.id ?? idx}>
+                        <div className="data-skill-head">
+                          <strong>{skill.name}</strong>
+                          {skill.type && <span className="data-tag">{skill.type}</span>}
+                        </div>
+                        {skill.description && <p>{skill.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {activeItem.traces && activeItem.traces.length > 0 && (
+                <section className="data-article-section">
+                  <h2>行迹</h2>
+                  <div className="data-skill-list">
+                    {activeItem.traces.map((trace, idx) => (
+                      <div className="data-skill-item" key={trace.id ?? idx}>
+                        <div className="data-skill-head">
+                          <strong>{trace.name}</strong>
+                        </div>
+                        {trace.description && <p>{trace.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {activeItem.eidolons && activeItem.eidolons.length > 0 && (
+                <section className="data-article-section">
+                  <h2>星魂</h2>
+                  <div className="data-skill-list">
+                    {activeItem.eidolons.map((eidolon, idx) => (
+                      <div className="data-skill-item" key={eidolon.rank ?? idx}>
+                        <div className="data-skill-head">
+                          <strong>
+                            {eidolon.rank ? `${eidolon.rank} 星魂 · ` : ""}
+                            {eidolon.name}
+                          </strong>
+                        </div>
+                        {eidolon.description && <p>{eidolon.description}</p>}
                       </div>
                     ))}
                   </div>

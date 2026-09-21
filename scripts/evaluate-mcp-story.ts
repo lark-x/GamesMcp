@@ -6,6 +6,7 @@
  *
  * Output: data/evaluation/genshin/mcp-story-eval.json
  */
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -16,7 +17,15 @@ import { createMcpServer } from "../apps/mcp-server/src/server.js";
 
 const gameId = "00000000-0000-0000-0000-0000000000a1";
 const revisionId = "00000000-0000-0000-0000-0000000000b2";
-const UPSTREAM_DIR = resolve("data/upstream/AnimeGameData");
+// Mirrors evaluate-search-regression's resolution so the offline corpus can be
+// pointed at whichever pinned AnimeGameData checkout is present on the machine.
+const UPSTREAM_DIR = resolve(
+  process.env.SEARCH_REGRESSION_UPSTREAM_DIR ??
+    process.env.ANIME_GAME_DATA_DIR ??
+    (existsSync("data/upstream/AnimeGameData-current")
+      ? "data/upstream/AnimeGameData-current"
+      : "data/upstream/AnimeGameData"),
+);
 const goldenPath = resolve("data/evaluation/genshin/mcp-golden.json");
 const outputPath = resolve("data/evaluation/genshin/mcp-story-eval.json");
 const MCP_FIXTURE_PATH = resolve("data/evaluation/genshin/mcp-tool-fixture.json");
@@ -335,9 +344,6 @@ async function main() {
   await client.connect(clientTransport);
 
   const titleToDoc = new Map(corpus.documents.map((doc) => [doc.title, doc]));
-  const nameToItem = new Map(
-    corpus.documents.filter((doc) => doc.category === "item").map((doc) => [doc.title, doc]),
-  );
   const failures: string[] = [];
   let totalCalls = 0;
   let passed = 0;
@@ -354,27 +360,19 @@ async function main() {
         ...(() => {
           const tool = item.expectedTool;
           if (tool === "list_games") return {};
-          if (
-            tool === "search_dialogue" ||
-            tool === "search_entities" ||
-            tool === "search_lore" ||
-            tool === "search_quests" ||
-            tool === "search_items" ||
-            tool === "search_mechanics" ||
-            tool === "resolve_entity"
-          )
-            return { query: item.entityName };
-          if (tool === "get_item_text") {
-            const itemDoc = nameToItem.get(item.entityName);
-            return { item_id: itemDoc ? itemDoc.sourceKey : item.entityName };
-          }
-          if (tool === "get_entity" || tool === "get_entity_texts" || tool === "get_relationships")
+          // Unified `search` absorbs the former search_dialogue / search_lore /
+          // search_quests / search_items / search_mechanics / search_entities tools.
+          if (tool === "search" || tool === "resolve_entity") return { query: item.entityName };
+          if (tool === "get_entity_texts" || tool === "get_relationships")
             return { entity_id: item.entityName };
           if (tool === "get_quest") {
             const questDoc = titleToDoc.get(item.entityName);
             return { quest_id: questDoc ? questDoc.sourceKey : item.entityName };
           }
-          if (tool === "get_lore_document") {
+          // get_document replaces get_lore_document / get_item_text / get_entity.
+          // Entity cases pass a document id directly; lore and item cases resolve
+          // a title to its document id.
+          if (tool === "get_document") {
             const doc = titleToDoc.get(item.entityName);
             return { document_id: doc ? doc.id : item.entityName };
           }
@@ -452,7 +450,7 @@ function isExcluded(item: GoldenCase, corpus: Corpus, fixture: McpToolFixture | 
     );
     return !known;
   }
-  if (item.expectedTool === "get_weapon" || item.expectedTool === "get_enemy") {
+  if (item.expectedTool === "get_equipment" || item.expectedTool === "get_enemy") {
     // mcp-tool-fixture provides one real sample per kind; other names cannot
     // resolve in this environment and are excluded rather than failed.
     const known = corpus.structured.some(
@@ -460,20 +458,20 @@ function isExcluded(item: GoldenCase, corpus: Corpus, fixture: McpToolFixture | 
     );
     return !known;
   }
-  if (item.expectedTool === "get_item_text") {
-    // Quest-item names may exist only as body mentions without their own document;
-    // stable-id lookups need a real item document, which the sparse corpus lacks.
-    const itemDoc = corpus.documents.some(
-      (doc) => doc.category === "item" && doc.title === item.entityName,
+  if (item.expectedTool === "get_document") {
+    // The unified get_document resolves a real document row. Entity-id cases
+    // (former get_entity) and item-text cases (former get_item_text) both need a
+    // matching document, which the sparse offline corpus cannot always provide.
+    return !corpus.documents.some(
+      (doc) => doc.title === item.entityName || doc.id === item.entityName,
     );
-    return !itemDoc;
   }
   if (item.expectedTool === "get_game_capabilities") {
     // The payload is game_id + capabilities; the game display name never appears
     // in it, so a name-based content assertion does not apply to this tool.
     return true;
   }
-  if (item.expectedTool === "get_material" || item.expectedTool === "search_items") {
+  if (item.expectedTool === "get_material") {
     const inCorpus = corpus.documents.some(
       (doc) => doc.category === "item" && doc.title === item.entityName,
     );
@@ -489,11 +487,13 @@ function isExcluded(item: GoldenCase, corpus: Corpus, fixture: McpToolFixture | 
       ) || corpus.structured.some((row) => row.name === item.entityName);
     return !inCorpus;
   }
-  if (item.expectedTool === "search_entities" || item.expectedTool === "get_entity") {
-    // The sparse corpus carries no entity index (resolveEntityCandidates rows);
-    // entity-scoped tools cannot resolve from this environment.
+  if (item.expectedTool === "search") {
+    // The unified search replaces every per-surface search_* tool. Cases whose
+    // source surface is absent from the sparse offline corpus cannot return a
+    // content-bearing hit for environment reasons, not server defects.
     const domain = item.sourceDomain ?? "";
-    return domain === "achievement" || domain === "voice";
+    if (domain === "mechanism") return true;
+    return false;
   }
   if (item.expectedTool === "get_entity_texts" || item.expectedTool === "get_relationships") {
     // Bindings/relationships are not part of the offline corpus conversion.

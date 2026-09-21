@@ -103,6 +103,14 @@ export function formatStoryString(rawText: string, prefs?: ProtagonistPreference
   text = text.replace(/\{ChallengeCurrValue\d+\}/gi, "");
 
   // 9. Ruby Markup processing
+  // 9-0. Star Rail paired ruby: {RUBY_B#annotation}base{RUBY_E#}
+  // Upstream writes the annotated base word BETWEEN the markers, which is the
+  // opposite of the Genshin {RUBY#rt#base} form handled below.
+  text = text.replace(
+    /\{RUBY_B#([^}]*)\}([^{]*?)\{RUBY_E#\}/gi,
+    (_m, rt, base) => `<ruby>${base}<rt>${rt}</rt></ruby>`,
+  );
+
   // 9a. Star Rail explicit ruby: {ruby#annotation#base} -> <ruby>base<rt>annotation</rt></ruby>
   text = text.replace(
     /\{RUBY#([^#]+)#([^}]+)\}/gi,
@@ -167,6 +175,13 @@ export function formatStoryString(rawText: string, prefs?: ProtagonistPreference
     /\{RUBY#\[([SD])\]([^}]+)\}([\u4e00-\u9fa5]{1,4})/g,
     (_m, _mode, rt, b) => `<ruby>${b}<rt>${rt}</rt></ruby>`
   );
+
+  // 9i. Last resort: any unpaired ruby marker left by the source data must not
+  // reach the reader as raw markup. Keep the annotated base word only.
+  text = text.replace(/\{RUBY_B#([^}]*)\}/gi, "");
+  text = text.replace(/\{RUBY_E#\}/gi, "");
+  // {RUBY#[S]注} carries a [S]/[D] mode prefix that is metadata, not text.
+  text = text.replace(/\{RUBY#(?:\[[SD]\])?([^}]*)\}/gi, "$1");
 
   return text;
 }

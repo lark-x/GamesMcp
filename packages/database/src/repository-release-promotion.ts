@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { DomainError, type DatasetRevision, type ReleaseCandidateReadiness } from "@gip/domain";
 import type { Database } from "./client.js";
 import {
@@ -39,6 +39,20 @@ interface ReleasePromotionContext {
   getCurrentRevision(gameId: string): Promise<RevisionRow | undefined>;
   getReleaseCandidateBuild(buildId: string): Promise<BuildDetail | null>;
   getReleaseCandidateReadiness(candidateId: string): Promise<ReleaseCandidateReadiness>;
+}
+
+function compactRecordIndex(records: NonNullable<BuildDetail["normalizedRecords"]>) {
+  return records.map((record) => ({
+    sourceKey: record.sourceKey,
+    recordType: record.recordType,
+    title: record.title,
+    documentType: record.documentType,
+    gameVersion: record.gameVersion,
+    locale: record.locale,
+    contentHash: record.contentHash,
+    parserVersion: record.parserVersion,
+    metadata: { manifestPayload: true },
+  }));
 }
 
 export async function promoteReleaseCandidate(
@@ -88,6 +102,9 @@ export async function promoteReleaseCandidate(
   const build = await ctx.getReleaseCandidateBuild(input.buildId);
   if (!build || build.candidateId !== candidate.id || candidate.currentBuildId !== build.id)
     throw new DomainError("candidate_build_mismatch", "Promote the current build only");
+  if (!build.normalizedRecords)
+    throw new DomainError("candidate_build_payload_missing", "Preview build payload is missing");
+  const normalizedRecords = build.normalizedRecords;
   if (build.contentChecksum !== input.contentChecksum)
     throw new DomainError("candidate_checksum_mismatch", "Preview build checksum does not match");
   if (existingPromotion) return mapDatasetRevision(existingPromotion);
@@ -154,7 +171,10 @@ export async function promoteReleaseCandidate(
         lifecycleStatus: "preparing",
         isCurrent: false,
         indexStatus: "pending",
-        normalizedRecords: build.normalizedRecords,
+        // The full payload is addressed by manifestId/contentObjects.  Store
+        // only its compact key index in the revision to keep large quest
+        // snapshots below PostgreSQL's JSONB array limit.
+        normalizedRecords: compactRecordIndex(normalizedRecords),
         structuredRecords: build.structuredRecords,
         manifestId: build.manifestId,
         activationBuildId: build.id,
@@ -226,6 +246,18 @@ export async function finalizeActivation(
       .where(eq(releaseCandidateBuilds.id, input.buildId))
       .limit(1);
     if (
+      revision &&
+      candidate &&
+      build &&
+      revision.lifecycleStatus === "published" &&
+      revision.isCurrent &&
+      build.contentChecksum === input.contentChecksum &&
+      build.manifestId === revision.manifestId &&
+      build.indexStatus === "ready"
+    ) {
+      return mapDatasetRevision(revision);
+    }
+    if (
       !revision ||
       !candidate ||
       !build ||
@@ -288,6 +320,14 @@ export async function setRevisionIndexStatus(
   status: "ready" | "failed",
   error?: string,
 ): Promise<void> {
+  const where =
+    status === "failed"
+      ? and(
+          eq(datasetRevisions.id, revisionId),
+          eq(datasetRevisions.isCurrent, false),
+          ne(datasetRevisions.lifecycleStatus, "published"),
+        )
+      : eq(datasetRevisions.id, revisionId);
   await ctx.db
     .update(datasetRevisions)
     .set({
@@ -295,5 +335,5 @@ export async function setRevisionIndexStatus(
       lifecycleStatus: status === "failed" ? "failed" : undefined,
       activationError: error ? { error } : null,
     })
-    .where(eq(datasetRevisions.id, revisionId));
+    .where(where);
 }

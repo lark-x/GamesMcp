@@ -1,6 +1,77 @@
 import { describe, expect, it } from "vitest";
+import type { StoryCatalog as ApiStoryCatalog } from "../../api.js";
+import { buildStoryTree } from "./StoryCatalog.js";
 import { formatStoryString } from "./story-format.js";
 import type { ProtagonistPreferences } from "./story.types.js";
+import type { StoryEntry } from "./story.types.js";
+
+const catalogEntry = (questKey: string, title: string) => ({
+  questKey,
+  title,
+  order: 1,
+  completeness: "complete" as const,
+  bodyAvailability: "dialogue" as const,
+});
+
+const storyCatalogFixture: ApiStoryCatalog = {
+  gameId: "game",
+  revisionId: "revision",
+  regions: [
+    {
+      id: "region",
+      name: "测试地区",
+      order: 1,
+      families: [
+        {
+          id: "family",
+          name: "测试系列",
+          order: 1,
+          provenance: "derived",
+          chapters: [
+            {
+              id: "chapter",
+              name: "测试章节",
+              order: 1,
+              quests: [
+                catalogEntry("mission/1", "甲任务"),
+                catalogEntry("mission/2", "乙任务"),
+              ],
+            },
+          ],
+        },
+      ],
+      chapters: [],
+    },
+  ],
+};
+
+const storyEntry = (questKey: string, title: string): StoryEntry => ({
+  questKey,
+  title,
+  type: "trailblaze_mission",
+  completeness: "complete",
+  locale: "zh-CN",
+});
+
+describe("story catalog filtering", () => {
+  it("keeps a quest whose dialogue body matched the search endpoint", () => {
+    const tree = buildStoryTree(
+      [storyEntry("mission/2", "乙任务")],
+      storyCatalogFixture,
+      "对白中的稀有词",
+      true,
+    );
+
+    expect(tree).toHaveLength(1);
+    expect(tree[0]?.children?.[0]?.children?.[0]?.children).toEqual([
+      expect.objectContaining({ questKey: "mission/2", title: "乙任务" }),
+    ]);
+  });
+
+  it("returns no catalog nodes when a query has no title or body matches", () => {
+    expect(buildStoryTree([], storyCatalogFixture, "不存在的任务", true)).toEqual([]);
+  });
+});
 
 describe("formatStoryString", () => {
   const malePrefs: ProtagonistPreferences = {
@@ -159,6 +230,24 @@ describe("formatStoryString", () => {
         "列车即将跃迁，请各位乘客坐好。"
       );
     });
+
+    it("renders paired Star Rail ruby as <ruby>base<rt>annotation</rt></ruby>", () => {
+      // Upstream writes the annotated word BETWEEN the markers, unlike the
+      // Genshin {RUBY#annotation#base} form.
+      expect(formatStoryString("{RUBY_B#「毁灭」的令使}绝灭大君{RUBY_E#}不在附近。", srMale)).toBe(
+        "<ruby>绝灭大君<rt>「毁灭」的令使</rt></ruby>不在附近。"
+      );
+      expect(formatStoryString("拥有星神{RUBY_B#「毁灭」}纳努克{RUBY_E#}的赐福。", srMale)).toBe(
+        "拥有星神<ruby>纳努克<rt>「毁灭」</rt></ruby>的赐福。"
+      );
+    });
+
+    it("never leaks an unpaired ruby marker to the reader", () => {
+      expect(formatStoryString("残留{RUBY_B#注}标记{RUBY_E#}结束", srMale)).toBe(
+        "残留<ruby>标记<rt>注</rt></ruby>结束"
+      );
+      expect(formatStoryString("未闭合{RUBY_B#注释}的文本", srMale)).toBe("未闭合的文本");
+      expect(formatStoryString("孤立{RUBY_E#}标记", srMale)).toBe("孤立标记");
+    });
   });
 });
-

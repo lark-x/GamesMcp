@@ -14,10 +14,19 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
   );
 
   if (mainMissionItem) {
+    const mainMissions = await readSafeJsonFile<Array<Record<string, unknown>>>(
+      resolve(input.dataDir, mainMissionItem.path),
+    );
+    const mainMissionIds = new Set(
+      (Array.isArray(mainMissions) ? mainMissions : [])
+        .map((mission) => Number(mission.MainMissionID ?? mission.ID))
+        .filter((id): id is number => Number.isInteger(id)),
+    );
     const subMissionItem = input.inventory.items.find(
       (i) => i.path === "ExcelOutput/SubMission.json",
     );
     const subMap = new Map<number, Array<Record<string, unknown>>>();
+    const subMissionToMain = new Map<number, number>();
 
     if (subMissionItem) {
       const subMissions = await readSafeJsonFile<Array<Record<string, unknown>>>(
@@ -28,6 +37,8 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
           const subId = Number(sub.SubMissionID);
           if (!Number.isInteger(subId)) continue;
           const mainId = Math.floor(subId / 100);
+          if (!mainMissionIds.has(mainId)) continue;
+          subMissionToMain.set(subId, mainId);
           const list = subMap.get(mainId) ?? [];
           list.push(sub);
           subMap.set(mainId, list);
@@ -79,14 +90,38 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
     );
     const missionDialogMap = new Map<number, string[]>();
     const missionStoryFiles = new Map<number, string[]>();
-    // 演出块 -> 所属任务；被引用的块整体归属首次引用它的任务
-    const blockOwners = new Map<number, number>();
+    // 演出块 -> 所属任务；同一块若被多个任务精确引用，则完整保留给每个任务
+    const blockOwners = new Map<number, Set<number>>();
     const missionOptionIds = new Map<number, Set<number>>();
 
+    const missionIdFromPath = (filePath: string): number | undefined => {
+      const match = filePath.match(/Story\/(?:Discussion\/)?Mission\/(\d+)/u);
+      if (!match) return undefined;
+      const directoryId = Number(match[1]);
+      if (mainMissionIds.has(directoryId)) return directoryId;
+      return subMissionToMain.get(directoryId);
+    };
+
+    const explicitMissionId = (value: unknown): number | undefined => {
+      if (!value || typeof value !== "object") return undefined;
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const nested = explicitMissionId(item);
+          if (nested !== undefined) return nested;
+        }
+        return undefined;
+      }
+      const record = value as Record<string, unknown>;
+      for (const key of ["MainMissionID", "MainMissionId", "MissionID", "MissionId"]) {
+        const id = Number(record[key]);
+        if (Number.isInteger(id) && mainMissionIds.has(id)) return id;
+      }
+      return undefined;
+    };
+
     for (const sFile of storyMissionFiles) {
-      // Determine MainMissionID from path e.g. Story/Mission/1000101/...
-      const match = sFile.path.match(/Story\/(?:Discussion\/)?Mission\/(\d+)/u);
-      let guessedMainId = match ? Number(match[1]) : undefined;
+      // Determine MainMissionID from an exact MainMissionID/SubMissionID path.
+      let guessedMainId = missionIdFromPath(sFile.path);
 
       const parsed = await readSafeJsonFile<unknown>(resolve(input.dataDir, sFile.path));
       if (!parsed) continue;
@@ -100,9 +135,7 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
           return;
         }
         const record = obj as Record<string, unknown>;
-        if (record.MainMissionID && !guessedMainId) {
-          guessedMainId = Number(record.MainMissionID);
-        }
+        if (!guessedMainId) guessedMainId = explicitMissionId(record);
         if (record.TalkSentenceID) {
           const sId = Number(record.TalkSentenceID);
           blockIds.add(Math.floor(sId / 100));
@@ -120,7 +153,9 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
 
       if (guessedMainId && blockIds.size > 0) {
         for (const block of blockIds) {
-          if (!blockOwners.has(block)) blockOwners.set(block, guessedMainId);
+          const owners = blockOwners.get(block) ?? new Set<number>();
+          owners.add(guessedMainId);
+          blockOwners.set(block, owners);
         }
         const existingOptions = missionOptionIds.get(guessedMainId) ?? new Set<number>();
         for (const optionId of optionIds) existingOptions.add(optionId);
@@ -133,23 +168,29 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
     }
 
     // 由演出块还原每段任务的完整对白（含选项句），按台词顺序输出
-    for (const [block, mainId] of blockOwners) {
-      const optionIds = missionOptionIds.get(mainId) ?? new Set<number>();
-      const existing = missionDialogMap.get(mainId) ?? [];
-      for (const sentence of (blockSentences.get(block) ?? []).sort((a, b) => a.id - b.id)) {
-        if (optionIds.has(sentence.id) && !sentence.speaker) {
-          // 玩家选择肢：无名台词，按选项节点渲染
-          existing.push(`[选项] ${sentence.text}`);
-        } else {
-          existing.push(sentence.speaker ? `${sentence.speaker}：${sentence.text}` : sentence.text);
+    for (const block of [...blockOwners.keys()].sort((a, b) => a - b)) {
+      const sentences = (blockSentences.get(block) ?? []).sort((a, b) => a.id - b.id);
+      for (const mainId of [...(blockOwners.get(block) ?? [])].sort((a, b) => a - b)) {
+        const optionIds = missionOptionIds.get(mainId) ?? new Set<number>();
+        const existing = missionDialogMap.get(mainId) ?? [];
+        const seen = new Set(existing);
+        for (const sentence of sentences) {
+          let line: string;
+          if (optionIds.has(sentence.id) && !sentence.speaker) {
+            // 玩家选择肢：无名台词，按选项节点渲染
+            line = `[选项] ${sentence.text}`;
+          } else {
+            line = sentence.speaker ? `${sentence.speaker}：${sentence.text}` : sentence.text;
+          }
+          if (!seen.has(line)) {
+            existing.push(line);
+            seen.add(line);
+          }
         }
+        missionDialogMap.set(mainId, existing);
       }
-      missionDialogMap.set(mainId, existing);
     }
 
-    const mainMissions = await readSafeJsonFile<Array<Record<string, unknown>>>(
-      resolve(input.dataDir, mainMissionItem.path),
-    );
     if (Array.isArray(mainMissions)) {
       const result: ExtractorResult = { documents: [], issues: [], unresolvedText: 0 };
 

@@ -116,6 +116,12 @@ export async function extractCharacterStoryDocuments(
             source: "turn-based-game-data",
             sourceCommit: input.sourceRef,
             sourcePath: atlasItem.path,
+            // Group by character so the catalog lists one row per character
+            // instead of one row per story fragment.
+            groupId: `character/${avatarId}`,
+            groupName: character,
+            storyId,
+            sortOrder: storyId,
           },
           hierarchy: {
             parentId: `sr_character:${avatarId}`,

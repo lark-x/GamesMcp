@@ -118,18 +118,25 @@ export async function createPreviewManifest(
     contentHash: createHash("sha256").update(canonicalRecordBytes(record)).digest("hex"),
     record,
   }));
-  await ctx.db
-    .insert(contentObjects)
-    .values(
-      entries.map((entry) => ({
-        contentHash: entry.contentHash,
-        recordType: entry.record.recordType,
-        schemaVersion: "normalized-record-v1",
-        payload: entry.record as unknown as Record<string, unknown>,
-        byteLength: Buffer.byteLength(canonicalRecordBytes(entry.record)),
-      })),
-    )
-    .onConflictDoNothing();
+  // PostgreSQL/pg has a finite bind-parameter budget.  A full AnimeGameData
+  // quest snapshot is large enough to exceed it when inserted as one Drizzle
+  // multi-row statement, so keep the immutable content-object write bounded.
+  const insertBatchSize = 500;
+  for (let offset = 0; offset < entries.length; offset += insertBatchSize) {
+    const batch = entries.slice(offset, offset + insertBatchSize);
+    await ctx.db
+      .insert(contentObjects)
+      .values(
+        batch.map((entry) => ({
+          contentHash: entry.contentHash,
+          recordType: entry.record.recordType,
+          schemaVersion: "normalized-record-v1",
+          payload: entry.record as unknown as Record<string, unknown>,
+          byteLength: Buffer.byteLength(canonicalRecordBytes(entry.record)),
+        })),
+      )
+      .onConflictDoNothing();
+  }
   const [manifest] = await ctx.db
     .insert(datasetManifests)
     .values({
@@ -148,13 +155,16 @@ export async function createPreviewManifest(
       500,
     );
   if (entries.length) {
-    await ctx.db.insert(datasetManifestEntries).values(
-      entries.map((entry) => ({
-        manifestId: manifest.id,
-        canonicalKey: entry.canonicalKey,
-        contentHash: entry.contentHash,
-      })),
-    );
+    for (let offset = 0; offset < entries.length; offset += insertBatchSize) {
+      const batch = entries.slice(offset, offset + insertBatchSize);
+      await ctx.db.insert(datasetManifestEntries).values(
+        batch.map((entry) => ({
+          manifestId: manifest.id,
+          canonicalKey: entry.canonicalKey,
+          contentHash: entry.contentHash,
+        })),
+      );
+    }
   }
   return manifest.id;
 }

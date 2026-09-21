@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -15,7 +16,7 @@ import {
   normalizeSnapshot,
   validateImport,
 } from "../packages/ingestion/src/index.ts";
-import type { StructuredImportRecords } from "../packages/domain/src/index.ts";
+import type { NormalizedRecord, StructuredImportRecords } from "../packages/domain/src/index.ts";
 import { isPathInside, runStoragePreflight } from "./check-data-storage.js";
 
 const categoryFiles = {
@@ -26,6 +27,16 @@ const categoryFiles = {
   quest: "quests.json",
   structured: "manifest.json",
 } as const;
+
+// PostgreSQL limits the total size of one JSONB array element payload.  Quest
+// records can legitimately exceed that limit after dialogue recovery, so keep
+// each staged import payload comfortably below it and let the release
+// candidate merge the chunks back together.
+// Keep the in-memory and PostgreSQL JSONB copies bounded.  The importer keeps
+// one chunk while the database client serializes it and acquisition-preview
+// hooks inspect it, so a nominally 160 MB chunk can briefly occupy several
+// times that amount on the V8 heap.
+const MAX_STAGED_RECORD_BYTES = 32_000_000;
 
 type Category = keyof typeof categoryFiles;
 
@@ -40,6 +51,97 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function chunkRecordsByBytes<T>(records: T[], maxBytes: number): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let currentBytes = 2;
+  for (const record of records) {
+    const recordBytes = Buffer.byteLength(JSON.stringify(record));
+    if (current.length && currentBytes + recordBytes + 1 > maxBytes) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 2;
+    }
+    current.push(record);
+    currentBytes += recordBytes + 1;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+/** Stream the generated pre-normalized quest array without materializing the
+ * 500MB+ JSON file as one V8 string. */
+async function* streamNormalizedQuestRecords(path: string): AsyncGenerator<NormalizedRecord> {
+  let arrayStarted = false;
+  let arrayFinished = false;
+  let recordActive = false;
+  let recordDepth = 0;
+  let inString = false;
+  let escaped = false;
+  let recordParts: string[] = [];
+
+  for await (const chunk of createReadStream(path, { encoding: "utf8" })) {
+    let segmentStart = 0;
+    for (let index = 0; index < chunk.length; index += 1) {
+      const char = chunk[index]!;
+      if (!arrayStarted) {
+        if (/\s/u.test(char)) continue;
+        if (char !== "[") throw new Error(`Quest records must be a JSON array: ${path}`);
+        arrayStarted = true;
+        segmentStart = index + 1;
+        continue;
+      }
+      if (arrayFinished) {
+        if (!/\s/u.test(char)) throw new Error(`Unexpected content after quest records: ${path}`);
+        continue;
+      }
+      if (!recordActive) {
+        if (/\s|,/u.test(char)) {
+          segmentStart = index + 1;
+          continue;
+        }
+        if (char === "]") {
+          arrayFinished = true;
+          segmentStart = index + 1;
+          continue;
+        }
+        if (char !== "{") throw new Error(`Quest record is not an object: ${path}`);
+        recordActive = true;
+        recordDepth = 1;
+        inString = false;
+        escaped = false;
+        recordParts = [];
+        segmentStart = index;
+        continue;
+      }
+
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+      } else if (char === '"') {
+        inString = true;
+      } else if (char === "{") {
+        recordDepth += 1;
+      } else if (char === "}") {
+        recordDepth -= 1;
+        if (recordDepth === 0) {
+          recordParts.push(chunk.slice(segmentStart, index + 1));
+          const parsed = JSON.parse(recordParts.join("")) as NormalizedRecord;
+          yield parsed;
+          recordParts = [];
+          recordActive = false;
+          segmentStart = index + 1;
+        }
+      }
+    }
+    if (recordActive) recordParts.push(chunk.slice(segmentStart));
+  }
+
+  if (!arrayStarted || recordActive || !arrayFinished)
+    throw new Error(`Truncated quest records JSON: ${path}`);
 }
 
 async function checkoutCommit(upstreamDir: string): Promise<string | undefined> {
@@ -283,48 +385,138 @@ try {
         inputHashes: manifest.inputHashes,
       },
     });
-    const normalized = await normalizeSnapshot(snapshot, adapter);
     const previousKeys = await repository.getSourceRecordHashes(source.id);
     const knownEntityKeys = new Set((await repository.listEntitySourceKeys?.(game.id)) ?? []);
-    const validation = validateImport(
-      normalized.records,
-      normalized.parseIssues,
-      previousKeys,
-      knownEntityKeys,
-    );
     const conversionFailures = manifestFailureIssues(manifest, category);
-    const errors = [...validation.errors, ...conversionFailures];
-    const diff = computeDiff(normalized.records, previousKeys, [
-      ...normalized.parseIssues,
-      ...errors,
-      ...validation.warnings,
-    ]);
-    const batch = await repository.createImport({
-      gameId: game.id,
-      sourceId: source.id,
-      sourceSnapshotId: savedSnapshot.id,
-      parserVersion: "anime-game-data-import-1.0.0",
-      stagedRecords: normalized.records,
-      errors,
-      warnings: [
+    // Do not retain the ImportBatch objects here: each one contains the full
+    // staged JSONB payload.  Retaining them made a multi-chunk quest import
+    // grow until the Node heap was exhausted even though each DB write had
+    // already completed.
+    const batchIds: string[] = [];
+    let hasFailedBatch = false;
+    let batchCount = 0;
+    let recordCount = 0;
+    let errorCount = 0;
+    let warningCount = 0;
+
+    const createBatch = async (
+      records: NormalizedRecord[],
+      lastChunk: boolean,
+      deletionCandidates: string[],
+    ) => {
+      const validation = validateImport(records, [], previousKeys, knownEntityKeys);
+      const errors = [...validation.errors, ...(lastChunk ? conversionFailures : [])];
+      const warnings = [
         ...validation.warnings,
         ...inspection.warnings.map((message) => ({
           severity: "warning" as const,
           code: "inspection_warning",
           message,
         })),
-      ],
-      diff,
-    });
+      ];
+      const diff = computeDiff(records, previousKeys, [...errors, ...warnings]);
+      diff.deletionCandidates = lastChunk ? deletionCandidates : [];
+      const batch = await repository.createImport({
+        gameId: game.id,
+        sourceId: source.id,
+        sourceSnapshotId: savedSnapshot.id,
+        parserVersion: "anime-game-data-import-1.0.0",
+        stagedRecords: records,
+        skipPreview: category === "quest",
+        errors,
+        warnings,
+        diff,
+      });
+      batchIds.push(batch.id);
+      hasFailedBatch ||= batch.status === "failed";
+      batchCount += 1;
+      errorCount += errors.length;
+      warningCount += warnings.length;
+    };
+
+    if (category === "quest") {
+      const currentKeys = new Set<string>();
+      let currentChunk: NormalizedRecord[] = [];
+      let currentBytes = 2;
+      let pendingChunk: NormalizedRecord[] | undefined;
+      for await (const record of streamNormalizedQuestRecords(inputPath)) {
+        currentKeys.add(record.sourceKey);
+        recordCount += 1;
+        const recordBytes = Buffer.byteLength(JSON.stringify(record));
+        if (currentChunk.length && currentBytes + recordBytes + 1 > MAX_STAGED_RECORD_BYTES) {
+          if (pendingChunk) await createBatch(pendingChunk, false, []);
+          pendingChunk = currentChunk;
+          currentChunk = [];
+          currentBytes = 2;
+        }
+        currentChunk.push(record);
+        currentBytes += recordBytes + 1;
+      }
+      if (currentChunk.length > 0) {
+        if (pendingChunk) await createBatch(pendingChunk, false, []);
+        pendingChunk = currentChunk;
+      }
+      if (!pendingChunk) pendingChunk = [];
+      const deletionCandidates = [...previousKeys.keys()].filter((key) => !currentKeys.has(key));
+      await createBatch(pendingChunk, true, deletionCandidates);
+    } else {
+      const normalized = await normalizeSnapshot(snapshot, adapter);
+      const validation = validateImport(
+        normalized.records,
+        normalized.parseIssues,
+        previousKeys,
+        knownEntityKeys,
+      );
+      const chunks = chunkRecordsByBytes(normalized.records, MAX_STAGED_RECORD_BYTES);
+      if (!chunks.length) chunks.push([]);
+      const currentKeys = new Set(normalized.records.map((record) => record.sourceKey));
+      const deletionCandidates = [...previousKeys.keys()].filter((key) => !currentKeys.has(key));
+      for (let index = 0; index < chunks.length; index += 1) {
+        const records = chunks[index]!;
+        const lastChunk = index === chunks.length - 1;
+        const errors = lastChunk ? [...validation.errors, ...conversionFailures] : [];
+        const warnings = [
+          ...(lastChunk ? validation.warnings : []),
+          ...inspection.warnings.map((message) => ({
+            severity: "warning" as const,
+            code: "inspection_warning",
+            message,
+          })),
+        ];
+        const diff = computeDiff(records, previousKeys, [
+          ...normalized.parseIssues,
+          ...errors,
+          ...warnings,
+        ]);
+        diff.deletionCandidates = lastChunk ? deletionCandidates : [];
+        const batch = await repository.createImport({
+          gameId: game.id,
+          sourceId: source.id,
+          sourceSnapshotId: savedSnapshot.id,
+          parserVersion: "anime-game-data-import-1.0.0",
+          stagedRecords: records,
+          errors,
+          warnings,
+          diff,
+        });
+        batchIds.push(batch.id);
+        hasFailedBatch ||= batch.status === "failed";
+        batchCount += 1;
+      }
+      recordCount = normalized.records.length;
+      errorCount = validation.errors.length + conversionFailures.length;
+      warningCount = validation.warnings.length + inspection.warnings.length;
+    }
     console.log(
       JSON.stringify(
         {
-          batchId: batch.id,
+          batchIds,
           category,
-          status: batch.status,
-          records: normalized.records.length,
-          errors: errors.length,
-          warnings: validation.warnings.length,
+          status: hasFailedBatch ? "failed" : "review_required",
+          records: recordCount,
+          chunks: batchCount,
+          errors: errorCount,
+          warnings: warningCount,
           sourceSnapshotId: savedSnapshot.id,
           input: inputPath,
         },

@@ -52,6 +52,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
     const normalizedQuery = normalize(query);
     if (!normalizedQuery) return [];
     const prefix = `${escapeLike(normalizedQuery)}%`;
+    const contains = `%${escapeLike(normalizedQuery)}%`;
     const allowedKinds = new Set<StructuredSearchKind>(
       request.kinds?.length
         ? request.kinds
@@ -141,10 +142,12 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         select
           ${normalizedQuery}::text as normalized_query,
           ${prefix}::text as prefix,
+          ${contains}::text as contains,
           plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
           websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
       ), candidates as (
-        ${sql.join(branches, sql` union all `)}
+        select b.*, t.contains from (${sql.join(branches, sql` union all `)}) b
+        cross join search_terms t
       ), ranked as (
         select
           c.*,
@@ -159,6 +162,12 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 select 1 from unnest(c.aliases) alias_value
                 where lower(alias_value) like c.prefix escape '\\'
               ) then 0.8
+            when c.normalized_name ilike c.contains escape '\\'
+              or c.body ilike c.contains escape '\\'
+              or exists (
+                select 1 from unnest(c.aliases) alias_value
+                where lower(alias_value) ilike c.contains escape '\\'
+              ) then 0.6
             when c.search_vector @@ c.plain_query
               or c.search_vector @@ c.web_query then greatest(
                 ts_rank(c.search_vector, c.plain_query),
@@ -180,6 +189,12 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 select 1 from unnest(c.aliases) alias_value
                 where lower(alias_value) like c.prefix escape '\\'
               ) then 'prefix'
+            when c.normalized_name ilike c.contains escape '\\'
+              or c.body ilike c.contains escape '\\'
+              or exists (
+                select 1 from unnest(c.aliases) alias_value
+                where lower(alias_value) ilike c.contains escape '\\'
+              ) then 'substring'
             when c.search_vector @@ c.plain_query
               or c.search_vector @@ c.web_query then 'fts'
             else 'trgm'
@@ -195,14 +210,15 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         rank,
         match_type as "matchType"
       from ranked
-      where match_type in ('exact', 'prefix', 'fts')
+      where match_type in ('exact', 'prefix', 'substring', 'fts')
          or rank >= 0.15
       order by
         case match_type
           when 'exact' then 0
           when 'prefix' then 1
-          when 'fts' then 2
-          else 3
+          when 'substring' then 2
+          when 'fts' then 3
+          else 4
         end,
         rank desc,
         name asc,
@@ -275,6 +291,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             when normalized_value like ${prefix} then 'prefix'
             else 'trigram'
           end as match_tier,
+          similarity(normalized_value, ${query}) as raw_similarity,
           case
             when value_kind = 'canonical' and normalized_value = ${query} then 1.0
             when value_kind = 'alias' and normalized_value = ${query} then 0.95
@@ -304,9 +321,17 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         ranked.match_tier as "matchTier",
         ranked.matched_text as "matchedText",
         ranked.match_confidence as "matchConfidence",
+        ranked.raw_similarity as "rawSimilarity",
         coalesce(aliases.aliases, array[]::text[]) as aliases
       from ranked_matches ranked
       left join aliases_by_entity aliases on aliases.entity_id = ranked.entity_id
+      where
+        -- Trigram admission is candidate generation, not evidence of a match.
+        -- The compressed confidence band (0.19-0.30) cannot separate a real
+        -- near-duplicate from incidental CJK character overlap, so gate on raw
+        -- similarity: 摩拉克斯 vs 摩拉急速来 scores 0.22 and must not resolve.
+        ranked.match_tier <> 'trigram'
+        or ranked.raw_similarity >= 0.4
       order by ranked.match_confidence desc, ranked.canonical_name asc, ranked.entity_id asc
       limit ${limit}
     `);
@@ -322,6 +347,9 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
     const normalizedQuery = normalize(query);
     if (!normalizedQuery) return [];
     const prefix = `${escapeLike(normalizedQuery)}%`;
+    // Literal substring pattern. Chinese is not segmented by the `simple` text
+    // search config, so ILIKE is the only reliable way to prove a phrase occurs.
+    const contains = `%${escapeLike(normalizedQuery)}%`;
     const speaker = cleanFilter(filters.speaker)?.toLocaleLowerCase("zh-CN");
     const quest = cleanFilter(filters.quest ?? filters.questKey)?.toLocaleLowerCase("zh-CN");
     const nodeType = cleanFilter(filters.nodeType)?.toLocaleLowerCase("zh-CN");
@@ -346,6 +374,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         select
           ${normalizedQuery}::text as normalized_query,
           ${prefix}::text as prefix,
+          ${contains}::text as contains,
           plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
           websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
       ), candidates as (
@@ -363,6 +392,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           d.search_vector as document_search_vector,
           t.normalized_query,
           t.prefix,
+          t.contains,
           t.plain_query,
           t.web_query
         from knowledge.quest_dialogue_nodes q
@@ -385,6 +415,8 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
               or q.search_vector @@ t.web_query
               or d.search_vector @@ t.plain_query
               or d.search_vector @@ t.web_query
+              or q.body ilike t.contains escape '\\'
+              or d.title ilike t.contains escape '\\'
               or q.body % t.normalized_query
               or d.normalized_title % t.normalized_query
             )
@@ -397,6 +429,8 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
               or lower(c.document_title) = c.normalized_query then 1.0
             when lower(coalesce(c.speaker, '')) like c.prefix escape '\\'
               or lower(c.document_title) like c.prefix escape '\\' then 0.8
+            when c.body ilike c.contains escape '\\'
+              or c.document_title ilike c.contains escape '\\' then 0.6
             when c.dialogue_search_vector @@ c.plain_query
               or c.document_search_vector @@ c.plain_query
               or c.dialogue_search_vector @@ c.web_query
@@ -418,6 +452,8 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
               or lower(c.document_title) = c.normalized_query then 'exact'
             when lower(coalesce(c.speaker, '')) like c.prefix escape '\\'
               or lower(c.document_title) like c.prefix escape '\\' then 'prefix'
+            when c.body ilike c.contains escape '\\'
+              or c.document_title ilike c.contains escape '\\' then 'substring'
             when c.dialogue_search_vector @@ c.plain_query
               or c.document_search_vector @@ c.plain_query
               or c.dialogue_search_vector @@ c.web_query
@@ -439,14 +475,15 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         rank,
         match_type as "matchType"
       from ranked
-      where match_type in ('exact', 'prefix', 'fts')
+      where match_type in ('exact', 'prefix', 'substring', 'fts')
          or rank >= 0.15
       order by
         case match_type
           when 'exact' then 0
           when 'prefix' then 1
-          when 'fts' then 2
-          else 3
+          when 'substring' then 2
+          when 'fts' then 3
+          else 4
         end,
         rank desc,
         document_id asc,
@@ -493,6 +530,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
     const normalizedQuery = normalize(query);
     if (!normalizedQuery) return [];
     const prefix = `${escapeLike(normalizedQuery)}%`;
+    const contains = `%${escapeLike(normalizedQuery)}%`;
     const includeDocuments = request.includeDocuments !== false;
     const includeSegments = request.includeSegments !== false;
     const candidateLimit = Math.min(Math.max(request.candidateLimit ?? 120, 1), 500);
@@ -517,6 +555,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             ${prefix}::text as prefix
         ), candidates as (
           select d.id, d.source_key, d.title, d.type, d.locale,
+                 left(d.body, 1200) as body,
                  case
                    when d.normalized_title = t.normalized_query then 1.0
                    when d.normalized_title like t.prefix escape '\\' then 0.9
@@ -558,7 +597,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         )
         select
           c.id, c.source_key, c.title, c.type, c.locale,
-          c.title as body,
+          c.body,
           c.rank,
           c.match_type as "matchType"
         from candidates c
@@ -590,18 +629,23 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           select
             ${normalizedQuery}::text as normalized_query,
             ${prefix}::text as prefix,
+            ${contains}::text as contains,
             plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
             websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
         ), candidates as (
           select d.id, d.source_key, d.title, d.type, d.locale,
                  case when d.normalized_title = t.normalized_query then 1.0
                       when d.normalized_title like t.prefix escape '\\' then 0.8
+                      when d.title ilike t.contains escape '\\'
+                        or d.body ilike t.contains escape '\\' then 0.6
                       when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query
                         then greatest(ts_rank(d.search_vector, t.plain_query), ts_rank(d.search_vector, t.web_query))
                       else similarity(d.normalized_title, t.normalized_query)
                  end::double precision as rank,
                  case when d.normalized_title = t.normalized_query then 'exact'
                       when d.normalized_title like t.prefix escape '\\' then 'prefix'
+                      when d.title ilike t.contains escape '\\'
+                        or d.body ilike t.contains escape '\\' then 'substring'
                       when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query then 'fts'
                       else 'trgm'
                  end as match_type
@@ -615,6 +659,8 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             and (
               d.normalized_title = t.normalized_query
               or d.normalized_title like t.prefix escape '\\'
+              or d.title ilike t.contains escape '\\'
+              or d.body ilike t.contains escape '\\'
               or d.search_vector @@ t.plain_query
               or d.search_vector @@ t.web_query
               or d.normalized_title % t.normalized_query
@@ -623,8 +669,10 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             case
               when d.normalized_title = t.normalized_query then 0
               when d.normalized_title like t.prefix escape '\\' then 1
-              when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query then 2
-              else 3
+              when d.title ilike t.contains escape '\\'
+                or d.body ilike t.contains escape '\\' then 2
+              when d.search_vector @@ t.plain_query or d.search_vector @@ t.web_query then 3
+              else 4
             end,
             rank desc,
             d.title asc,
@@ -642,8 +690,9 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           case c.match_type
             when 'exact' then 0
             when 'prefix' then 1
-            when 'fts' then 2
-            else 3
+            when 'substring' then 2
+            when 'fts' then 3
+            else 4
           end,
           c.rank desc,
           c.title asc,
@@ -657,6 +706,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           select
             ${normalizedQuery}::text as normalized_query,
             ${prefix}::text as prefix,
+            ${contains}::text as contains,
             plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
             websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
         ), candidates as (
@@ -673,6 +723,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 or d.normalized_title = t.normalized_query then 1.0
               when lower(ds.body) like t.prefix escape '\\'
                 or d.normalized_title like t.prefix escape '\\' then 0.8
+              when ds.body ilike t.contains escape '\\' then 0.6
               when ds.search_vector @@ t.plain_query
                 or ds.search_vector @@ t.web_query then greatest(
                   ts_rank(ds.search_vector, t.plain_query),
@@ -688,6 +739,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 or d.normalized_title = t.normalized_query then 'exact'
               when lower(ds.body) like t.prefix escape '\\'
                 or d.normalized_title like t.prefix escape '\\' then 'prefix'
+              when ds.body ilike t.contains escape '\\' then 'substring'
               when ds.search_vector @@ t.plain_query
                 or ds.search_vector @@ t.web_query then 'fts'
               else 'trgm'
@@ -706,6 +758,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
               or d.normalized_title = t.normalized_query
               or lower(ds.body) like t.prefix escape '\\'
               or d.normalized_title like t.prefix escape '\\'
+              or ds.body ilike t.contains escape '\\'
               or ds.search_vector @@ t.plain_query
               or ds.search_vector @@ t.web_query
               or ds.search_text % t.normalized_query
@@ -715,8 +768,9 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             case
               when lower(ds.body) = t.normalized_query or d.normalized_title = t.normalized_query then 0
               when lower(ds.body) like t.prefix escape '\\' or d.normalized_title like t.prefix escape '\\' then 1
-              when ds.search_vector @@ t.plain_query or ds.search_vector @@ t.web_query then 2
-              else 3
+              when ds.body ilike t.contains escape '\\' then 2
+              when ds.search_vector @@ t.plain_query or ds.search_vector @@ t.web_query then 3
+              else 4
             end,
             rank desc,
             ds.document_id asc,
@@ -741,8 +795,9 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           case c.match_type
             when 'exact' then 0
             when 'prefix' then 1
-            when 'fts' then 2
-            else 3
+            when 'substring' then 2
+            when 'fts' then 3
+            else 4
           end,
           c.rank desc,
           c.document_id asc
@@ -876,8 +931,10 @@ function documentSummary(row: DocumentDbHit) {
 function matchTypePriority(matchType: SearchMatchType): number {
   switch (matchType) {
     case "exact":
-      return 4;
+      return 5;
     case "prefix":
+      return 4;
+    case "substring":
       return 3;
     case "fts":
       return 2;

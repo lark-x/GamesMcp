@@ -33,9 +33,11 @@ export interface StoryResolverResult {
     publicCount: number;
     hiddenCount: number;
     orphanDiscussions: number;
+    orphanMissionSources: number;
     graphCycles: number;
   };
   orphanDiscussions: string[];
+  orphanMissionSources: string[];
 }
 
 export class StarRailStoryResolver {
@@ -98,8 +100,26 @@ export class StarRailStoryResolver {
       talkSentenceMap: sentenceMap,
     });
 
-    // 2. Load SubMissions
+    // 2. Load the exact MainMission/SubMission relation before reading story
+    // files.  Live data uses both MainMissionID directories and SubMissionID
+    // directories, so path arithmetic alone is not a safe association rule.
+    const mainItem = this.inventory.items.find((i) => i.path === "ExcelOutput/MainMission.json");
+    let rawMissions: Array<Record<string, unknown>> = [];
+    if (mainItem) {
+      const parsed = await readSafeJsonFile<Array<Record<string, unknown>>>(
+        resolve(this.dataDir, mainItem.path),
+      );
+      if (Array.isArray(parsed)) rawMissions = parsed;
+    }
+    const missionIds = new Set(
+      rawMissions
+        .map((mission) => Number(mission.MainMissionID ?? mission.ID))
+        .filter((id): id is number => Number.isInteger(id)),
+    );
+
+    // 3. Load SubMissions
     const subMissionMap = new Map<number, StarRailSubMission[]>();
+    const subMissionToMain = new Map<number, number>();
     const subItem = this.inventory.items.find((i) => i.path === "ExcelOutput/SubMission.json");
     if (subItem) {
       const rawSubs = await readSafeJsonFile<Array<Record<string, unknown>>>(
@@ -110,6 +130,8 @@ export class StarRailStoryResolver {
           const subId = Number(sub.SubMissionID ?? sub.ID);
           if (!Number.isInteger(subId)) continue;
           const mainId = Number(sub.MainMissionID ?? Math.floor(subId / 100));
+          if (!missionIds.has(mainId)) continue;
+          subMissionToMain.set(subId, mainId);
           const seq = Number(sub.Sequence ?? subId % 100);
           const targetText = this.resolveHash(sub.TargetText) ?? undefined;
           const descriptionText = this.resolveHash(sub.DescrptionText) ?? undefined;
@@ -128,8 +150,45 @@ export class StarRailStoryResolver {
       }
     }
 
-    // 3. Extract dialogue nodes from Story/Mission/*.json
+    const missionIdFromPath = (filePath: string): number | undefined => {
+      const match = filePath.match(/Story\/(?:Discussion\/)?Mission\/(\d+)/u);
+      if (!match) return undefined;
+      const directoryId = Number(match[1]);
+      if (missionIds.has(directoryId)) return directoryId;
+      const mapped = subMissionToMain.get(directoryId);
+      return mapped !== undefined && missionIds.has(mapped) ? mapped : undefined;
+    };
+
+    const subMissionIdFromPath = (filePath: string): number | undefined => {
+      const match = filePath.match(/(?:Story|DS)(\d+)\.json$/u);
+      if (!match) return undefined;
+      const subMissionId = Number(match[1]);
+      return subMissionToMain.has(subMissionId) ? subMissionId : undefined;
+    };
+
+    const explicitMissionId = (value: unknown): number | undefined => {
+      if (!value || typeof value !== "object") return undefined;
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const nested = explicitMissionId(item);
+          if (nested !== undefined) return nested;
+        }
+        return undefined;
+      }
+      const record = value as Record<string, unknown>;
+      for (const key of ["MainMissionID", "MainMissionId", "MissionID", "MissionId"]) {
+        const id = Number(record[key]);
+        if (Number.isInteger(id) && missionIds.has(id)) return id;
+      }
+      return undefined;
+    };
+
+    const orphanMissionSources: string[] = [];
+
+    // 4. Extract dialogue nodes from Story/Mission/*.json
     const missionDialogueMap = new Map<number, StarRailDialogueNode[]>();
+    const subMissionDialogueMap = new Map<number, Map<number, StarRailDialogueNode[]>>();
+    const seenNodesByMission = new Map<number, Set<string>>();
     const storyMissionFiles = this.inventory.items.filter(
       (i) =>
         i.path.startsWith("Story/Mission/") &&
@@ -137,34 +196,47 @@ export class StarRailStoryResolver {
         !i.path.includes(".layout."),
     );
 
-    for (const file of storyMissionFiles) {
-      const match = file.path.match(/Story\/Mission\/(\d+)/u);
-      let missionId = match ? Number(match[1]) : undefined;
+    const appendNodes = (
+      missionId: number,
+      nodes: StarRailDialogueNode[],
+      subMissionId?: number,
+    ): void => {
+      const missionNodes = missionDialogueMap.get(missionId) ?? [];
+      const seen = seenNodesByMission.get(missionId) ?? new Set<string>();
+      const subMap = subMissionDialogueMap.get(missionId) ?? new Map<number, StarRailDialogueNode[]>();
+      const subNodes = subMissionId !== undefined ? subMap.get(subMissionId) ?? [] : undefined;
 
+      for (const node of nodes) {
+        const identity = `${node.nodeId}\u0000${node.speakerName ?? ""}\u0000${node.body}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        const normalized = { ...node, order: missionNodes.length + 1 };
+        missionNodes.push(normalized);
+        if (subNodes) subNodes.push({ ...normalized, order: subNodes.length + 1 });
+      }
+      if (missionNodes.length > 0) missionDialogueMap.set(missionId, missionNodes);
+      seenNodesByMission.set(missionId, seen);
+      if (subNodes && subNodes.length > 0) {
+        subMap.set(subMissionId!, subNodes);
+        subMissionDialogueMap.set(missionId, subMap);
+      }
+    };
+
+    for (const file of storyMissionFiles) {
       const rawJson = await readSafeJsonFile<unknown>(resolve(this.dataDir, file.path));
       if (!rawJson) continue;
 
-      if (!missionId) {
-        if (Array.isArray(rawJson) && rawJson[0]?.MainMissionID) {
-          missionId = Number(rawJson[0].MainMissionID);
-        } else if (
-          typeof rawJson === "object" &&
-          rawJson !== null &&
-          (rawJson as Record<string, unknown>).MainMissionID
-        ) {
-          missionId = Number((rawJson as Record<string, unknown>).MainMissionID);
-        }
+      const missionId = missionIdFromPath(file.path) ?? explicitMissionId(rawJson);
+      if (missionId === undefined) {
+        orphanMissionSources.push(file.path);
+        continue;
       }
 
       const nodes = dialogueExtractor.extractNodes(rawJson, file.path);
-      if (nodes.length > 0 && missionId) {
-        const existing = missionDialogueMap.get(missionId) ?? [];
-        existing.push(...nodes);
-        missionDialogueMap.set(missionId, existing);
-      }
+      appendNodes(missionId, nodes, subMissionIdFromPath(file.path));
     }
 
-    // 4. Check Story/Discussion/*.json and associate or flag orphans
+    // 5. Check Story/Discussion/*.json and associate or flag orphans
     const orphanDiscussions: string[] = [];
     const discussionFiles = this.inventory.items.filter(
       (i) =>
@@ -174,35 +246,26 @@ export class StarRailStoryResolver {
     );
 
     for (const file of discussionFiles) {
-      const rawJson = await readSafeJsonFile<Record<string, unknown>>(resolve(this.dataDir, file.path));
+      const rawJson = await readSafeJsonFile<unknown>(
+        resolve(this.dataDir, file.path),
+      );
       if (!rawJson) continue;
 
-      let associatedMissionId: number | undefined;
-      // Check if explicit MainMissionID exists in discussion JSON
-      if (rawJson.MainMissionID) associatedMissionId = Number(rawJson.MainMissionID);
-      else if (rawJson.MissionID) associatedMissionId = Number(rawJson.MissionID);
+      // A large part of the live archive stores the relationship only in
+      // Story/Discussion/Mission/<mainMissionId-or-subMissionId>/..., so the
+      // exact MainMission/SubMission index is authoritative here.
+      const associatedMissionId = missionIdFromPath(file.path) ?? explicitMissionId(rawJson);
 
       const nodes = dialogueExtractor.extractNodes(rawJson, file.path);
-      if (associatedMissionId) {
-        const existing = missionDialogueMap.get(associatedMissionId) ?? [];
-        existing.push(...nodes);
-        missionDialogueMap.set(associatedMissionId, existing);
+      if (associatedMissionId !== undefined) {
+        appendNodes(associatedMissionId, nodes, subMissionIdFromPath(file.path));
       } else {
         orphanDiscussions.push(file.path);
+        orphanMissionSources.push(file.path);
       }
     }
 
-    // 5. Load MainMission.json and build DAG
-    const mainItem = this.inventory.items.find((i) => i.path === "ExcelOutput/MainMission.json");
-    let rawMissions: Array<Record<string, unknown>> = [];
-    if (mainItem) {
-      const parsed = await readSafeJsonFile<Array<Record<string, unknown>>>(
-        resolve(this.dataDir, mainItem.path),
-      );
-      if (Array.isArray(parsed)) rawMissions = parsed;
-    }
-
-    // Graph nodes: missionId -> nextMissionIds
+    // 6. Build the MainMission graph
     const nextMap = new Map<number, number[]>();
     const prevMap = new Map<number, number[]>();
     const inDegree = new Map<number, number>();
@@ -212,12 +275,22 @@ export class StarRailStoryResolver {
       if (!Number.isInteger(id)) continue;
       inDegree.set(id, 0);
 
-      const nextTrack = m.NextTrackMainMission ? Number(m.NextTrackMainMission) : undefined;
-      const nextList: number[] = [];
-      if (nextTrack && nextTrack !== id) {
-        nextList.push(nextTrack);
+      const nextList = new Set<number>();
+      const nextTrack = Number(m.NextTrackMainMission);
+      if (Number.isInteger(nextTrack) && nextTrack !== id && missionIds.has(nextTrack)) {
+        nextList.add(nextTrack);
       }
-      nextMap.set(id, nextList);
+      const declaredNext = m.NextMainMissionList;
+      if (Array.isArray(declaredNext)) {
+        for (const value of declaredNext) {
+          const next =
+            typeof value === "object" && value !== null
+              ? Number((value as Record<string, unknown>).MainMissionID ?? (value as Record<string, unknown>).ID)
+              : Number(value);
+          if (Number.isInteger(next) && next !== id && missionIds.has(next)) nextList.add(next);
+        }
+      }
+      nextMap.set(id, [...nextList].sort((a, b) => a - b));
     }
 
     for (const [id, nexts] of nextMap.entries()) {
@@ -249,9 +322,40 @@ export class StarRailStoryResolver {
       }
     }
 
-    const graphCycles = rawMissions.length > 0 && visitedCount < rawMissions.length ? 1 : 0;
+    const graphCycles = missionIds.size > 0 && visitedCount < missionIds.size ? 1 : 0;
 
-    // 6. Build StarRailStoryQuest instances
+    // Build connected mission-chain components. MainMission's chapter labels
+    // are reused for many unrelated companion missions, so the chain root is
+    // part of the family identity instead of treating the label as a family.
+    const componentByMission = new Map<number, number>();
+    const componentFor = (id: number): number => {
+      const cached = componentByMission.get(id);
+      if (cached !== undefined) return cached;
+      const members = new Set<number>([id]);
+      const queue = [id];
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        for (const neighbor of [
+          ...(nextMap.get(current) ?? []),
+          ...(prevMap.get(current) ?? []),
+        ]) {
+          if (!missionIds.has(neighbor) || members.has(neighbor)) continue;
+          members.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+      const root = [...members].sort((a, b) => a - b)[0] ?? id;
+      for (const member of members) componentByMission.set(member, root);
+      return root;
+    };
+
+    const familyTitleIsGeneric = (value: string | undefined): boolean =>
+      !value ||
+      ["同行篇章", "开拓篇章", "开拓任务", "冒险任务", "日常任务", "活动任务"].includes(
+        value.trim(),
+      );
+
+    // 7. Build StarRailStoryQuest instances
     const quests: StarRailStoryQuest[] = [];
 
     for (const m of rawMissions) {
@@ -260,10 +364,10 @@ export class StarRailStoryResolver {
 
       const title = this.resolveHash(m.Name) ?? `任务 ${id}`;
       const rawType = String(m.Type ?? "");
-      let type = "world_quest";
+      let type = "adventure_quest";
       let seriesTitle = "冒险任务";
       if (rawType.includes("Main") || rawType === "1") {
-        type = "archon_quest";
+        type = "trailblaze_mission";
         seriesTitle = "开拓任务";
       } else if (rawType.includes("Companion") || rawType === "2") {
         type = "companion_mission";
@@ -271,6 +375,9 @@ export class StarRailStoryResolver {
       } else if (rawType.includes("Daily") || rawType === "3") {
         type = "daily_mission";
         seriesTitle = "日常任务";
+      } else if (rawType.includes("Gap") || rawType === "4") {
+        type = "trailblaze_continuation";
+        seriesTitle = "开拓续闻";
       }
 
       // World & Chapter Resolution
@@ -283,9 +390,36 @@ export class StarRailStoryResolver {
       const world = worldId ? this.worldChapterResolver.getWorld(worldId) : undefined;
       const worldTitle = world?.name ?? (worldId ? `世界 ${worldId}` : undefined);
       const chapterTitle = chapter?.name ?? (chapterId ? `章节 ${chapterId}` : undefined);
+      const sequence = Number(m.Sequence ?? m.MissionSequence ?? m.Order ?? 0) || undefined;
+      const componentRoot = componentFor(id);
+      const rootMission = rawMissions.find(
+        (candidate) => Number(candidate.MainMissionID ?? candidate.ID) === componentRoot,
+      );
+      const rootTitle = this.resolveHash(rootMission?.Name) ?? title;
+      // Keep the chapter as the child node in the public tree.  Prefixing it
+      // with the real mission type avoids the old duplicate
+      // "chapter = family = 第三幕•第一节" rendering while retaining a
+      // deterministic family identity for separate mission-chain components.
+      const familyTitle = familyTitleIsGeneric(chapterTitle)
+        ? `${seriesTitle} · ${rootTitle}`
+        : `${seriesTitle} · ${chapterTitle!}`;
+      const familyId = `starrail:family:${worldId ?? 0}:${chapterId ?? 0}:${componentRoot}`;
+      const familyOrder = Math.min(
+        ...[...componentByMission.entries()]
+          .filter(([, root]) => root === componentRoot)
+          .map(([missionId]) => {
+            const row = rawMissions.find((candidate) => Number(candidate.MainMissionID ?? candidate.ID) === missionId);
+            return Number(row?.DisplayPriority ?? row?.Sequence ?? missionId);
+          }),
+        Number(m.DisplayPriority ?? sequence ?? id),
+      );
 
       const dialogues = missionDialogueMap.get(id) ?? [];
-      const subMissions = subMissionMap.get(id) ?? [];
+      const subDialogueMap = subMissionDialogueMap.get(id) ?? new Map();
+      const subMissions = (subMissionMap.get(id) ?? []).map((subMission) => ({
+        ...subMission,
+        dialogueNodes: subDialogueMap.get(subMission.subMissionId) ?? [],
+      }));
 
       // Completeness Calculation
       let completeness: StoryCompleteness = "unresolved";
@@ -296,6 +430,19 @@ export class StarRailStoryResolver {
       } else if (title && subMissions.length > 0) {
         completeness = "metadata_only";
       }
+      const speakerUnresolved = dialogues.some(
+        (node) => node.nodeType === "dialogue" && !node.speakerName,
+      );
+      const qualityCode =
+        completeness === "complete"
+          ? speakerUnresolved
+            ? "speaker_unresolved"
+            : "complete"
+          : completeness === "partial"
+            ? "partial_dialogue"
+            : completeness === "metadata_only"
+              ? "metadata_only"
+              : "source_missing";
 
       // Visibility Calculation
       let visibility: StoryVisibility = "public";
@@ -304,6 +451,11 @@ export class StarRailStoryResolver {
         visibility = "test";
       } else if (m.DisplayPriority && Number(m.DisplayPriority) < 0) {
         visibility = "hidden";
+      } else if (rawType === "Branch" && dialogues.length === 0) {
+        // Branch rows are internal objective/state records, not public quest
+        // documents. Keeping them in the audit output is useful, but putting
+        // them in the public tree creates thousands of empty duplicate tasks.
+        visibility = "internal";
       } else if (completeness === "unresolved") {
         visibility = "unknown";
       }
@@ -314,18 +466,25 @@ export class StarRailStoryResolver {
         title,
         type,
         seriesTitle,
+        storyFamilyId: familyId,
+        storyFamilyTitle: familyTitle,
+        storyFamilyProvenance: chapterTitle && !familyTitleIsGeneric(chapterTitle) ? "upstream" : "derived",
+        storyFamilyOrder: Number.isFinite(familyOrder) ? familyOrder : undefined,
         worldId,
         worldTitle,
         worldName: worldTitle,
         chapterId,
         chapterTitle,
+        chapterOrder: chapter?.order ?? sequence,
         previousMissionIds: prevMap.get(id) ?? [],
         nextMissionIds: nextMap.get(id) ?? [],
+        sequence,
         displayPriority: m.DisplayPriority ? Number(m.DisplayPriority) : undefined,
         subMissions,
         subquests: subMissions,
         dialogueNodes: dialogues,
         completeness,
+        qualityCode,
         visibility,
         provenance: {
           source: "turn-based-game-data",
@@ -333,6 +492,8 @@ export class StarRailStoryResolver {
           mainMissionPath: mainItem?.path,
           subMissionCount: subMissions.length,
           dialogueCount: dialogues.length,
+          dialogueSourceFiles: [...new Set(dialogues.map((node) => node.sourceFile))],
+          sourceAssociation: "exact_main_or_sub_mission_path",
         },
       });
     }
@@ -413,11 +574,13 @@ export class StarRailStoryResolver {
       metadataOnlyCount: quests.filter((q) => q.completeness === "metadata_only").length,
       unresolvedCount: quests.filter((q) => q.completeness === "unresolved").length,
       publicCount: quests.filter((q) => q.visibility === "public").length,
-      hiddenCount: quests.filter((q) => q.visibility === "hidden" || q.visibility === "test").length,
+      hiddenCount: quests.filter((q) => q.visibility === "hidden" || q.visibility === "test")
+        .length,
       orphanDiscussions: orphanDiscussions.length,
+      orphanMissionSources: orphanMissionSources.length,
       graphCycles,
     };
 
-    return { quests, stats, orphanDiscussions };
+    return { quests, stats, orphanDiscussions, orphanMissionSources };
   }
 }

@@ -27,6 +27,11 @@ export const documentTypeSchema = z.enum([
   "event_quest",
   "commission",
   "hangout",
+  "companion_mission",
+  "daily_mission",
+  "trailblaze_continuation",
+  "trailblaze_mission",
+  "adventure_quest",
   "other",
   "book",
   "character_story",
@@ -260,6 +265,23 @@ export type SearchResult = {
   revisionId?: string;
   indexStatus: string;
   debug?: Record<string, unknown>;
+  /**
+   * Typed hits from the shared search core. Unlike `entities`, which only ever
+   * carries npc/quest/item rows, this surface includes the routable structured
+   * catalog (character, material, weapon, artifact, artifact set, enemy, voice,
+   * achievement), so callers can reach weapons and artifacts.
+   */
+  coreHits?: {
+    structured: Array<{
+      kind: string;
+      stableId: string;
+      name: string;
+      body?: string;
+      score: number;
+      matchedBy: string;
+    }>;
+    lore: unknown;
+  };
 };
 
 /** Lightweight, name-only data used to build the public archive landing page. */
@@ -446,7 +468,9 @@ export const codexMaterialCategoryAggregationSchema = z.object({
   label: z.string(),
   count: z.number().int(),
 });
-export type CodexMaterialCategoryAggregation = z.infer<typeof codexMaterialCategoryAggregationSchema>;
+export type CodexMaterialCategoryAggregation = z.infer<
+  typeof codexMaterialCategoryAggregationSchema
+>;
 
 export const codexMaterialListResponseSchema = z.object({
   gameId: gameIdSchema,
@@ -480,12 +504,7 @@ export const genshinEnemySchema = structuredBaseSchema.extend({
 export type GenshinEnemy = z.infer<typeof genshinEnemySchema>;
 
 // --- Story Catalog Read Model ---
-export const bodyAvailabilitySchema = z.enum([
-  "dialogue",
-  "document",
-  "objective_only",
-  "none",
-]);
+export const bodyAvailabilitySchema = z.enum(["dialogue", "document", "objective_only", "none"]);
 export type BodyAvailability = z.infer<typeof bodyAvailabilitySchema>;
 
 export const narrativeModeSchema = z.enum([
@@ -499,9 +518,20 @@ export type NarrativeMode = z.infer<typeof narrativeModeSchema>;
 export const storyQuestEntrySchema = z.object({
   questKey: z.string(),
   title: z.string(),
+  displayTitle: z.string().optional(),
   order: z.number().default(0),
   completeness: z.enum(["complete", "partial", "metadata_only"]).default("complete"),
   bodyAvailability: bodyAvailabilitySchema.default("dialogue"),
+  qualityCode: z
+    .enum([
+      "complete",
+      "partial_dialogue",
+      "metadata_only",
+      "source_missing",
+      "parser_failed",
+      "speaker_unresolved",
+    ])
+    .optional(),
 });
 export type StoryQuestEntry = z.infer<typeof storyQuestEntrySchema>;
 
@@ -514,10 +544,21 @@ export const storyChapterSchema = z.object({
 });
 export type StoryChapter = z.infer<typeof storyChapterSchema>;
 
+export const storyFamilySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number().default(0),
+  provenance: z.enum(["upstream", "derived", "curated", "fallback"]).default("derived"),
+  chapters: z.array(storyChapterSchema),
+});
+export type StoryFamily = z.infer<typeof storyFamilySchema>;
+
 export const storyRegionSchema = z.object({
   id: z.string(),
   name: z.string(),
   order: z.number().default(0),
+  families: z.array(storyFamilySchema),
+  /** Deprecated flattened projection for consumers that have not migrated. */
   chapters: z.array(storyChapterSchema),
 });
 export type StoryRegion = z.infer<typeof storyRegionSchema>;
@@ -549,13 +590,7 @@ export const materialSourceSchema = z.object({
 export type MaterialSource = z.infer<typeof materialSourceSchema>;
 
 export const materialUsageSchema = z.object({
-  type: z.enum([
-    "character_ascension",
-    "character_talent",
-    "weapon_ascension",
-    "craft",
-    "other",
-  ]),
+  type: z.enum(["character_ascension", "character_talent", "weapon_ascension", "craft", "other"]),
   targetId: z.string().optional(),
   targetName: z.string(),
 });
@@ -570,4 +605,3 @@ export const gameTerminologySchema = z.object({
 export type GameTerminology = z.infer<typeof gameTerminologySchema>;
 
 export * from "./text.js";
-

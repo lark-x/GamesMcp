@@ -11,7 +11,7 @@ import {
   sources,
 } from "./schema.js";
 import { mapDatasetRevision } from "./repository-mappers.js";
-import { normalize, stableEntityId } from "./repository-utils.js";
+import { hydrateManifestRecords, normalize, stableEntityId } from "./repository-utils.js";
 
 interface RevisionOperationContext {
   db: Database;
@@ -84,7 +84,9 @@ export async function rollbackRevision(
     // The legacy import path materializes entities once per newly published
     // revision. Reconcile the materialized entity table before switching current.
     const targetRecords =
-      target.normalizedRecords ??
+      (target.normalizedRecords && target.manifestId
+        ? await hydrateManifestRecords(tx as Database, target.manifestId, target.normalizedRecords)
+        : target.normalizedRecords) ??
       (
         await tx
           .select({ stagedRecords: importBatches.stagedRecords })

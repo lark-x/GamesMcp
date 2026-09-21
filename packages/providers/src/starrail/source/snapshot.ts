@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { realpath } from "node:fs/promises";
+import { normalize } from "node:path";
 
 export interface StarRailSourceSnapshot {
   source: "turn-based-game-data";
@@ -25,7 +26,9 @@ function readGitCommit(path: string): string {
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
     // Fixtures and unpacked exports must not inherit GamesMcp's commit.
-    if (root !== path) return "unknown";
+    // Git reports forward slashes and a possibly different casing than
+    // realpath on Windows, so compare normalized forms instead of raw strings.
+    if (!samePath(root, path)) return "unknown";
     return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -33,4 +36,12 @@ function readGitCommit(path: string): string {
   } catch {
     return "unknown";
   }
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizeCase = (value: string) =>
+    process.platform === "win32"
+      ? normalize(value).replace(/[\\/]+$/u, "").toLowerCase()
+      : normalize(value).replace(/\/+$/u, "");
+  return normalizeCase(left) === normalizeCase(right);
 }

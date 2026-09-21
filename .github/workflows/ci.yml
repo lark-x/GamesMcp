@@ -197,15 +197,18 @@ jobs:
           TAGS_API="ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-api:latest"
           TAGS_WORKER="ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:latest"
           TAGS_WEB="ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-web:latest"
+          TAGS_MCP="ghcr.io/${{ github.repository_owner }}/gamesmcp-mcp:${GITHUB_SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-mcp:${SHA},ghcr.io/${{ github.repository_owner }}/gamesmcp-mcp:main,ghcr.io/${{ github.repository_owner }}/gamesmcp-mcp:latest"
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             RELEASE_TAG="${GITHUB_REF_NAME}"
             TAGS_API="${TAGS_API},ghcr.io/${{ github.repository_owner }}/gamesmcp-api:${RELEASE_TAG}"
             TAGS_WORKER="${TAGS_WORKER},ghcr.io/${{ github.repository_owner }}/gamesmcp-worker:${RELEASE_TAG}"
             TAGS_WEB="${TAGS_WEB},ghcr.io/${{ github.repository_owner }}/gamesmcp-web:${RELEASE_TAG}"
+            TAGS_MCP="${TAGS_MCP},ghcr.io/${{ github.repository_owner }}/gamesmcp-mcp:${RELEASE_TAG}"
           fi
           echo "tags_api=${TAGS_API}" >> $GITHUB_OUTPUT
           echo "tags_worker=${TAGS_WORKER}" >> $GITHUB_OUTPUT
           echo "tags_web=${TAGS_WEB}" >> $GITHUB_OUTPUT
+          echo "tags_mcp=${TAGS_MCP}" >> $GITHUB_OUTPUT
 
       - name: Build and push API image
         uses: docker/build-push-action@v6
@@ -239,3 +242,14 @@ jobs:
           tags: ${{ steps.meta.outputs.tags_web }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      - name: Build and push MCP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: mcp-runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags_mcp }}
+          cache-from: type=gha,scope=mcp
+          cache-to: type=gha,mode=max,scope=mcp

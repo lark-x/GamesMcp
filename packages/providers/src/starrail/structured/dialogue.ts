@@ -64,7 +64,15 @@ export class StarRailDialogueExtractor {
         if (body.trim()) {
           orderCounter++;
           const nodeId = String(record.NodeID ?? record.ID ?? `talk_${sentenceId}_${orderCounter}`);
-          const nodeType: StarRailDialogueNode["nodeType"] = speakerName ? "dialogue" : "narrator";
+          const isOptionSentence =
+            String(record.$type ?? "").includes("OptionTalkInfo") ||
+            record.OptionIconType !== undefined ||
+            record.IsOption === true;
+          const nodeType: StarRailDialogueNode["nodeType"] = isOptionSentence
+            ? "option"
+            : speakerName
+              ? "dialogue"
+              : "narrator";
 
           // Parse options if attached to this node
           const options: StarRailDialogueOption[] = [];

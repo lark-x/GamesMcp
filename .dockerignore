@@ -1,6 +1,12 @@
-node_modules
-dist
-coverage
+# Patterns here are matched against the whole context-relative path, so a bare
+# "node_modules" only excludes the root one. On Windows, pnpm creates per-package
+# junctions under packages/*/node_modules whose targets are absolute host paths
+# (F:\...); copying those into a Linux image leaves dangling links that break
+# workspace resolution. Match at any depth instead.
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
 .git
 data
 artifacts
@@ -16,4 +22,3 @@ blob-report
 !.env.example
 *.log
 .DS_Store
-

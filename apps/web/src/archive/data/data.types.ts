@@ -19,6 +19,14 @@ export interface DataItemSummary {
   constellation?: string | null;
   weaknesses?: string[];
   rank?: string | null;
+  /** Star Rail combat skills; present on characters only. */
+  skills?: Array<{ id?: number; name?: string; type?: string; description?: string }>;
+  /** Star Rail skill-tree passives; present on characters only. */
+  traces?: Array<{ id?: number; name?: string; description?: string }>;
+  /** Star Rail eidolons (ranks 1-6); present on characters only. */
+  eidolons?: Array<{ rank?: number; name?: string; description?: string }>;
+  /** Base combat stats shown alongside skills for Star Rail characters. */
+  baseStats?: Array<{ label: string; value: string }>;
   raw?: Record<string, unknown>;
 }
 

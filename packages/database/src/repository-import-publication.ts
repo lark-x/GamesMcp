@@ -39,6 +39,7 @@ import {
   sources,
 } from "./schema.js";
 import {
+  hydrateManifestRecords,
   insertInChunks,
   normalize,
   recordLocale,
@@ -140,7 +141,13 @@ export async function publishImport(
     let previousRecords: NormalizedRecord[] = [];
     if (previousRevision) {
       if (previousRevision.normalizedRecords) {
-        previousRecords = previousRevision.normalizedRecords;
+        previousRecords = previousRevision.manifestId
+          ? await hydrateManifestRecords(
+              tx as Database,
+              previousRevision.manifestId,
+              previousRevision.normalizedRecords,
+            )
+          : previousRevision.normalizedRecords;
       } else {
         const previousBatchRows = await tx
           .select({ stagedRecords: importBatches.stagedRecords })

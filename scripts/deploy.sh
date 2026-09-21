@@ -75,7 +75,7 @@ if [ "${GAMESMCP_STARRAIL_ISTAROTH_ENABLED:-false}" = "true" ] && [ -n "${ISTARO
   fi
 fi
 
-if ! docker compose -f "${COMPOSE_FILE}" pull api worker web; then
+if ! docker compose -f "${COMPOSE_FILE}" pull api worker web mcp; then
   echo "ERROR: Failed to pull application images for version ${GAMESMCP_VERSION}."
   echo "       Deployment stopped to avoid running unverified or missing images."
   exit 1
@@ -109,7 +109,7 @@ fi
 
 # [5/7] Start application services
 echo "==> [5/7] Starting core application services (API, Worker, Web)..."
-docker compose -f "${COMPOSE_FILE}" up -d api worker web
+docker compose -f "${COMPOSE_FILE}" up -d api worker web mcp
 
 # [6/7] Health check
 echo "==> [6/7] Running post-deployment health verification..."

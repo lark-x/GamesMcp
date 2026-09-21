@@ -31,6 +31,20 @@ function excerpt(text: string, maxChars: number): string {
  * Token-aware result shaping for MCP-sized responses: bounded item count,
  * bounded excerpts, and a hard byte ceiling that keeps whole items.
  */
+/**
+ * Byte ceiling for a requested page size. The default budget is sized for a
+ * 10-item page; a caller asking for more items has opted into a larger
+ * response, so the ceiling scales with the page instead of clamping every
+ * result set back to the 10-item allowance (which silently dropped the
+ * lowest-scoring hits, including whole surfaces held to the quota floor).
+ */
+export function budgetForPageSize(
+  pageSize: number,
+  base: McpResponseBudget = DEFAULT_MCP_RESPONSE_BUDGET,
+): McpResponseBudget {
+  const perItemBytes = Math.ceil(base.maxBytes / Math.max(base.maxItems, 1));
+  return { ...base, maxItems: pageSize, maxBytes: perItemBytes * pageSize };
+}
 export function shapeForBudget(
   hits: ShapedHit[],
   budget: McpResponseBudget = DEFAULT_MCP_RESPONSE_BUDGET,

@@ -32,6 +32,11 @@ export type StoryEntry = {
     | "story_quest"
     | "world_quest"
     | "event_quest"
+    | "companion_mission"
+    | "daily_mission"
+    | "trailblaze_continuation"
+    | "trailblaze_mission"
+    | "adventure_quest"
     | "commission"
     | "hangout"
     | "other";
