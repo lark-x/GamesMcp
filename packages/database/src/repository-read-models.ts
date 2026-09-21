@@ -1312,7 +1312,15 @@ export class RepositoryReadModels {
         ),
       );
 
-    const documentIds = docRows.map((row) => row.documentId);
+    // Control/trigger/reward quest nodes are useful in provenance and
+    // topology, but they are not readable story pages.  Keep aggregate
+    // parents (which may act as collection entries) in the catalogue.
+    const visibleDocRows = docRows.filter((row) => {
+      const role = questMetadata(row).contentRole;
+      return role !== "control" && role !== "trigger" && role !== "reward";
+    });
+
+    const documentIds = visibleDocRows.map((row) => row.documentId);
     const dialogueCountRows = documentIds.length
       ? await this.db
           .select({
@@ -1354,7 +1362,7 @@ export class RepositoryReadModels {
     // revision.  It must not turn an intentional type filter into a fabricated
     // result (for example, asking Star Rail for the legacy `world_quest` type
     // should return an empty catalogue).
-    if (isStarRail && docRows.length === 0 && !options?.questType) {
+    if (isStarRail && visibleDocRows.length === 0 && !options?.questType) {
       return {
         gameId,
         revisionId: revision.id,
@@ -1466,7 +1474,7 @@ export class RepositoryReadModels {
       }
     >();
 
-    for (const row of docRows) {
+    for (const row of visibleDocRows) {
       const meta = questMetadata(row);
       const questKey = meta.questKey ?? questKeyFromInput(row.sourceKey);
       const regionId = String(meta.regionId ?? "other_region");
@@ -1511,7 +1519,11 @@ export class RepositoryReadModels {
 
       const dialogueCount = dialogueCounts.get(row.documentId) ?? 0;
       const subquestCount = subquestCounts.get(row.documentId) ?? 0;
-      const bodyAvail: BodyAvailability = dialogueCount > 0
+      const contentRole = meta.contentRole;
+      const dialogueResolutionStatus = meta.dialogueResolutionStatus;
+      const bodyAvail: BodyAvailability = contentRole === "aggregate" || contentRole === "control"
+        ? "none"
+        : dialogueCount > 0
         ? "dialogue"
         : row.hasBody
           ? "document"
@@ -1584,6 +1596,8 @@ export class RepositoryReadModels {
         completeness,
         bodyAvailability: bodyAvail,
         qualityCode,
+        contentRole,
+        dialogueResolutionStatus,
       });
     }
 
@@ -1755,6 +1769,8 @@ export class RepositoryReadModels {
             ? String(metadata.series)
             : null),
         completeness: metadata.completeness ?? "partial",
+        contentRole: metadata.contentRole,
+        dialogueResolutionStatus: metadata.dialogueResolutionStatus,
         locale: row.locale,
         documentId: row.id,
         revision: revisionLabel(revision.revisionNumber),
@@ -2070,6 +2086,8 @@ export class RepositoryReadModels {
       documentId: document.id,
       revision: revisionLabel(revision.revisionNumber),
       completeness: metadata.completeness ?? "partial",
+      contentRole: metadata.contentRole,
+      dialogueResolutionStatus: metadata.dialogueResolutionStatus,
       region: (metadata.region ?? metadata.regionName ?? null) as string | null,
       regionId: (metadata.regionId ? String(metadata.regionId) : null) as string | null,
       chapter: (metadata.chapter ?? metadata.chapterTitle ?? null) as string | null,

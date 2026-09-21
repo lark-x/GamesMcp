@@ -49,6 +49,51 @@ export type StoryCompleteness = "complete" | "partial" | "metadata_only" | "unre
 
 export type StoryVisibility = "public" | "hidden" | "test" | "internal" | "unreleased" | "unknown";
 
+export type StarRailContentRole =
+  "story" | "story_and_control" | "aggregate" | "control" | "metadata" | "unknown";
+
+export type StarRailDialogueResolutionStatus =
+  | "resolved"
+  | "not_applicable"
+  | "talk_reference_missing"
+  | "talk_asset_missing"
+  | "dialogue_text_missing"
+  | "graph_incomplete";
+
+export interface StarRailRelationEdge {
+  fromQuestId: number;
+  toQuestId?: number;
+  relationType: string;
+  sourceFile: string;
+  sourceKind: string;
+  sourceHash: string;
+  relationEvidence: string;
+  upstreamId?: number | string;
+  derived: boolean;
+  confidence: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StarRailSourceBinding {
+  sourceFile: string;
+  sourceKind: "story_mission" | "story_discussion";
+  sourceHash: string;
+  relationType: string;
+  relationEvidence: string;
+  upstreamId: number | string;
+  subMissionId?: number;
+  confidence: number;
+}
+
+export interface StarRailMissionTopology {
+  prerequisiteMissionIds: number[];
+  childMissionIds: number[];
+  parentMissionIds: number[];
+  storyOrder?: number;
+  componentRoot?: number;
+  componentSize?: number;
+}
+
 export interface StarRailStoryQuest {
   mainMissionId: number;
   questKey: string;
@@ -79,7 +124,15 @@ export interface StarRailStoryQuest {
     | "metadata_only"
     | "source_missing"
     | "parser_failed"
-    | "speaker_unresolved";
+    | "speaker_unresolved"
+    | "control"
+    | "aggregate";
+  contentRole?: StarRailContentRole;
+  dialogueResolutionStatus?: StarRailDialogueResolutionStatus;
+  completenessReasons?: string[];
+  visibilityReason?: string;
+  questRelationEdges?: StarRailRelationEdge[];
+  topology?: StarRailMissionTopology;
   visibility: StoryVisibility;
   provenance: Record<string, unknown>;
 }

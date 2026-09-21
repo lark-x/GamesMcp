@@ -122,6 +122,23 @@ export type QuestSearchHit = {
   chapter?: string | null;
   series?: string | null;
   completeness: "complete" | "partial" | "metadata_only";
+  contentRole?:
+    | "story"
+    | "story_and_control"
+    | "aggregate"
+    | "control"
+    | "trigger"
+    | "reward"
+    | "metadata"
+    | "unknown";
+  dialogueResolutionStatus?:
+    | "resolved"
+    | "not_applicable"
+    | "talk_reference_missing"
+    | "talk_asset_missing"
+    | "talk_asset_ambiguous"
+    | "dialogue_text_missing"
+    | "graph_incomplete";
   locale: string;
   documentId: string;
   revision: string;
@@ -169,6 +186,8 @@ export type QuestDetail = QuestSearchHit & {
     revision: string;
   }>;
   warnings: string[];
+  contentRole?: QuestSearchHit["contentRole"];
+  dialogueResolutionStatus?: QuestSearchHit["dialogueResolutionStatus"];
   totalDialogueNodes?: number;
   loadedDialogueNodes?: number;
   hasMore?: boolean;
@@ -210,6 +229,8 @@ export type StoryQuestEntry = {
     | "source_missing"
     | "parser_failed"
     | "speaker_unresolved";
+  contentRole?: QuestSearchHit["contentRole"];
+  dialogueResolutionStatus?: QuestSearchHit["dialogueResolutionStatus"];
 };
 
 export type StoryChapter = {

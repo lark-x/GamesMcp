@@ -237,6 +237,10 @@ export function mapQuestDetail(value: unknown, fallback?: QuestSearchHit): Quest
     chapter: optionalString(raw.chapter) ?? fallback?.chapter ?? null,
     series: optionalString(raw.series) ?? fallback?.series ?? null,
     completeness,
+    contentRole: optionalString(raw.contentRole) as QuestDetail["contentRole"],
+    dialogueResolutionStatus: optionalString(
+      raw.dialogueResolutionStatus,
+    ) as QuestDetail["dialogueResolutionStatus"],
     locale,
     documentId,
     revision,

@@ -530,6 +530,31 @@ export const storyQuestEntrySchema = z.object({
       "source_missing",
       "parser_failed",
       "speaker_unresolved",
+      "control",
+      "aggregate",
+    ])
+    .optional(),
+  contentRole: z
+    .enum([
+      "story",
+      "story_and_control",
+      "aggregate",
+      "control",
+      "trigger",
+      "reward",
+      "metadata",
+      "unknown",
+    ])
+    .optional(),
+  dialogueResolutionStatus: z
+    .enum([
+      "resolved",
+      "not_applicable",
+      "talk_reference_missing",
+      "talk_asset_missing",
+      "talk_asset_ambiguous",
+      "dialogue_text_missing",
+      "graph_incomplete",
     ])
     .optional(),
 });

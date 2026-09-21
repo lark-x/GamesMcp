@@ -18,6 +18,11 @@ type QuestAuditRow = {
   chapter?: string;
   family?: string;
   familyId?: string;
+  contentRole?: string;
+  dialogueResolutionStatus?: string;
+  storyOrder?: number;
+  sourceBindingCount: number;
+  relationEdgeCount: number;
   previousMissionIds: number[];
   nextMissionIds: number[];
   subMissionCount: number;
@@ -29,13 +34,18 @@ type QuestAuditRow = {
 function parseArgs(argv: string[]): { sourceDir: string; outputPrefix: string } {
   const sourceIndex = argv.indexOf("--source");
   const outputIndex = argv.indexOf("--output");
+  const sourceFlag = argv.find((value) => value.startsWith("--source="));
+  const outputFlag = argv.find((value) => value.startsWith("--output="));
   return {
     sourceDir: resolve(
-      sourceIndex >= 0 ? argv[sourceIndex + 1] ?? "data/fixtures/starrail" : "data/fixtures/starrail",
+      sourceFlag?.slice("--source=".length) ??
+        (sourceIndex >= 0 ? argv[sourceIndex + 1] : undefined) ??
+        "data/fixtures/starrail",
     ),
-    outputPrefix: outputIndex >= 0
-      ? argv[outputIndex + 1] ?? "reports/starrail-quest-audit-r2"
-      : "reports/starrail-quest-audit-r2",
+    outputPrefix:
+      outputFlag?.slice("--output=".length) ??
+      (outputIndex >= 0 ? argv[outputIndex + 1] : undefined) ??
+      "reports/starrail-quest-audit-r2",
   };
 }
 
@@ -46,17 +56,21 @@ function rawQuestRow(quest: StarRailStoryQuest): QuestAuditRow {
       )
     : [...new Set(quest.dialogueNodes.map((node) => node.sourceFile))];
   const reason =
-    quest.completeness === "complete"
-      ? quest.qualityCode === "speaker_unresolved"
-        ? "对白完整，但部分对白没有可确认的角色名"
-        : "标题、章节和对白均有精确来源"
-      : quest.completeness === "partial"
-        ? "存在精确对白来源，但标题/章节/来源字段不完整"
-        : quest.completeness === "metadata_only"
-          ? "只有 MainMission/SubMission 元数据，没有精确对白节点"
-          : quest.visibility === "internal"
-            ? "Branch 内部状态记录，不作为公开剧情任务"
-            : "没有标题、子任务或精确对白来源";
+    quest.contentRole === "control"
+      ? "Branch 控制/状态记录，不作为公开剧情对白"
+      : quest.contentRole === "aggregate"
+        ? "主任务聚合节点，本身没有对白来源"
+        : quest.completeness === "complete"
+          ? quest.qualityCode === "speaker_unresolved"
+            ? "对白完整，但部分对白没有可确认的角色名"
+            : "标题、章节和对白均有精确来源"
+          : quest.completeness === "partial"
+            ? "存在精确对白来源，但标题/章节/来源字段不完整"
+            : quest.completeness === "metadata_only"
+              ? "只有 MainMission/SubMission 元数据，没有精确对白节点"
+              : quest.visibility === "internal"
+                ? "Branch 内部状态记录，不作为公开剧情任务"
+                : "没有标题、子任务或精确对白来源";
   return {
     mainMissionId: quest.mainMissionId,
     title: quest.title,
@@ -68,6 +82,13 @@ function rawQuestRow(quest: StarRailStoryQuest): QuestAuditRow {
     chapter: quest.chapterTitle,
     family: quest.storyFamilyTitle,
     familyId: quest.storyFamilyId,
+    contentRole: quest.contentRole,
+    dialogueResolutionStatus: quest.dialogueResolutionStatus,
+    storyOrder: quest.topology?.storyOrder,
+    sourceBindingCount: Array.isArray(quest.provenance.sourceBindings)
+      ? quest.provenance.sourceBindings.length
+      : 0,
+    relationEdgeCount: quest.questRelationEdges?.length ?? 0,
     previousMissionIds: quest.previousMissionIds,
     nextMissionIds: quest.nextMissionIds,
     subMissionCount: quest.subMissions.length,
@@ -141,7 +162,7 @@ async function run(): Promise<void> {
     .sort((a, b) => a.title.localeCompare(b.title, "zh-Hans-CN"));
 
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     source: {
       directory: options.sourceDir,
@@ -167,6 +188,10 @@ async function run(): Promise<void> {
       publicMetadataOnlyMissions: quests.filter(
         (quest) => quest.visibility === "public" && quest.dialogueNodeCount === 0,
       ).length,
+      contentRoles: counts("contentRole"),
+      dialogueResolution: counts("dialogueResolutionStatus"),
+      sourceBoundMissions: quests.filter((quest) => quest.sourceBindingCount > 0).length,
+      relationEdgeMissions: quests.filter((quest) => quest.relationEdgeCount > 0).length,
       dialogueNodes: quests.reduce((sum, quest) => sum + quest.dialogueNodeCount, 0),
       graphCycles: result.stats.graphCycles,
       orphanDiscussions: result.orphanDiscussions.length,
@@ -196,6 +221,8 @@ async function run(): Promise<void> {
     `- Graph cycles: **${result.stats.graphCycles}**`,
     `- Orphan discussion files: **${result.orphanDiscussions.length}**`,
     `- Orphan mission source files: **${result.orphanMissionSources.length}**`,
+    `- Missions with exact/validated source bindings: **${report.summary.sourceBoundMissions}**`,
+    `- Missions with graph relation edges: **${report.summary.relationEdgeMissions}**`,
     "",
     "## 解析状态",
     "",
@@ -211,11 +238,11 @@ async function run(): Promise<void> {
     "",
     "## 公开目录中的不完整任务（前 120 条）",
     "",
-    "| ID | 标题 | 类型 | 章节 | 对白 | 原因 |",
-    "| ---: | --- | --- | --- | ---: | --- |",
+    "| ID | 标题 | 类型 | 系列 | 章节 | 内容角色 | 对白 | 原因 |",
+    "| ---: | --- | --- | --- | --- | --- | ---: | --- |",
     ...incomplete.map(
       (quest) =>
-        `| ${quest.mainMissionId} | ${quest.title.replaceAll("|", "\\|")} | ${quest.type} | ${(quest.chapter ?? "").replaceAll("|", "\\|")} | ${quest.dialogueNodeCount} | ${quest.reason} |`,
+        `| ${quest.mainMissionId} | ${quest.title.replaceAll("|", "\\|")} | ${quest.type} | ${(quest.family ?? "").replaceAll("|", "\\|")} | ${(quest.chapter ?? "").replaceAll("|", "\\|")} | ${quest.contentRole ?? "unknown"} | ${quest.dialogueNodeCount} | ${quest.reason} |`,
     ),
     "",
     `完整任务明细和孤立来源列表见 \`${jsonPath}\`。`,

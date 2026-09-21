@@ -1,7 +1,11 @@
 import { resolve } from "node:path";
 import type {
   StarRailDialogueNode,
+  StarRailContentRole,
+  StarRailDialogueResolutionStatus,
+  StarRailRelationEdge,
   StarRailStoryQuest,
+  StarRailSourceBinding,
   StarRailSubMission,
   StoryCompleteness,
   StoryVisibility,
@@ -116,11 +120,24 @@ export class StarRailStoryResolver {
         .map((mission) => Number(mission.MainMissionID ?? mission.ID))
         .filter((id): id is number => Number.isInteger(id)),
     );
+    const missionRowsById = new Map<number, Record<string, unknown>>();
+    for (const mission of rawMissions) {
+      const id = Number(mission.MainMissionID ?? mission.ID);
+      if (Number.isInteger(id)) missionRowsById.set(id, mission);
+    }
+    const sourceHashByPath = new Map(
+      this.inventory.items.map((item) => [item.path, item.hash] as const),
+    );
+    const mainMissionSourceFile = mainItem?.path ?? "ExcelOutput/MainMission.json";
+    const mainMissionSourceHash = sourceHashByPath.get(mainMissionSourceFile) ?? "";
 
     // 3. Load SubMissions
     const subMissionMap = new Map<number, StarRailSubMission[]>();
     const subMissionToMain = new Map<number, number>();
+    const subMissionRelations = new Map<number, StarRailRelationEdge>();
     const subItem = this.inventory.items.find((i) => i.path === "ExcelOutput/SubMission.json");
+    const subMissionSourceFile = subItem?.path ?? "ExcelOutput/SubMission.json";
+    const subMissionSourceHash = sourceHashByPath.get(subMissionSourceFile) ?? "";
     if (subItem) {
       const rawSubs = await readSafeJsonFile<Array<Record<string, unknown>>>(
         resolve(this.dataDir, subItem.path),
@@ -129,9 +146,50 @@ export class StarRailStoryResolver {
         for (const sub of rawSubs) {
           const subId = Number(sub.SubMissionID ?? sub.ID);
           if (!Number.isInteger(subId)) continue;
-          const mainId = Number(sub.MainMissionID ?? Math.floor(subId / 100));
-          if (!missionIds.has(mainId)) continue;
+          const declaredMainId = Number(sub.MainMissionID ?? sub.MainMissionId);
+          let mainId: number | undefined;
+          let relationType: string | undefined;
+          let relationEvidence: string | undefined;
+          let confidence = 0;
+          if (Number.isInteger(declaredMainId) && missionIds.has(declaredMainId)) {
+            mainId = declaredMainId;
+            relationType = "sub_mission_main_id";
+            relationEvidence = "SubMission.MainMissionID";
+            confidence = 1;
+          } else {
+            // Live exports omit MainMissionID.  The ID prefix is accepted only
+            // after validating that the candidate is a real MainMission and
+            // that the SubMission ID occupies the exact three-digit suffix
+            // range.  The evidence is retained so this is never mistaken for
+            // an unqualified fuzzy match.
+            const prefix = Math.floor(subId / 100);
+            if (missionIds.has(prefix) && subId >= prefix * 100 && subId < (prefix + 1) * 100) {
+              mainId = prefix;
+              relationType = "sub_mission_id_prefix_validated";
+              relationEvidence = `SubMissionID ${subId} has validated MainMissionID prefix ${prefix}`;
+              confidence = 0.98;
+            }
+          }
+          if (
+            mainId === undefined ||
+            relationType === undefined ||
+            relationEvidence === undefined
+          ) {
+            continue;
+          }
           subMissionToMain.set(subId, mainId);
+          subMissionRelations.set(subId, {
+            fromQuestId: mainId,
+            relationType,
+            sourceFile: subMissionSourceFile,
+            sourceKind: "sub_mission",
+            sourceHash: subMissionSourceHash,
+            relationEvidence,
+            upstreamId: subId,
+            derived: relationType !== "sub_mission_main_id",
+            confidence,
+            metadata: { subMissionId: subId },
+          });
           const seq = Number(sub.Sequence ?? subId % 100);
           const targetText = this.resolveHash(sub.TargetText) ?? undefined;
           const descriptionText = this.resolveHash(sub.DescrptionText) ?? undefined;
@@ -166,6 +224,56 @@ export class StarRailStoryResolver {
       return subMissionToMain.has(subMissionId) ? subMissionId : undefined;
     };
 
+    const sourceBindingForPath = (filePath: string): StarRailSourceBinding | undefined => {
+      const match = filePath.match(/Story\/(Discussion\/)?Mission\/(\d+)/u);
+      if (!match) return undefined;
+      const directoryId = Number(match[2]);
+      const subMissionId = subMissionIdFromPath(filePath);
+      const mappedDirectoryMain = subMissionToMain.get(directoryId);
+      let missionId: number | undefined;
+      let relationType: string;
+      let relationEvidence: string;
+      let confidence: number;
+
+      if (missionIds.has(directoryId)) {
+        missionId = directoryId;
+        relationType = subMissionId
+          ? "story_path_main_and_sub_mission_id"
+          : "story_path_main_mission_id";
+        relationEvidence = subMissionId
+          ? `directory MainMissionID ${directoryId} and filename SubMissionID ${subMissionId}`
+          : `directory MainMissionID ${directoryId}`;
+        confidence = 1;
+        if (subMissionId !== undefined && subMissionToMain.get(subMissionId) !== missionId) {
+          return undefined;
+        }
+      } else if (mappedDirectoryMain !== undefined && missionIds.has(mappedDirectoryMain)) {
+        missionId = mappedDirectoryMain;
+        relationType = "story_path_sub_mission_id";
+        relationEvidence = `directory SubMissionID ${directoryId} maps to MainMissionID ${mappedDirectoryMain}`;
+        confidence = 1;
+        if (subMissionId !== undefined && subMissionToMain.get(subMissionId) !== missionId) {
+          return undefined;
+        }
+      } else {
+        return undefined;
+      }
+
+      const sourceKind: StarRailSourceBinding["sourceKind"] = match[1]
+        ? "story_discussion"
+        : "story_mission";
+      return {
+        sourceFile: filePath,
+        sourceKind,
+        sourceHash: sourceHashByPath.get(filePath) ?? "",
+        relationType,
+        relationEvidence,
+        upstreamId: missionId,
+        subMissionId,
+        confidence,
+      };
+    };
+
     const explicitMissionId = (value: unknown): number | undefined => {
       if (!value || typeof value !== "object") return undefined;
       if (Array.isArray(value)) {
@@ -183,12 +291,31 @@ export class StarRailStoryResolver {
       return undefined;
     };
 
+    const explicitSourceBinding = (
+      value: unknown,
+      filePath: string,
+    ): StarRailSourceBinding | undefined => {
+      const missionId = explicitMissionId(value);
+      if (missionId === undefined) return undefined;
+      return {
+        sourceFile: filePath,
+        sourceKind: filePath.startsWith("Story/Discussion/") ? "story_discussion" : "story_mission",
+        sourceHash: sourceHashByPath.get(filePath) ?? "",
+        relationType: "embedded_main_mission_id",
+        relationEvidence: "JSON.MainMissionID/MissionID matches MainMission.json",
+        upstreamId: missionId,
+        subMissionId: subMissionIdFromPath(filePath),
+        confidence: 1,
+      };
+    };
+
     const orphanMissionSources: string[] = [];
 
     // 4. Extract dialogue nodes from Story/Mission/*.json
     const missionDialogueMap = new Map<number, StarRailDialogueNode[]>();
     const subMissionDialogueMap = new Map<number, Map<number, StarRailDialogueNode[]>>();
     const seenNodesByMission = new Map<number, Set<string>>();
+    const sourceBindingsByMission = new Map<number, StarRailSourceBinding[]>();
     const storyMissionFiles = this.inventory.items.filter(
       (i) =>
         i.path.startsWith("Story/Mission/") &&
@@ -203,8 +330,9 @@ export class StarRailStoryResolver {
     ): void => {
       const missionNodes = missionDialogueMap.get(missionId) ?? [];
       const seen = seenNodesByMission.get(missionId) ?? new Set<string>();
-      const subMap = subMissionDialogueMap.get(missionId) ?? new Map<number, StarRailDialogueNode[]>();
-      const subNodes = subMissionId !== undefined ? subMap.get(subMissionId) ?? [] : undefined;
+      const subMap =
+        subMissionDialogueMap.get(missionId) ?? new Map<number, StarRailDialogueNode[]>();
+      const subNodes = subMissionId !== undefined ? (subMap.get(subMissionId) ?? []) : undefined;
 
       for (const node of nodes) {
         const identity = `${node.nodeId}\u0000${node.speakerName ?? ""}\u0000${node.body}`;
@@ -226,10 +354,24 @@ export class StarRailStoryResolver {
       const rawJson = await readSafeJsonFile<unknown>(resolve(this.dataDir, file.path));
       if (!rawJson) continue;
 
-      const missionId = missionIdFromPath(file.path) ?? explicitMissionId(rawJson);
+      const pathBinding = sourceBindingForPath(file.path);
+      const embeddedBinding = pathBinding ? undefined : explicitSourceBinding(rawJson, file.path);
+      const sourceBinding = pathBinding ?? embeddedBinding;
+      const missionId = sourceBinding
+        ? Number(sourceBinding.upstreamId)
+        : (missionIdFromPath(file.path) ?? explicitMissionId(rawJson));
       if (missionId === undefined) {
         orphanMissionSources.push(file.path);
         continue;
+      }
+
+      const bindings = sourceBindingsByMission.get(missionId) ?? [];
+      if (
+        sourceBinding &&
+        !bindings.some((binding) => binding.sourceFile === sourceBinding.sourceFile)
+      ) {
+        bindings.push(sourceBinding);
+        sourceBindingsByMission.set(missionId, bindings);
       }
 
       const nodes = dialogueExtractor.extractNodes(rawJson, file.path);
@@ -246,18 +388,29 @@ export class StarRailStoryResolver {
     );
 
     for (const file of discussionFiles) {
-      const rawJson = await readSafeJsonFile<unknown>(
-        resolve(this.dataDir, file.path),
-      );
+      const rawJson = await readSafeJsonFile<unknown>(resolve(this.dataDir, file.path));
       if (!rawJson) continue;
 
       // A large part of the live archive stores the relationship only in
       // Story/Discussion/Mission/<mainMissionId-or-subMissionId>/..., so the
       // exact MainMission/SubMission index is authoritative here.
-      const associatedMissionId = missionIdFromPath(file.path) ?? explicitMissionId(rawJson);
+      const pathBinding = sourceBindingForPath(file.path);
+      const embeddedBinding = pathBinding ? undefined : explicitSourceBinding(rawJson, file.path);
+      const sourceBinding = pathBinding ?? embeddedBinding;
+      const associatedMissionId = sourceBinding
+        ? Number(sourceBinding.upstreamId)
+        : (missionIdFromPath(file.path) ?? explicitMissionId(rawJson));
 
       const nodes = dialogueExtractor.extractNodes(rawJson, file.path);
       if (associatedMissionId !== undefined) {
+        const bindings = sourceBindingsByMission.get(associatedMissionId) ?? [];
+        if (
+          sourceBinding &&
+          !bindings.some((binding) => binding.sourceFile === sourceBinding.sourceFile)
+        ) {
+          bindings.push(sourceBinding);
+          sourceBindingsByMission.set(associatedMissionId, bindings);
+        }
         appendNodes(associatedMissionId, nodes, subMissionIdFromPath(file.path));
       } else {
         orphanDiscussions.push(file.path);
@@ -268,7 +421,14 @@ export class StarRailStoryResolver {
     // 6. Build the MainMission graph
     const nextMap = new Map<number, number[]>();
     const prevMap = new Map<number, number[]>();
+    const graphEdges: StarRailRelationEdge[] = [];
     const inDegree = new Map<number, number>();
+    const missionSortKey = (id: number): number => {
+      const row = missionRowsById.get(id);
+      return Number(row?.DisplayPriority ?? row?.Sequence ?? id) || id;
+    };
+    const compareMissionIds = (left: number, right: number): number =>
+      missionSortKey(left) - missionSortKey(right) || left - right;
 
     for (const m of rawMissions) {
       const id = Number(m.MainMissionID ?? m.ID);
@@ -279,18 +439,47 @@ export class StarRailStoryResolver {
       const nextTrack = Number(m.NextTrackMainMission);
       if (Number.isInteger(nextTrack) && nextTrack !== id && missionIds.has(nextTrack)) {
         nextList.add(nextTrack);
+        graphEdges.push({
+          fromQuestId: id,
+          toQuestId: nextTrack,
+          relationType: "next_track_main_mission",
+          sourceFile: mainMissionSourceFile,
+          sourceKind: "main_mission",
+          sourceHash: mainMissionSourceHash,
+          relationEvidence: "MainMission.NextTrackMainMission",
+          upstreamId: nextTrack,
+          derived: false,
+          confidence: 1,
+        });
       }
       const declaredNext = m.NextMainMissionList;
       if (Array.isArray(declaredNext)) {
         for (const value of declaredNext) {
           const next =
             typeof value === "object" && value !== null
-              ? Number((value as Record<string, unknown>).MainMissionID ?? (value as Record<string, unknown>).ID)
+              ? Number(
+                  (value as Record<string, unknown>).MainMissionID ??
+                    (value as Record<string, unknown>).ID,
+                )
               : Number(value);
-          if (Number.isInteger(next) && next !== id && missionIds.has(next)) nextList.add(next);
+          if (Number.isInteger(next) && next !== id && missionIds.has(next)) {
+            nextList.add(next);
+            graphEdges.push({
+              fromQuestId: id,
+              toQuestId: next,
+              relationType: "next_main_mission_list",
+              sourceFile: mainMissionSourceFile,
+              sourceKind: "main_mission",
+              sourceHash: mainMissionSourceHash,
+              relationEvidence: "MainMission.NextMainMissionList",
+              upstreamId: next,
+              derived: false,
+              confidence: 1,
+            });
+          }
         }
       }
-      nextMap.set(id, [...nextList].sort((a, b) => a - b));
+      nextMap.set(id, [...nextList].sort(compareMissionIds));
     }
 
     for (const [id, nexts] of nextMap.entries()) {
@@ -309,20 +498,32 @@ export class StarRailStoryResolver {
     for (const [id, deg] of inDegree.entries()) {
       if (deg === 0) queue.push(id);
     }
+    queue.sort(compareMissionIds);
 
     let visitedCount = 0;
+    const topologicalOrder: number[] = [];
     while (queue.length > 0) {
       const current = queue.shift()!;
       visitedCount++;
+      topologicalOrder.push(current);
       const neighbors = nextMap.get(current) ?? [];
       for (const neighbor of neighbors) {
         const currentDeg = (inDegree.get(neighbor) ?? 1) - 1;
         inDegree.set(neighbor, currentDeg);
         if (currentDeg === 0) queue.push(neighbor);
       }
+      queue.sort(compareMissionIds);
     }
 
     const graphCycles = missionIds.size > 0 && visitedCount < missionIds.size ? 1 : 0;
+    if (visitedCount < missionIds.size) {
+      const alreadyOrdered = new Set(topologicalOrder);
+      topologicalOrder.push(
+        ...[...missionIds].filter((id) => !alreadyOrdered.has(id)).sort(compareMissionIds),
+      );
+    }
+    const topologicalRank = new Map<number, number>();
+    topologicalOrder.forEach((id, index) => topologicalRank.set(id, index));
 
     // Build connected mission-chain components. MainMission's chapter labels
     // are reused for many unrelated companion missions, so the chain root is
@@ -335,16 +536,18 @@ export class StarRailStoryResolver {
       const queue = [id];
       while (queue.length > 0) {
         const current = queue.shift()!;
-        for (const neighbor of [
-          ...(nextMap.get(current) ?? []),
-          ...(prevMap.get(current) ?? []),
-        ]) {
+        for (const neighbor of [...(nextMap.get(current) ?? []), ...(prevMap.get(current) ?? [])]) {
           if (!missionIds.has(neighbor) || members.has(neighbor)) continue;
           members.add(neighbor);
           queue.push(neighbor);
         }
       }
-      const root = [...members].sort((a, b) => a - b)[0] ?? id;
+      const root =
+        [...members].sort(
+          (a, b) =>
+            (topologicalRank.get(a) ?? Number.MAX_SAFE_INTEGER) -
+              (topologicalRank.get(b) ?? Number.MAX_SAFE_INTEGER) || compareMissionIds(a, b),
+        )[0] ?? id;
       for (const member of members) componentByMission.set(member, root);
       return root;
     };
@@ -378,6 +581,9 @@ export class StarRailStoryResolver {
       } else if (rawType.includes("Gap") || rawType === "4") {
         type = "trailblaze_continuation";
         seriesTitle = "开拓续闻";
+      } else if (rawType.includes("Event") || rawType === "5") {
+        type = "event_quest";
+        seriesTitle = "活动任务";
       }
 
       // World & Chapter Resolution
@@ -404,14 +610,14 @@ export class StarRailStoryResolver {
         ? `${seriesTitle} · ${rootTitle}`
         : `${seriesTitle} · ${chapterTitle!}`;
       const familyId = `starrail:family:${worldId ?? 0}:${chapterId ?? 0}:${componentRoot}`;
+      const componentMembers = [...componentByMission.entries()]
+        .filter(([, root]) => root === componentRoot)
+        .map(([missionId]) => missionId);
       const familyOrder = Math.min(
-        ...[...componentByMission.entries()]
-          .filter(([, root]) => root === componentRoot)
-          .map(([missionId]) => {
-            const row = rawMissions.find((candidate) => Number(candidate.MainMissionID ?? candidate.ID) === missionId);
-            return Number(row?.DisplayPriority ?? row?.Sequence ?? missionId);
-          }),
-        Number(m.DisplayPriority ?? sequence ?? id),
+        ...componentMembers.map(
+          (missionId) => (topologicalRank.get(missionId) ?? Number.MAX_SAFE_INTEGER - 1) + 1,
+        ),
+        (topologicalRank.get(id) ?? Number.MAX_SAFE_INTEGER - 1) + 1,
       );
 
       const dialogues = missionDialogueMap.get(id) ?? [];
@@ -420,6 +626,10 @@ export class StarRailStoryResolver {
         ...subMission,
         dialogueNodes: subDialogueMap.get(subMission.subMissionId) ?? [],
       }));
+      const sourceBindings = sourceBindingsByMission.get(id) ?? [];
+      const relationEdges = graphEdges.filter(
+        (edge) => edge.fromQuestId === id || edge.toQuestId === id,
+      );
 
       // Completeness Calculation
       let completeness: StoryCompleteness = "unresolved";
@@ -430,19 +640,51 @@ export class StarRailStoryResolver {
       } else if (title && subMissions.length > 0) {
         completeness = "metadata_only";
       }
+      const contentRole: StarRailContentRole =
+        dialogues.length > 0
+          ? rawType === "Branch"
+            ? "story_and_control"
+            : "story"
+          : rawType === "Branch"
+            ? "control"
+            : subMissions.length > 0
+              ? "metadata"
+              : relationEdges.length > 0 || rawType === "Main"
+                ? "aggregate"
+                : "unknown";
+      const dialogueResolutionStatus: StarRailDialogueResolutionStatus =
+        dialogues.length > 0
+          ? "resolved"
+          : contentRole === "control" || contentRole === "aggregate"
+            ? "not_applicable"
+            : sourceBindings.length > 0
+              ? "dialogue_text_missing"
+              : subMissions.length > 0
+                ? "talk_reference_missing"
+                : "talk_asset_missing";
+      const completenessReasons = [
+        ...(dialogues.length > 0 ? [] : ["missingDialogue"]),
+        ...(subMissions.length > 0 ? [] : ["missingSubMissions"]),
+        ...(worldTitle ? [] : ["missingWorld"]),
+        ...(chapterTitle ? [] : ["missingChapter"]),
+      ];
       const speakerUnresolved = dialogues.some(
         (node) => node.nodeType === "dialogue" && !node.speakerName,
       );
       const qualityCode =
-        completeness === "complete"
-          ? speakerUnresolved
-            ? "speaker_unresolved"
-            : "complete"
-          : completeness === "partial"
-            ? "partial_dialogue"
-            : completeness === "metadata_only"
-              ? "metadata_only"
-              : "source_missing";
+        contentRole === "control"
+          ? "control"
+          : contentRole === "aggregate"
+            ? "aggregate"
+            : completeness === "complete"
+              ? speakerUnresolved
+                ? "speaker_unresolved"
+                : "complete"
+              : completeness === "partial"
+                ? "partial_dialogue"
+                : completeness === "metadata_only"
+                  ? "metadata_only"
+                  : "source_missing";
 
       // Visibility Calculation
       let visibility: StoryVisibility = "public";
@@ -460,6 +702,26 @@ export class StarRailStoryResolver {
         visibility = "unknown";
       }
 
+      const visibilityReason =
+        visibility === "internal"
+          ? "branch_without_dialogue"
+          : visibility === "test"
+            ? "test_or_placeholder"
+            : visibility === "hidden"
+              ? "negative_display_priority"
+              : visibility === "unknown"
+                ? "unresolved_source"
+                : "public";
+      const storyOrder = (topologicalRank.get(id) ?? Number.MAX_SAFE_INTEGER - 1) + 1;
+      const topology = {
+        prerequisiteMissionIds: [...(prevMap.get(id) ?? [])].sort(compareMissionIds),
+        childMissionIds: [...(nextMap.get(id) ?? [])].sort(compareMissionIds),
+        parentMissionIds: [...(prevMap.get(id) ?? [])].sort(compareMissionIds),
+        storyOrder,
+        componentRoot,
+        componentSize: componentMembers.length,
+      };
+
       quests.push({
         mainMissionId: id,
         questKey: `mission/${id}`,
@@ -468,7 +730,8 @@ export class StarRailStoryResolver {
         seriesTitle,
         storyFamilyId: familyId,
         storyFamilyTitle: familyTitle,
-        storyFamilyProvenance: chapterTitle && !familyTitleIsGeneric(chapterTitle) ? "upstream" : "derived",
+        storyFamilyProvenance:
+          chapterTitle && !familyTitleIsGeneric(chapterTitle) ? "upstream" : "derived",
         storyFamilyOrder: Number.isFinite(familyOrder) ? familyOrder : undefined,
         worldId,
         worldTitle,
@@ -485,15 +748,33 @@ export class StarRailStoryResolver {
         dialogueNodes: dialogues,
         completeness,
         qualityCode,
+        contentRole,
+        dialogueResolutionStatus,
+        completenessReasons,
+        visibilityReason,
+        questRelationEdges: relationEdges,
+        topology,
         visibility,
         provenance: {
           source: "turn-based-game-data",
           sourceCommit: this.sourceRef,
-          mainMissionPath: mainItem?.path,
+          mainMissionPath: mainMissionSourceFile,
+          mainMissionHash: mainMissionSourceHash,
+          subMissionPath: subMissionSourceFile,
+          subMissionHash: subMissionSourceHash,
           subMissionCount: subMissions.length,
           dialogueCount: dialogues.length,
           dialogueSourceFiles: [...new Set(dialogues.map((node) => node.sourceFile))],
-          sourceAssociation: "exact_main_or_sub_mission_path",
+          associatedSourceFiles: sourceBindings.map((binding) => binding.sourceFile),
+          sourceBindings,
+          subMissionRelations: subMissions
+            .map((subMission) => subMissionRelations.get(subMission.subMissionId))
+            .filter((edge): edge is StarRailRelationEdge => Boolean(edge)),
+          relationEdges,
+          topology,
+          sourceAssociation: "exact_main_or_validated_sub_mission_path",
+          completenessReasons,
+          dialogueResolutionStatus,
         },
       });
     }
@@ -504,7 +785,7 @@ export class StarRailStoryResolver {
           mainMissionId: 1000101,
           questKey: "mission/1000101",
           title: "混乱行至深处",
-          type: "archon_quest",
+          type: "trailblaze_mission",
           seriesTitle: "开拓任务",
           worldId: 1,
           worldTitle: "空间站「黑塔」",
@@ -540,7 +821,7 @@ export class StarRailStoryResolver {
           mainMissionId: 1030101,
           questKey: "mission/1030101",
           title: "长日入夜行",
-          type: "world_quest",
+          type: "adventure_quest",
           seriesTitle: "散篇剧情",
           worldId: 4,
           worldTitle: "匹诺康尼",

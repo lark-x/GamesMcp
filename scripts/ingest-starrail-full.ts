@@ -40,13 +40,14 @@ import { readSafeJsonFile } from "../packages/providers/src/starrail/extractors/
 
 const GAME_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd2"; // Honkai: Star Rail
 const SOURCE_ID = "c1000000-0000-4000-8000-000000000001";
-// The source commit is identical to r1; source snapshots are immutable and
-// unique by (source_id, content_hash), so the second revision reuses r1's
-// snapshot instead of trying to create a duplicate hash row.
+// This release keeps the previous StarRail revision intact and writes the
+// resolver/topology changes as a new revision.  The source snapshot is reused
+// because the upstream commit is unchanged; the import batch, manifest and
+// revision IDs are release-scoped.
 const SNAPSHOT_ID = "c2000000-0000-4000-8000-000000000001";
-const BATCH_ID = "c4000000-0000-4000-8000-000000000002";
-const MANIFEST_ID = "c5000000-0000-4000-8000-000000000002";
-const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd4";
+const BATCH_ID = "c4000000-0000-4000-8000-000000000003";
+const MANIFEST_ID = "c5000000-0000-4000-8000-000000000003";
+const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd5";
 
 // 星铁命途/属性 -> 中文展示名（共用 genshin_* 结构化表，与既有中文数据保持一致）。
 const PATH_CN: Record<string, string> = {
@@ -407,6 +408,8 @@ function parseArgs(args: string[]): IngestOptions {
       dryRun = true;
     } else if (arg === "--source" && i + 1 < args.length) {
       sourceDir = args[++i];
+    } else if (arg.startsWith("--source=")) {
+      sourceDir = arg.slice("--source=".length);
     } else if (arg === "--limit" && i + 1 < args.length) {
       limit = Number(args[++i]);
     } else if (arg === "--fixture") {
@@ -673,6 +676,11 @@ export async function runStarRailIngestion(options: IngestOptions) {
         sourceFiles: [
           String(quest.provenance.mainMissionPath ?? "ExcelOutput/MainMission.json"),
           "ExcelOutput/SubMission.json",
+          ...(Array.isArray(quest.provenance.associatedSourceFiles)
+            ? quest.provenance.associatedSourceFiles.filter(
+                (value): value is string => typeof value === "string",
+              )
+            : []),
           ...quest.dialogueNodes.map((node) => node.sourceFile),
         ].filter((value, index, values) => values.indexOf(value) === index),
         sourceIds: [`MainMissionID:${quest.mainMissionId}`],
@@ -759,6 +767,11 @@ export async function runStarRailIngestion(options: IngestOptions) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
+        type = EXCLUDED.type,
+        path_label = EXCLUDED.path_label,
+        license_note = EXCLUDED.license_note,
+        enabled = EXCLUDED.enabled,
+        parser_type = EXCLUDED.parser_type,
         updated_at = NOW()
     `,
       [
@@ -861,12 +874,12 @@ export async function runStarRailIngestion(options: IngestOptions) {
       [
         REVISION_ID,
         GAME_ID,
-        2,
+        3,
         BATCH_ID,
         "published",
         "ready",
         true,
-        `Star Rail full corpus ingestion · Commit ${sourceCommit.slice(0, 7)}`,
+        `Star Rail full corpus ingestion r3 · Commit ${sourceCommit.slice(0, 7)}`,
         MANIFEST_ID,
         SOURCE_ID,
         "zh-CN",
@@ -1062,9 +1075,26 @@ export async function runStarRailIngestion(options: IngestOptions) {
           storyPosition: structured?.sequence ?? doc.hierarchy?.order ?? doc.id,
           completeness,
           qualityCode: structured?.qualityCode,
+          contentRole: structured?.contentRole,
+          dialogueResolutionStatus: structured?.dialogueResolutionStatus,
+          completenessReasons: structured?.completenessReasons,
+          visibilityReason: structured?.visibilityReason,
+          questRelationEdges: structured?.questRelationEdges,
+          topology: structured?.topology
+            ? {
+                prerequisiteQuestIds: structured.topology.prerequisiteMissionIds.map(String),
+                childQuestIds: structured.topology.childMissionIds.map(String),
+                parentQuestIds: structured.topology.parentMissionIds.map(String),
+                storyOrder: structured.topology.storyOrder,
+              }
+            : undefined,
           visibility,
           dialogueNodes: hasDialogue ? [{ nodeId: "has_dialogue" }] : [],
-          subquests: hasStages ? [{ subquestId: "has_subquests" }] : [],
+          subquests: (structured?.subMissions ?? []).map((sub) => ({
+            subquestId: String(sub.subMissionId),
+            title: sub.targetText ?? `子任务 ${sub.subMissionId}`,
+            objective: sub.descriptionText ?? sub.targetText,
+          })),
         };
 
         metadata.quest = questData;
@@ -1179,33 +1209,20 @@ export async function runStarRailIngestion(options: IngestOptions) {
       if (questKey) {
         const structured = structuredQuestMap.get(doc.id);
         const structuredSubquests = structured?.subMissions ?? [];
-        const subquestRows =
-          structuredSubquests.length > 0
-            ? [...structuredSubquests]
-                .sort((a, b) => a.sequence - b.sequence)
-                .map((sub, index) => ({
-                  key: `${questKey}/subquest/${sub.subMissionId}`,
-                  id: sub.subMissionId,
-                  ordinal: index + 1,
-                  title: sub.targetText ?? `阶段 ${index + 1}`,
-                  objective: sub.descriptionText ?? sub.targetText ?? "完成剧情推进",
-                  completeness: sub.targetText || sub.descriptionText ? "complete" : "partial",
-                  metadata: {
-                    source: "structured_star_rail_mission",
-                    subMissionId: sub.subMissionId,
-                  },
-                }))
-            : [
-                {
-                  key: `${questKey}/subquest/1`,
-                  id: 1,
-                  ordinal: 1,
-                  title: doc.title,
-                  objective: "完成剧情推进",
-                  completeness: "partial",
-                  metadata: { synthetic: true, reason: "flat_mission_projection" },
-                },
-              ];
+        const subquestRows = [...structuredSubquests]
+          .sort((a, b) => a.sequence - b.sequence)
+          .map((sub, index) => ({
+            key: `${questKey}/subquest/${sub.subMissionId}`,
+            id: sub.subMissionId,
+            ordinal: index + 1,
+            title: sub.targetText ?? `子任务 ${sub.subMissionId}`,
+            objective: sub.descriptionText ?? sub.targetText ?? "",
+            completeness: sub.targetText || sub.descriptionText ? "complete" : "partial",
+            metadata: {
+              source: "structured_star_rail_mission",
+              subMissionId: sub.subMissionId,
+            },
+          }));
 
         for (const subquest of subquestRows) {
           const subIdRes = await client.query("SELECT gen_random_uuid() AS id");
@@ -1231,7 +1248,7 @@ export async function runStarRailIngestion(options: IngestOptions) {
             ],
           );
         }
-        const subKey = subquestRows[0]!.key;
+        const subKey = subquestRows[0]?.key ?? null;
 
         // Parse conversation lines from content
         const lines = doc.content.split("\n");

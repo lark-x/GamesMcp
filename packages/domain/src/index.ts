@@ -113,6 +113,25 @@ export type NormalizedSegment = {
 
 export type QuestCompleteness = "complete" | "partial" | "metadata_only";
 
+export type QuestContentRole =
+  | "story"
+  | "story_and_control"
+  | "aggregate"
+  | "control"
+  | "trigger"
+  | "reward"
+  | "metadata"
+  | "unknown";
+
+export type DialogueResolutionStatus =
+  | "resolved"
+  | "not_applicable"
+  | "talk_reference_missing"
+  | "talk_asset_missing"
+  | "talk_asset_ambiguous"
+  | "dialogue_text_missing"
+  | "graph_incomplete";
+
 export type QuestVisibility = "public" | "hidden" | "unreleased" | "test" | "unresolved";
 
 export type QuestSubquestPayload = {
@@ -213,7 +232,33 @@ export type QuestRecordPayload = {
     | "metadata_only"
     | "source_missing"
     | "parser_failed"
-    | "speaker_unresolved";
+    | "speaker_unresolved"
+    | "control"
+    | "aggregate";
+  contentRole?: QuestContentRole;
+  dialogueResolutionStatus?: DialogueResolutionStatus;
+  talkIds?: string[];
+  resolvedTalkIds?: string[];
+  unresolvedTalkIds?: string[];
+  talkSourceKinds?: string[];
+  questRelationEdges?: Array<{
+    fromQuestId: string;
+    toQuestId?: string;
+    talkId?: string;
+    relationType: string;
+    sourceFile: string;
+    sourcePath?: string;
+    sourceHash: string;
+    derived: boolean;
+    confidence: number;
+    metadata?: Record<string, unknown>;
+  }>;
+  topology?: {
+    prerequisiteQuestIds: string[];
+    childQuestIds: string[];
+    parentQuestIds: string[];
+    storyOrder?: number;
+  };
   completeness: QuestCompleteness;
   completenessReasons?: string[];
   /** Records outside the public game-facing catalogue remain available to admin preview only. */
@@ -900,6 +945,8 @@ export type QuestSearchHit = {
   chapter?: string | null;
   series?: string | null;
   completeness: QuestCompleteness;
+  contentRole?: QuestContentRole;
+  dialogueResolutionStatus?: DialogueResolutionStatus;
   locale: string;
   documentId: Id;
   revision: string;
@@ -917,6 +964,8 @@ export type QuestDialoguePage = {
   documentId: Id;
   revision: string;
   completeness: QuestCompleteness;
+  contentRole?: QuestContentRole;
+  dialogueResolutionStatus?: DialogueResolutionStatus;
   subquests: QuestSubquestPayload[];
   dialogueNodes: Array<QuestDialogueNodePayload & { segmentId?: Id | null }>;
   dialogueEdges: QuestDialogueEdgePayload[];

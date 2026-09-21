@@ -36,8 +36,17 @@ export async function extractMissionDocuments(input: ExtractorInput): Promise<Ex
         for (const sub of subMissions) {
           const subId = Number(sub.SubMissionID);
           if (!Number.isInteger(subId)) continue;
-          const mainId = Math.floor(subId / 100);
-          if (!mainMissionIds.has(mainId)) continue;
+          const declaredMainId = Number(sub.MainMissionID ?? sub.MainMissionId);
+          let mainId: number | undefined;
+          if (Number.isInteger(declaredMainId) && mainMissionIds.has(declaredMainId)) {
+            mainId = declaredMainId;
+          } else {
+            const prefix = Math.floor(subId / 100);
+            if (mainMissionIds.has(prefix) && subId >= prefix * 100 && subId < (prefix + 1) * 100) {
+              mainId = prefix;
+            }
+          }
+          if (mainId === undefined) continue;
           subMissionToMain.set(subId, mainId);
           const list = subMap.get(mainId) ?? [];
           list.push(sub);

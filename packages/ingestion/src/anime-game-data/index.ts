@@ -99,3 +99,6 @@ export type {
   MechanismExtractionResult,
   MechanismTextResolution,
 } from "./mechanism/extractor.js";
+
+export * from "./quest/index.js";
+export * from "./talk/index.js";
