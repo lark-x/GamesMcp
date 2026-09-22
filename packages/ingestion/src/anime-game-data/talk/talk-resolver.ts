@@ -1,11 +1,13 @@
+import { createHash } from "node:crypto";
 import type { QuestRelationEdge } from "../quest/types.js";
-import type { TalkCandidate, TalkRelationEvidence, TalkSourceRegistry } from "./types.js";
+import type {
+  TalkCandidate,
+  TalkEvidence,
+  TalkRelationEvidence,
+  TalkSourceRegistry,
+} from "./types.js";
 
 type Json = Record<string, unknown>;
-
-function asObject(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
-}
 
 function idText(value: unknown): string | undefined {
   if (typeof value === "number" && Number.isSafeInteger(value)) return String(value);
@@ -25,6 +27,7 @@ export type ResolveQuestTalkInput = {
   completeTalkIds?: string[];
   talkRows: Json[];
   registry: TalkSourceRegistry;
+  relationEdges?: QuestRelationEdge[];
 };
 
 export type ResolvedQuestTalks = {
@@ -37,131 +40,166 @@ export type ResolvedQuestTalks = {
 };
 
 function candidateKey(candidate: TalkCandidate): string {
-  return `${candidate.talkId}|${candidate.sourceKind}|${candidate.sourceFile}|${candidate.evidence}`;
+  return `${candidate.talkId}|${candidate.sourceFile}`;
 }
 
-function assetStem(asset: NonNullable<TalkCandidate["asset"]>): string {
-  const fileName = asset.relativePath.split(/[\\/]/u).pop() ?? asset.relativePath;
-  return fileName.replace(/\.json$/iu, "");
+function assetSignature(asset: NonNullable<TalkCandidate["asset"]>): string {
+  const content = asset.dialogueRows.map((row) => [
+    row.dialogId,
+    row.nextDialogIds,
+    row.bodyHash,
+    row.speakerNameHash,
+    row.roleType,
+    row.roleId,
+  ]);
+  return createHash("sha1").update(JSON.stringify(content)).digest("hex");
 }
 
-/**
- * A talk can be emitted twice by AnimeGameData: once under its numeric asset
- * id and once under a content-addressed/hashed filename.  The numeric path is
- * an explicit source relation, not a fuzzy prefix match, so it is safe to use
- * when it is the only exact-id asset.  Keep the registry duplicate report
- * intact; this only prevents an equivalent alias from making a quest appear
- * ambiguous during resolution.
- */
-function selectAssetsForTalk(
-  talkId: string,
-  assets: NonNullable<TalkCandidate["asset"]>[],
-): NonNullable<TalkCandidate["asset"]>[] {
-  const dialogueAssets = assets.filter((asset) => asset.dialogueRows.length > 0);
-  const exact = dialogueAssets.filter((asset) => assetStem(asset) === talkId);
-  return exact.length === 1 ? exact : assets;
+function relationEvidenceForEdge(edge: QuestRelationEdge): TalkEvidence | undefined {
+  const kind: TalkRelationEvidence =
+    edge.relationType === "npc_group_condition"
+      ? "npc_group_condition"
+      : edge.relationType === "npc_group_trigger"
+        ? "npc_group_trigger"
+        : undefined!;
+  if (!kind) return undefined;
+  return {
+    kind,
+    confidence: edge.confidence,
+    relationEdgeId: edge.edgeId,
+    sourceFile: edge.sourceFile,
+    details: edge.metadata,
+  };
 }
 
-function sourceKindPriority(
-  evidence: TalkRelationEvidence,
-  sourceKind: NonNullable<TalkCandidate["asset"]>["sourceKind"],
-): number {
-  const preferred =
-    evidence === "npc_group_trigger"
-      ? ["npc", "npc_other", "free_group", "quest"]
-      : evidence === "quest_complete_talk" || evidence === "talk_excel_quest_id"
-        ? ["quest", "npc", "npc_other", "free_group"]
-        : ["quest", "npc", "npc_other", "free_group"];
-  const index = preferred.indexOf(sourceKind);
-  return index >= 0 ? index : preferred.length;
-}
-
-function selectRelatedDialogueAssets(
-  evidence: TalkRelationEvidence,
-  assets: NonNullable<TalkCandidate["asset"]>[],
-): NonNullable<TalkCandidate["asset"]>[] {
-  const dialogueAssets = assets.filter((asset) => asset.dialogueRows.length > 0);
-  if (dialogueAssets.length <= 1) return dialogueAssets;
-  const bestPriority = Math.min(
-    ...dialogueAssets.map((asset) => sourceKindPriority(evidence, asset.sourceKind)),
-  );
-  return dialogueAssets.filter(
-    (asset) => sourceKindPriority(evidence, asset.sourceKind) === bestPriority,
-  );
-}
-
-/** Resolve talks only through explicit quest, TalkExcel, NpcGroup, or asset relations. */
+/** Resolve exact talk identities using all available evidence, never a source-kind preference. */
 export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<ResolvedQuestTalks> {
   const relatedQuestIds = new Set([input.mainQuestId, ...(input.relatedQuestIds ?? [])]);
-  const relationEdges = input.registry.npcGroupRelations.filter(
-    (edge) => edge.fromQuestId && relatedQuestIds.has(edge.fromQuestId),
-  );
-  const refs = new Map<string, { evidence: TalkRelationEvidence; relationEdgeId?: string }>();
+  const relationEdges = [
+    ...(input.relationEdges ?? []),
+    ...input.registry.npcGroupRelations.filter(
+      (edge) => edge.fromQuestId && relatedQuestIds.has(edge.fromQuestId),
+    ),
+  ];
+  const refs = new Map<string, TalkEvidence[]>();
+  const subQuestByTalkId = new Map<string, string>();
+  const initDialogsByTalkId = new Map<string, string[]>();
   const addRef = (
     talkId: string | undefined,
-    evidence: TalkRelationEvidence,
-    edge?: QuestRelationEdge,
+    kind: TalkRelationEvidence,
+    details?: Partial<TalkEvidence>,
   ): void => {
     if (!talkId) return;
-    const existing = refs.get(talkId);
-    if (!existing || existing.evidence === "perform_cfg_exact") {
-      refs.set(talkId, { evidence, relationEdgeId: edge ? JSON.stringify(edge) : undefined });
-    }
+    const list = refs.get(talkId) ?? [];
+    const evidence: TalkEvidence = {
+      kind,
+      confidence: details?.confidence ?? (kind === "quest_complete_talk" ? 1 : 0.8),
+      relationEdgeId: details?.relationEdgeId,
+      sourceFile: details?.sourceFile,
+      details: details?.details,
+    };
+    if (!list.some((item) => JSON.stringify(item) === JSON.stringify(evidence)))
+      list.push(evidence);
+    refs.set(talkId, list);
   };
   for (const talkId of input.completeTalkIds ?? []) addRef(talkId, "quest_complete_talk");
-  for (const edge of relationEdges) addRef(edge.talkId, "npc_group_trigger", edge);
+  for (const edge of relationEdges) {
+    if (!edge.talkId || !edge.fromQuestId || !relatedQuestIds.has(edge.fromQuestId)) continue;
+    if (edge.relationType === "complete_talk" && edge.fromQuestId !== input.mainQuestId) {
+      const subQuestId = edge.fromSubQuestId ?? edge.fromQuestId;
+      subQuestByTalkId.set(edge.talkId, subQuestId);
+    }
+    const evidence = relationEvidenceForEdge(edge);
+    if (evidence) addRef(edge.talkId, evidence.kind, evidence);
+  }
   for (const row of input.talkRows) {
     const questId = idText(row.questId ?? row.mainQuestId ?? row.mainId);
     const talkId = idText(row.id ?? row.talkId);
-    if (questId === input.mainQuestId) addRef(talkId, "talk_excel_quest_id");
-    else if (
+    const initDialog = idText(row.initDialog ?? row.initDialogId);
+    if (questId && relatedQuestIds.has(questId)) {
+      addRef(talkId, "talk_excel_quest_id", { confidence: 1 });
+      if (talkId && initDialog) {
+        const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
+        if (!initDialogs.includes(initDialog)) initDialogs.push(initDialog);
+        initDialogsByTalkId.set(talkId, initDialogs);
+      }
+    } else if (
       !questId &&
       exactPerformCfgMatch(row.performCfg ?? row.performConfig, input.mainQuestId)
-    )
-      addRef(talkId, "perform_cfg_exact");
+    ) {
+      addRef(talkId, "perform_cfg_exact", { confidence: 0.85 });
+      if (talkId && initDialog) {
+        const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
+        if (!initDialogs.includes(initDialog)) initDialogs.push(initDialog);
+        initDialogsByTalkId.set(talkId, initDialogs);
+      }
+    }
   }
   const talkIds = [...refs.keys()].sort(
     (left, right) => Number(left) - Number(right) || left.localeCompare(right),
   );
   const candidates: TalkCandidate[] = [];
+  const resolvedTalkIds: string[] = [];
+  const ambiguousTalkIds: string[] = [];
   for (const talkId of talkIds) {
-    const relation = refs.get(talkId)!;
-    const relatedAssets = selectRelatedDialogueAssets(
-      relation.evidence,
-      await input.registry.findAssets(talkId),
-    );
-    const assets = selectAssetsForTalk(talkId, relatedAssets);
-    for (const asset of assets) {
-      candidates.push({
+    const evidences = refs.get(talkId) ?? [];
+    let assets = await input.registry.findAssets(talkId);
+    let assetFallbackEvidence: TalkEvidence | undefined;
+    if (assets.length === 0) {
+      // Some legacy Talk/Quest files have an opaque or hashed filename and no
+      // embedded talk id.  TalkExcel still gives us an exact identity bridge:
+      // talk id -> initDialog -> the asset's dialogue graph.  This is not a
+      // numeric prefix guess; the initDialog value is an explicit source
+      // relation and the asset must contain that exact dialogue id.
+      const fallbackAssets = new Map<string, NonNullable<TalkCandidate["asset"]>>();
+      const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
+      for (const initDialog of initDialogs) {
+        for (const asset of await input.registry.findAssetsByDialogueId(initDialog, "quest")) {
+          fallbackAssets.set(asset.relativePath, asset);
+        }
+      }
+      assets = [...fallbackAssets.values()];
+      if (assets.length > 0) {
+        assetFallbackEvidence = {
+          kind: "legacy_path_match",
+          confidence: 0.9,
+          details: {
+            initDialogIds: initDialogs,
+            match: "talk_excel_init_dialog",
+          },
+        };
+      }
+    }
+    const bySignature = new Map<string, NonNullable<TalkCandidate["asset"]>>();
+    for (const asset of assets.filter((item) => item.dialogueRows.length > 0)) {
+      const signature = assetSignature(asset);
+      if (!bySignature.has(signature)) bySignature.set(signature, asset);
+    }
+    if (bySignature.size > 0) resolvedTalkIds.push(talkId);
+    if (bySignature.size > 1) ambiguousTalkIds.push(talkId);
+    for (const asset of bySignature.values()) {
+      const candidateEvidences = assetFallbackEvidence
+        ? [...evidences, assetFallbackEvidence]
+        : evidences;
+      const bestEvidence = [...candidateEvidences].sort((a, b) => b.confidence - a.confidence)[0];
+      const candidate: TalkCandidate = {
         talkId,
+        subQuestId: subQuestByTalkId.get(talkId),
         sourceKind: asset.sourceKind,
         sourceFile: asset.relativePath,
-        confidence:
-          relation.evidence === "quest_complete_talk" || relation.evidence === "talk_excel_quest_id"
-            ? 1
-            : 0.8,
-        evidence: relation.evidence,
+        confidence: bestEvidence?.confidence ?? 0,
+        score: bestEvidence?.confidence ?? 0,
+        status: bySignature.size > 1 ? "ambiguous" : "resolved",
+        evidence: bestEvidence?.kind ?? "asset_id_exact",
+        evidences: candidateEvidences,
         asset,
-        relationEdgeId: relation.relationEdgeId,
-      });
+        relationEdgeId: bestEvidence?.relationEdgeId,
+      };
+      candidates.push(candidate);
     }
-  }
-  const byTalkId = new Map<string, TalkCandidate[]>();
-  for (const candidate of candidates) {
-    const list = byTalkId.get(candidate.talkId) ?? [];
-    list.push(candidate);
-    byTalkId.set(candidate.talkId, list);
   }
   const uniqueCandidates = new Map<string, TalkCandidate>();
   for (const candidate of candidates) uniqueCandidates.set(candidateKey(candidate), candidate);
-  const ambiguousTalkIds = [...byTalkId.entries()]
-    .filter(
-      ([, list]) =>
-        new Set(list.map((candidate) => candidate.asset?.fileHash ?? candidate.sourceFile)).size >
-        1,
-    )
-    .map(([talkId]) => talkId);
-  const resolvedTalkIds = talkIds.filter((talkId) => (byTalkId.get(talkId)?.length ?? 0) > 0);
   const unresolvedTalkIds = talkIds.filter((talkId) => !resolvedTalkIds.includes(talkId));
   return {
     candidates: [...uniqueCandidates.values()].sort(

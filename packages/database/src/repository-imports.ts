@@ -176,8 +176,9 @@ export async function getImport(ctx: ImportContext, batchId: string): Promise<Im
 export async function listImports(
   ctx: ImportContext,
   gameId?: string,
-  options: { includePayload?: boolean } = {},
+  options: { includePayload?: boolean; limit?: number } = {},
 ): Promise<ImportBatch[]> {
+  const limit = Math.max(1, Math.floor(options.limit ?? 100));
   if (options.includePayload === false) {
     const rows = await ctx.db
       .select({
@@ -200,7 +201,7 @@ export async function listImports(
       .from(importBatches)
       .where(gameId ? eq(importBatches.gameId, gameId) : undefined)
       .orderBy(desc(importBatches.createdAt))
-      .limit(100);
+      .limit(limit);
     return rows.map((row) => ({
       ...row,
       status: row.status as ImportBatch["status"],
@@ -215,7 +216,7 @@ export async function listImports(
     .from(importBatches)
     .where(gameId ? eq(importBatches.gameId, gameId) : undefined)
     .orderBy(desc(importBatches.createdAt))
-    .limit(100);
+    .limit(limit);
   return rows.map((row) => mapImport(row));
 }
 

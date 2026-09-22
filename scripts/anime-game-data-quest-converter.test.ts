@@ -60,7 +60,7 @@ describe("AnimeGameData quest converter", () => {
 
     expect(first.records).toEqual(second.records);
     expect(first.manifest.failures).toEqual([]);
-    expect(first.manifest.schemaVersion).toBe(2);
+    expect(first.manifest.schemaVersion).toBe(3);
     expect(first.manifest.converterVersion).toBe("anime-game-data-quests-v2");
     expect(first.manifest.counts).toMatchObject({
       mainQuests: 1,

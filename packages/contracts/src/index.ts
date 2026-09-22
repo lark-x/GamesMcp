@@ -519,6 +519,9 @@ export const storyQuestEntrySchema = z.object({
   questKey: z.string(),
   title: z.string(),
   displayTitle: z.string().optional(),
+  entryType: z.enum(["quest", "collection", "aggregate"]).optional(),
+  parentQuestId: z.string().optional(),
+  childQuestIds: z.array(z.string()).optional(),
   order: z.number().default(0),
   completeness: z.enum(["complete", "partial", "metadata_only"]).default("complete"),
   bodyAvailability: bodyAvailabilitySchema.default("dialogue"),
@@ -532,6 +535,8 @@ export const storyQuestEntrySchema = z.object({
       "speaker_unresolved",
       "control",
       "aggregate",
+      "partial",
+      "unresolved",
     ])
     .optional(),
   contentRole: z
@@ -549,6 +554,7 @@ export const storyQuestEntrySchema = z.object({
   dialogueResolutionStatus: z
     .enum([
       "resolved",
+      "partial",
       "not_applicable",
       "talk_reference_missing",
       "talk_asset_missing",
@@ -575,6 +581,8 @@ export const storyFamilySchema = z.object({
   order: z.number().default(0),
   provenance: z.enum(["upstream", "derived", "curated", "fallback"]).default("derived"),
   chapters: z.array(storyChapterSchema),
+  quests: z.array(storyQuestEntrySchema).optional(),
+  collections: z.array(storyQuestEntrySchema).optional(),
 });
 export type StoryFamily = z.infer<typeof storyFamilySchema>;
 

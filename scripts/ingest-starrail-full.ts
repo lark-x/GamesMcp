@@ -41,13 +41,14 @@ import { readSafeJsonFile } from "../packages/providers/src/starrail/extractors/
 const GAME_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd2"; // Honkai: Star Rail
 const SOURCE_ID = "c1000000-0000-4000-8000-000000000001";
 // This release keeps the previous StarRail revision intact and writes the
-// resolver/topology changes as a new revision.  The source snapshot is reused
+// resolver/topology changes as a new revision. The source snapshot is reused
 // because the upstream commit is unchanged; the import batch, manifest and
 // revision IDs are release-scoped.
 const SNAPSHOT_ID = "c2000000-0000-4000-8000-000000000001";
-const BATCH_ID = "c4000000-0000-4000-8000-000000000003";
-const MANIFEST_ID = "c5000000-0000-4000-8000-000000000003";
-const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd5";
+const BATCH_ID = "c4000000-0000-4000-8000-000000000004";
+const MANIFEST_ID = "c5000000-0000-4000-8000-000000000004";
+const REVISION_ID = "df3eb8fb-7a5c-431d-9f54-5db451f0cdd6";
+const REVISION_NUMBER = 4;
 
 // 星铁命途/属性 -> 中文展示名（共用 genshin_* 结构化表，与既有中文数据保持一致）。
 const PATH_CN: Record<string, string> = {
@@ -874,12 +875,12 @@ export async function runStarRailIngestion(options: IngestOptions) {
       [
         REVISION_ID,
         GAME_ID,
-        3,
+        REVISION_NUMBER,
         BATCH_ID,
         "published",
         "ready",
         true,
-        `Star Rail full corpus ingestion r3 · Commit ${sourceCommit.slice(0, 7)}`,
+        `Star Rail full corpus ingestion r${REVISION_NUMBER} · Commit ${sourceCommit.slice(0, 7)}`,
         MANIFEST_ID,
         SOURCE_ID,
         "zh-CN",
@@ -1023,11 +1024,12 @@ export async function runStarRailIngestion(options: IngestOptions) {
           wld?.name ??
           (worldId ? `世界 ${worldId}` : "其他世界");
         const regionId = `world_${worldId ?? 0}`;
-        const chapter =
-          structured?.chapterTitle ?? chap?.name ?? (cId ? `章节 ${cId}` : `${region}散篇任务`);
+        const chapter = structured?.chapterTitle ?? chap?.name;
         const chapterId = structured?.chapterId
           ? `chapter_${structured.chapterId}`
-          : `chapter_${cId ?? `none_${String(docType)}`}`;
+          : cId !== undefined
+            ? `chapter_${cId}`
+            : undefined;
 
         const hasDialogue =
           (structured?.dialogueNodes.length ?? 0) > 0 ||
@@ -1061,9 +1063,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
           region,
           regionId,
           regionName: region,
-          chapter,
-          chapterId,
-          chapterTitle: chapter,
+          ...(chapter ? { chapter, chapterTitle: chapter } : {}),
+          ...(chapterId ? { chapterId } : {}),
           storyFamilyId: structured?.storyFamilyId,
           storyFamilyTitle: familyTitle,
           storyFamilyProvenance: structured?.storyFamilyProvenance ?? "derived",
@@ -1088,6 +1089,25 @@ export async function runStarRailIngestion(options: IngestOptions) {
                 storyOrder: structured.topology.storyOrder,
               }
             : undefined,
+          storyProjection: {
+            regionId,
+            regionTitle: region,
+            regionOrder: wld?.order,
+            familyId:
+              structured?.storyFamilyId ??
+              `starrail:family:${worldId ?? 0}:${cId ?? 0}:${structured?.topology?.componentRoot ?? doc.id}`,
+            familyTitle,
+            familyOrder: structured?.storyFamilyOrder,
+            ...(chapterId
+              ? {
+                  chapterId,
+                  chapterTitle: chapter,
+                  chapterOrder: structured?.chapterOrder,
+                }
+              : {}),
+            entryType: structured?.contentRole === "aggregate" ? "collection" : "quest",
+            childQuestIds: structured?.topology?.childMissionIds.map(String) ?? [],
+          },
           visibility,
           dialogueNodes: hasDialogue ? [{ nodeId: "has_dialogue" }] : [],
           subquests: (structured?.subMissions ?? []).map((sub) => ({

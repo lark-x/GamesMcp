@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
 import { parseNpcGroupRelations } from "./npc-group-parser.js";
-import { parseTalkAsset, parseTalkAssetValue } from "./asset-parser.js";
+import { parseTalkAsset, scanTalkAssetMetadata } from "./asset-parser.js";
 import type {
   TalkAssetRecord,
   TalkSourceFile,
@@ -67,6 +67,7 @@ async function mapLimit<T, U>(
 }
 
 export type TalkRegistryOptions = {
+  /** Full-parse these kinds during phase two. Metadata is scanned for all files. */
   parseKinds?: TalkSourceKind[];
   concurrency?: number;
 };
@@ -78,18 +79,23 @@ function emptyRegistry(): TalkSourceRegistry {
     files,
     assets,
     assetsByTalkId: new Map(),
+    metadataByTalkId: new Map(),
     filesByStem: new Map(),
     duplicateTalkIds: [],
     npcGroupRelations: [],
     coverage: {
       totalFiles: 0,
       parsedFiles: 0,
+      metadataScannedFiles: 0,
+      eagerParsedByKind: {},
+      lazyLoadedByKind: {},
       parsedByKind: {},
       fileCountsByKind: {},
       unknownDirectories: [],
     },
     loadAsset: async () => undefined,
     findAssets: async () => [],
+    findAssetsByDialogueId: async () => [],
   };
 }
 
@@ -107,28 +113,66 @@ export async function buildTalkSourceRegistry(
     throw error;
   }
   const parseKinds = new Set(options.parseKinds ?? ["quest", "npc_group"]);
+  // NpcGroup is a relation source and must always be available for resolution,
+  // even when a caller asks for a different eager parse set.
+  parseKinds.add("npc_group");
   const files: TalkSourceFile[] = relativePaths.map((relativePath) => {
     const sourceKind = sourceKindFor(relativePath);
     return {
       relativePath,
       sourceKind,
       fileStem: basename(relativePath, extname(relativePath)),
-      parsed: parseKinds.has(sourceKind),
+      parsed: false,
+      metadataScanned: false,
     };
   });
+
+  // Phase A: identity scan. This is intentionally independent of source kind;
+  // hashed Npc filenames can still expose an embedded talk id.
+  await mapLimit(files, options.concurrency ?? 32, async (file) => {
+    try {
+      const raw = await readFile(join(root, file.relativePath), "utf8");
+      const metadata = scanTalkAssetMetadata(raw, file.relativePath, file.sourceKind);
+      file.fileHash = metadata.fileHash;
+      file.embeddedTalkId = metadata.talkId;
+      file.schemaSignature = metadata.schemaSignature;
+      file.metadataScanned = true;
+    } catch {
+      file.metadataScanned = true;
+    }
+  });
+
+  const metadataByTalkId = new Map<string, TalkSourceFile[]>();
+  for (const file of files) {
+    if (!file.embeddedTalkId) continue;
+    const list = metadataByTalkId.get(file.embeddedTalkId) ?? [];
+    list.push(file);
+    metadataByTalkId.set(file.embeddedTalkId, list);
+  }
+
+  // Phase B: full parse only for relation-bearing families. Other sources are
+  // loaded on demand after an exact identity match.
   const assets = (
     await mapLimit(
-      files.filter((file) => file.parsed),
+      files.filter((file) => parseKinds.has(file.sourceKind)),
       options.concurrency ?? 24,
       async (file) => {
-        const raw = await readFile(join(root, file.relativePath), "utf8");
-        file.fileHash = createHash("sha256").update(raw).digest("hex");
-        const asset = parseTalkAsset(raw, file.relativePath, file.sourceKind);
-        file.dialogueRowCount = asset.dialogueRows.length;
-        return asset;
+        try {
+          const raw = await readFile(join(root, file.relativePath), "utf8");
+          const asset = parseTalkAsset(raw, file.relativePath, file.sourceKind);
+          file.fileHash = asset.fileHash;
+          file.embeddedTalkId = asset.talkId ?? file.embeddedTalkId;
+          file.schemaSignature = asset.schemaSignature;
+          file.parsed = true;
+          file.dialogueRowCount = asset.dialogueRows.length;
+          return asset;
+        } catch {
+          return undefined;
+        }
       },
     )
   ).filter((asset): asset is TalkAssetRecord => Boolean(asset));
+
   const assetsByTalkId = new Map<string, TalkAssetRecord[]>();
   for (const asset of assets) {
     if (!asset.talkId) continue;
@@ -142,31 +186,62 @@ export async function buildTalkSourceRegistry(
     list.push(file);
     filesByStem.set(file.fileStem, list);
   }
+  const coverage: TalkSourceRegistry["coverage"] = {
+    totalFiles: files.length,
+    parsedFiles: 0,
+    metadataScannedFiles: 0,
+    eagerParsedByKind: {},
+    lazyLoadedByKind: {},
+    parsedByKind: {},
+    fileCountsByKind: {},
+    unknownDirectories: [],
+  };
+  for (const file of files.filter((item) => item.parsed))
+    coverage.eagerParsedByKind![file.sourceKind] =
+      (coverage.eagerParsedByKind![file.sourceKind] ?? 0) + 1;
+  const refreshCoverage = (): void => {
+    coverage.totalFiles = files.length;
+    coverage.parsedFiles = files.filter((file) => file.parsed).length;
+    coverage.metadataScannedFiles = files.filter((file) => file.metadataScanned).length;
+    coverage.parsedByKind = {};
+    coverage.lazyLoadedByKind = {};
+    coverage.fileCountsByKind = {};
+    for (const file of files) {
+      coverage.fileCountsByKind[file.sourceKind] =
+        (coverage.fileCountsByKind[file.sourceKind] ?? 0) + 1;
+      if (file.parsed)
+        coverage.parsedByKind[file.sourceKind] = (coverage.parsedByKind[file.sourceKind] ?? 0) + 1;
+    }
+    coverage.unknownDirectories = [
+      ...new Set(
+        files
+          .filter((file) => file.sourceKind === "unknown")
+          .map((file) => file.relativePath.split("/")[2] ?? ""),
+      ),
+    ].sort();
+    for (const [kind, count] of Object.entries(coverage.parsedByKind)) {
+      const eager = coverage.eagerParsedByKind?.[kind] ?? 0;
+      coverage.lazyLoadedByKind![kind] = Math.max(0, count - eager);
+    }
+  };
+  refreshCoverage();
   const npcGroupRelations: TalkSourceRegistry["npcGroupRelations"] = [];
   for (const asset of assets.filter((item) => item.sourceKind === "npc_group")) {
-    const raw = await readFile(join(root, asset.relativePath), "utf8");
-    const value = JSON.parse(raw) as Record<string, unknown>;
-    npcGroupRelations.push(...parseNpcGroupRelations(value, asset.relativePath, asset.fileHash));
+    try {
+      const raw = await readFile(join(root, asset.relativePath), "utf8");
+      const value = JSON.parse(raw) as Record<string, unknown>;
+      npcGroupRelations.push(...parseNpcGroupRelations(value, asset.relativePath, asset.fileHash));
+    } catch {
+      // The source file remains represented in the audit registry; an unreadable
+      // relation file simply contributes no inferred edge.
+    }
   }
-  const duplicateTalkIds = [...assetsByTalkId.entries()]
+  const duplicateTalkIds = [...metadataByTalkId.entries()]
     .filter(([, list]) => list.length > 1)
     .map(([talkId, list]) => ({
       talkId,
-      sourceFiles: list.map((asset) => asset.relativePath).sort(),
+      sourceFiles: list.map((file) => file.relativePath).sort(),
     }));
-  const fileCountsByKind: Record<string, number> = {};
-  const parsedByKind: Record<string, number> = {};
-  for (const file of files) {
-    fileCountsByKind[file.sourceKind] = (fileCountsByKind[file.sourceKind] ?? 0) + 1;
-    if (file.parsed) parsedByKind[file.sourceKind] = (parsedByKind[file.sourceKind] ?? 0) + 1;
-  }
-  const unknownDirectories = [
-    ...new Set(
-      files
-        .filter((file) => file.sourceKind === "unknown")
-        .map((file) => file.relativePath.split("/")[1] ?? ""),
-    ),
-  ].sort();
   const lazyAssets = new Map<string, Promise<TalkAssetRecord | undefined>>();
   const loadAsset = async (relativePath: string): Promise<TalkAssetRecord | undefined> => {
     const existing = lazyAssets.get(relativePath);
@@ -174,20 +249,26 @@ export async function buildTalkSourceRegistry(
     const promise = (async () => {
       const file = files.find((item) => item.relativePath === relativePath);
       if (!file) return undefined;
-      const raw = await readFile(join(root, relativePath), "utf8");
-      const hash = createHash("sha256").update(raw).digest("hex");
-      file.fileHash = hash;
-      file.parsed = true;
-      const asset = parseTalkAsset(raw, relativePath, file.sourceKind);
-      file.dialogueRowCount = asset.dialogueRows.length;
-      assets.push(asset);
-      if (asset.talkId) {
-        const list = assetsByTalkId.get(asset.talkId) ?? [];
-        if (!list.some((candidate) => candidate.relativePath === asset.relativePath))
-          list.push(asset);
-        assetsByTalkId.set(asset.talkId, list);
+      try {
+        const raw = await readFile(join(root, relativePath), "utf8");
+        const asset = parseTalkAsset(raw, relativePath, file.sourceKind);
+        file.fileHash = asset.fileHash;
+        file.embeddedTalkId = asset.talkId ?? file.embeddedTalkId;
+        file.schemaSignature = asset.schemaSignature;
+        file.parsed = true;
+        file.dialogueRowCount = asset.dialogueRows.length;
+        refreshCoverage();
+        assets.push(asset);
+        if (asset.talkId) {
+          const list = assetsByTalkId.get(asset.talkId) ?? [];
+          if (!list.some((candidate) => candidate.relativePath === asset.relativePath))
+            list.push(asset);
+          assetsByTalkId.set(asset.talkId, list);
+        }
+        return asset;
+      } catch {
+        return undefined;
       }
-      return asset;
     })();
     lazyAssets.set(relativePath, promise);
     return promise;
@@ -196,32 +277,47 @@ export async function buildTalkSourceRegistry(
     talkId: string,
     sourceKind?: TalkSourceKind,
   ): Promise<TalkAssetRecord[]> => {
-    const direct = (assetsByTalkId.get(talkId) ?? []).filter(
-      (asset) => !sourceKind || asset.sourceKind === sourceKind,
+    const fileMatches = [
+      ...(metadataByTalkId.get(talkId) ?? []),
+      ...(filesByStem.get(talkId) ?? []),
+    ].filter((file) => !sourceKind || file.sourceKind === sourceKind);
+    const loaded = await Promise.all(
+      [...new Map(fileMatches.map((file) => [file.relativePath, file])).values()].map((file) =>
+        loadAsset(file.relativePath),
+      ),
     );
-    if (direct.length) return direct;
-    const pathMatches = files.filter(
-      (file) => file.fileStem === talkId && (!sourceKind || file.sourceKind === sourceKind),
+    return [
+      ...new Map(
+        loaded
+          .filter((asset): asset is TalkAssetRecord => Boolean(asset))
+          .map((asset) => [asset.relativePath, asset]),
+      ).values(),
+    ];
+  };
+  const findAssetsByDialogueId = async (
+    dialogueId: string,
+    sourceKind?: TalkSourceKind,
+  ): Promise<TalkAssetRecord[]> => {
+    const matches = assets.filter(
+      (asset) =>
+        (!sourceKind || asset.sourceKind === sourceKind) &&
+        (asset.rootDialogueIds.includes(dialogueId) ||
+          asset.dialogueRows.some((row) => row.dialogId === dialogueId)),
     );
-    const loaded = await Promise.all(pathMatches.map((file) => loadAsset(file.relativePath)));
-    return loaded.filter((asset): asset is TalkAssetRecord => Boolean(asset));
+    return [...new Map(matches.map((asset) => [asset.relativePath, asset])).values()];
   };
   return {
     files,
     assets,
     assetsByTalkId,
+    metadataByTalkId,
     filesByStem,
     duplicateTalkIds,
     npcGroupRelations,
-    coverage: {
-      totalFiles: files.length,
-      parsedFiles: files.filter((file) => file.parsed).length,
-      parsedByKind,
-      fileCountsByKind,
-      unknownDirectories,
-    },
+    coverage,
     loadAsset,
     findAssets,
+    findAssetsByDialogueId,
   };
 }
 

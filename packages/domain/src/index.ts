@@ -125,6 +125,7 @@ export type QuestContentRole =
 
 export type DialogueResolutionStatus =
   | "resolved"
+  | "partial"
   | "not_applicable"
   | "talk_reference_missing"
   | "talk_asset_missing"
@@ -234,14 +235,29 @@ export type QuestRecordPayload = {
     | "parser_failed"
     | "speaker_unresolved"
     | "control"
-    | "aggregate";
+    | "aggregate"
+    | "partial"
+    | "unresolved";
   contentRole?: QuestContentRole;
   dialogueResolutionStatus?: DialogueResolutionStatus;
   talkIds?: string[];
   resolvedTalkIds?: string[];
   unresolvedTalkIds?: string[];
   talkSourceKinds?: string[];
+  dialogueDiagnostics?: {
+    expectedTalkIds: string[];
+    resolvedTalkIds: string[];
+    missingTalkIds: string[];
+    ambiguousTalkIds: string[];
+    graphHasNoRoot: boolean;
+    cycle: boolean;
+    cycleNodeIds: string[];
+    danglingEdges: string[];
+    missingTextNodes: string[];
+    missingSpeakerNodes: string[];
+  };
   questRelationEdges?: Array<{
+    edgeId?: string;
     fromQuestId: string;
     toQuestId?: string;
     talkId?: string;
@@ -251,6 +267,8 @@ export type QuestRecordPayload = {
     sourceHash: string;
     derived: boolean;
     confidence: number;
+    expectedState?: string | number;
+    evidenceEdges?: string[];
     metadata?: Record<string, unknown>;
   }>;
   topology?: {
@@ -258,6 +276,30 @@ export type QuestRecordPayload = {
     childQuestIds: string[];
     parentQuestIds: string[];
     storyOrder?: number;
+    rawRelationEdges?: QuestRecordPayload["questRelationEdges"];
+    derivedRelationEdges?: QuestRecordPayload["questRelationEdges"];
+    subQuestIds?: string[];
+    subQuestOrder?: string[];
+    subQuestRelationEdges?: QuestRecordPayload["questRelationEdges"];
+    aggregateParentQuestId?: string;
+    cycle?: boolean;
+    cycleNodeIds?: string[];
+    danglingEdges?: QuestRecordPayload["questRelationEdges"];
+  };
+  storyProjection?: {
+    regionId?: string;
+    regionTitle?: string;
+    regionOrder?: number;
+    familyId: string;
+    familyTitle: string;
+    displayTitle?: string;
+    familyOrder?: number;
+    chapterId?: string;
+    chapterTitle?: string;
+    chapterOrder?: number;
+    entryType?: "quest" | "collection" | "aggregate";
+    parentQuestId?: string;
+    childQuestIds?: string[];
   };
   completeness: QuestCompleteness;
   completenessReasons?: string[];
@@ -971,6 +1013,23 @@ export type QuestDialoguePage = {
   dialogueEdges: QuestDialogueEdgePayload[];
   participants: EntitySummary[];
   prerequisites: string[];
+  topology?: {
+    prerequisiteQuestIds: string[];
+    childQuestIds: string[];
+    parentQuestIds: string[];
+    storyOrder?: number;
+    aggregateParentQuestId?: string;
+    cycle?: boolean;
+    cycleNodeIds?: string[];
+  };
+  talkProvenance?: {
+    talkIds: string[];
+    resolvedTalkIds: string[];
+    unresolvedTalkIds: string[];
+    ambiguousTalkIds?: string[];
+    sourceKinds?: string[];
+    diagnostics?: Record<string, unknown>;
+  };
   citations: Array<{
     documentId: Id;
     locale: string;
@@ -1322,7 +1381,7 @@ export function validateNormalizedRecords(
   ]);
   const entityDefinitions = new Map<
     string,
-    { type: EntityType; namesByLanguage: Map<string, string> }
+    { type: EntityType; namesByLanguage: Map<string, string>; inferred: boolean }
   >();
   const entityTypes = new Set([
     "character",
@@ -1572,7 +1631,25 @@ export function validateNormalizedRecords(
         entity.aliases?.find((alias) => alias.language)?.language ??
         "und";
       const previousName = previousDefinition?.namesByLanguage.get(language);
-      if (previousDefinition && previousDefinition.type !== entity.type) {
+      const inferred = entity.properties?.inferredFromPrerequisite === true;
+      if (!previousDefinition) {
+        entityDefinitions.set(entity.sourceKey, {
+          type: entity.type,
+          namesByLanguage: new Map([[language, entity.name]]),
+          inferred,
+        });
+      } else if (previousDefinition.inferred && !inferred) {
+        // A prerequisite can be encountered before the real quest document.
+        // Its synthetic name is only a reference placeholder; replace it with
+        // the authoritative definition when the quest record arrives.
+        entityDefinitions.set(entity.sourceKey, {
+          type: entity.type,
+          namesByLanguage: new Map([[language, entity.name]]),
+          inferred: false,
+        });
+      } else if (!previousDefinition.inferred && inferred) {
+        // Keep the concrete definition and ignore a later synthetic reference.
+      } else if (previousDefinition.type !== entity.type) {
         issues.push({
           severity: "error",
           code: "conflicting_entity_definition",
@@ -1585,11 +1662,6 @@ export function validateNormalizedRecords(
           code: "conflicting_entity_definition",
           message: `Conflicting definitions for entity: ${entity.sourceKey}`,
           sourceKey: record.sourceKey,
-        });
-      } else if (!previousDefinition) {
-        entityDefinitions.set(entity.sourceKey, {
-          type: entity.type,
-          namesByLanguage: new Map([[language, entity.name]]),
         });
       } else if (!previousName) {
         previousDefinition.namesByLanguage.set(language, entity.name);

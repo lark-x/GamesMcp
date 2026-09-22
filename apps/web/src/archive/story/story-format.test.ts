@@ -32,10 +32,7 @@ const storyCatalogFixture: ApiStoryCatalog = {
               id: "chapter",
               name: "测试章节",
               order: 1,
-              quests: [
-                catalogEntry("mission/1", "甲任务"),
-                catalogEntry("mission/2", "乙任务"),
-              ],
+              quests: [catalogEntry("mission/1", "甲任务"), catalogEntry("mission/2", "乙任务")],
             },
           ],
         },
@@ -54,6 +51,47 @@ const storyEntry = (questKey: string, title: string): StoryEntry => ({
 });
 
 describe("story catalog filtering", () => {
+  it("renders collections as expandable non-clickable nodes", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "region",
+          name: "测试地区",
+          order: 1,
+          families: [
+            {
+              id: "family",
+              name: "其他独立任务",
+              order: 1,
+              provenance: "derived",
+              chapters: [],
+              quests: [{ ...catalogEntry("quest/child", "子任务"), parentQuestId: "76152" }],
+              collections: [
+                {
+                  ...catalogEntry("quest/76152", "狮子奋迅"),
+                  entryType: "collection",
+                  childQuestIds: ["child"],
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+    const tree = buildStoryTree([], catalog, "", false);
+    expect(tree[0]?.children?.[0]?.children?.[0]).toMatchObject({
+      type: "collection",
+      title: "狮子奋迅",
+    });
+    expect(tree[0]?.children?.[0]?.children?.[0]?.children?.[0]).toMatchObject({
+      type: "quest",
+      questKey: "quest/child",
+    });
+  });
+
   it("keeps a quest whose dialogue body matched the search endpoint", () => {
     const tree = buildStoryTree(
       [storyEntry("mission/2", "乙任务")],
@@ -65,6 +103,49 @@ describe("story catalog filtering", () => {
     expect(tree).toHaveLength(1);
     expect(tree[0]?.children?.[0]?.children?.[0]?.children).toEqual([
       expect.objectContaining({ questKey: "mission/2", title: "乙任务" }),
+    ]);
+  });
+
+  it("resolves collection children that are stored under a chapter", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "region",
+          name: "测试地区",
+          order: 1,
+          families: [
+            {
+              id: "family",
+              name: "测试系列",
+              order: 1,
+              provenance: "derived",
+              quests: [],
+              collections: [
+                {
+                  ...catalogEntry("mission/collection", "合集任务"),
+                  entryType: "collection",
+                  childQuestIds: ["child"],
+                },
+              ],
+              chapters: [
+                {
+                  id: "chapter",
+                  name: "测试章节",
+                  order: 1,
+                  quests: [catalogEntry("mission/child", "子任务")],
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+    const tree = buildStoryTree([], catalog, "", true);
+    expect(tree[0]?.children?.[0]?.children?.[0]?.children).toEqual([
+      expect.objectContaining({ questKey: "mission/child", title: "子任务" }),
     ]);
   });
 
@@ -88,17 +169,27 @@ describe("formatStoryString", () => {
 
   describe("NICKNAME and REALNAME replacement", () => {
     it("replaces {NICKNAME} with customized nickname", () => {
-      expect(formatStoryString("#{NICKNAME}，我们出发吧！", malePrefs)).toBe("空之轨迹，我们出发吧！");
-      expect(formatStoryString("#{NICKNAME}，我们出发吧！", femalePrefs)).toBe("荧光夜曲，我们出发吧！");
+      expect(formatStoryString("#{NICKNAME}，我们出发吧！", malePrefs)).toBe(
+        "空之轨迹，我们出发吧！",
+      );
+      expect(formatStoryString("#{NICKNAME}，我们出发吧！", femalePrefs)).toBe(
+        "荧光夜曲，我们出发吧！",
+      );
     });
 
     it("falls back to 旅行者 if nickname is empty", () => {
-      expect(formatStoryString("#{NICKNAME}！", { gender: "male", nickname: "   " })).toBe("旅行者！");
+      expect(formatStoryString("#{NICKNAME}！", { gender: "male", nickname: "   " })).toBe(
+        "旅行者！",
+      );
     });
 
     it("resolves REALNAME macro to canonical name", () => {
-      expect(formatStoryString("请呼唤我的名字，{REALNAME[ID(1)|HOSTONLY(true)]}。", malePrefs)).toBe("请呼唤我的名字，空。");
-      expect(formatStoryString("请呼唤我的名字，{REALNAME[ID(1)|HOSTONLY(true)]}。", femalePrefs)).toBe("请呼唤我的名字，荧。");
+      expect(
+        formatStoryString("请呼唤我的名字，{REALNAME[ID(1)|HOSTONLY(true)]}。", malePrefs),
+      ).toBe("请呼唤我的名字，空。");
+      expect(
+        formatStoryString("请呼唤我的名字，{REALNAME[ID(1)|HOSTONLY(true)]}。", femalePrefs),
+      ).toBe("请呼唤我的名字，荧。");
     });
   });
 
@@ -128,13 +219,15 @@ describe("formatStoryString", () => {
 
   describe("SEXPRO macros", () => {
     it("resolves PLAYERAVATAR macros for male and female", () => {
-      const text = "哈哈，你很懂嘛，{PLAYERAVATAR#SEXPRO[INFO_MALE_PRONOUN_BOYA|INFO_FEMALE_PRONOUN_GIRLB]}！";
+      const text =
+        "哈哈，你很懂嘛，{PLAYERAVATAR#SEXPRO[INFO_MALE_PRONOUN_BOYA|INFO_FEMALE_PRONOUN_GIRLB]}！";
       expect(formatStoryString(text, malePrefs)).toBe("哈哈，你很懂嘛，少年！");
       expect(formatStoryString(text, femalePrefs)).toBe("哈哈，你很懂嘛，少女！");
     });
 
     it("resolves MATEAVATAR macros to the opposite twin", () => {
-      const text = "深渊教团的殿下…正是{MATEAVATAR#SEXPRO[INFO_MALE_PRONOUN_BROTHER|INFO_FEMALE_PRONOUN_SISTER]}。";
+      const text =
+        "深渊教团的殿下…正是{MATEAVATAR#SEXPRO[INFO_MALE_PRONOUN_BROTHER|INFO_FEMALE_PRONOUN_SISTER]}。";
       // When player is male (空), mate is female (荧/妹妹)
       expect(formatStoryString(text, malePrefs)).toBe("深渊教团的殿下…正是妹妹。");
       // When player is female (荧), mate is male (空/哥哥)
@@ -157,34 +250,34 @@ describe("formatStoryString", () => {
   describe("Ruby furigana tag parsing", () => {
     it("parses Chinese split words into <ruby>", () => {
       expect(formatStoryString("逐影猎人曾经拯救了城{RUBY#[D]枫丹}市的英雄。", malePrefs)).toBe(
-        "逐影猎人曾经拯救了<ruby>城市<rt>枫丹</rt></ruby>的英雄。"
+        "逐影猎人曾经拯救了<ruby>城市<rt>枫丹</rt></ruby>的英雄。",
       );
       expect(formatStoryString("它叫做「虚{RUBY#[D]阿卡西}空终端」", malePrefs)).toBe(
-        "它叫做「<ruby>虚空终端<rt>阿卡西</rt></ruby>」"
+        "它叫做「<ruby>虚空终端<rt>阿卡西</rt></ruby>」",
       );
       expect(formatStoryString("古名「马{RUBY#[D]回火}力卜」", malePrefs)).toBe(
-        "古名「<ruby>马力卜<rt>回火</rt></ruby>」"
+        "古名「<ruby>马力卜<rt>回火</rt></ruby>」",
       );
     });
 
     it("parses English split words into <ruby>", () => {
       expect(formatStoryString("Mak{RUBY#[S]the previous Shogun}oto.", malePrefs)).toBe(
-        "<ruby>Makoto<rt>the previous Shogun</rt></ruby>."
+        "<ruby>Makoto<rt>the previous Shogun</rt></ruby>.",
       );
       expect(formatStoryString("Drago{RUBY#[S]Nibelung}n", malePrefs)).toBe(
-        "<ruby>Dragon<rt>Nibelung</rt></ruby>"
+        "<ruby>Dragon<rt>Nibelung</rt></ruby>",
       );
       expect(formatStoryString("sw{RUBY#[S]claws of steel}ord", malePrefs)).toBe(
-        "<ruby>sword<rt>claws of steel</rt></ruby>"
+        "<ruby>sword<rt>claws of steel</rt></ruby>",
       );
     });
 
     it("parses terms with particle boundaries", () => {
       expect(formatStoryString("这是真{RUBY#[D]前代雷神}的佩刀。", malePrefs)).toBe(
-        "这是<ruby>真<rt>前代雷神</rt></ruby>的佩刀。"
+        "这是<ruby>真<rt>前代雷神</rt></ruby>的佩刀。",
       );
       expect(formatStoryString("转移到我的剑{RUBY#[S]钢铁的爪牙}里就行。", malePrefs)).toBe(
-        "转移到我的<ruby>剑<rt>钢铁的爪牙</rt></ruby>里就行。"
+        "转移到我的<ruby>剑<rt>钢铁的爪牙</rt></ruby>里就行。",
       );
     });
   });
@@ -227,7 +320,7 @@ describe("formatStoryString", () => {
 
     it("removes {TEXTJOIN} macros cleanly", () => {
       expect(formatStoryString("列车即将跃迁{TEXTJOIN#55}，请各位乘客坐好。", srMale)).toBe(
-        "列车即将跃迁，请各位乘客坐好。"
+        "列车即将跃迁，请各位乘客坐好。",
       );
     });
 
@@ -235,16 +328,16 @@ describe("formatStoryString", () => {
       // Upstream writes the annotated word BETWEEN the markers, unlike the
       // Genshin {RUBY#annotation#base} form.
       expect(formatStoryString("{RUBY_B#「毁灭」的令使}绝灭大君{RUBY_E#}不在附近。", srMale)).toBe(
-        "<ruby>绝灭大君<rt>「毁灭」的令使</rt></ruby>不在附近。"
+        "<ruby>绝灭大君<rt>「毁灭」的令使</rt></ruby>不在附近。",
       );
       expect(formatStoryString("拥有星神{RUBY_B#「毁灭」}纳努克{RUBY_E#}的赐福。", srMale)).toBe(
-        "拥有星神<ruby>纳努克<rt>「毁灭」</rt></ruby>的赐福。"
+        "拥有星神<ruby>纳努克<rt>「毁灭」</rt></ruby>的赐福。",
       );
     });
 
     it("never leaks an unpaired ruby marker to the reader", () => {
       expect(formatStoryString("残留{RUBY_B#注}标记{RUBY_E#}结束", srMale)).toBe(
-        "残留<ruby>标记<rt>注</rt></ruby>结束"
+        "残留<ruby>标记<rt>注</rt></ruby>结束",
       );
       expect(formatStoryString("未闭合{RUBY_B#注释}的文本", srMale)).toBe("未闭合的文本");
       expect(formatStoryString("孤立{RUBY_E#}标记", srMale)).toBe("孤立标记");

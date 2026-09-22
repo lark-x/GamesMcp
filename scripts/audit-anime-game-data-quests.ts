@@ -12,6 +12,7 @@ import { runStoragePreflight } from "./check-data-storage.ts";
 const execFileAsync = promisify(execFile);
 const locales = ["zh-CN", "en"] as const;
 type Locale = (typeof locales)[number];
+type ReportObject = Record<string, unknown>;
 
 function argValue(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -26,6 +27,19 @@ function idText(value: unknown): string | undefined {
 
 function unique(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
+}
+
+function countValues(values: string[]): Record<string, number> {
+  return values.reduce<Record<string, number>>((counts, value) => {
+    counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function nodeSourceFiles(record: ReturnType<typeof buildRecord>): string[] {
@@ -43,13 +57,6 @@ function recordSourceFiles(record: ReturnType<typeof buildRecord>): string[] {
     ? provenance.sourceFiles.filter((value): value is string => typeof value === "string")
     : [];
   return unique([...sourceFiles, ...nodeSourceFiles(record)]);
-}
-
-function countValues(values: string[]): Record<string, number> {
-  return values.reduce<Record<string, number>>((counts, value) => {
-    counts[value] = (counts[value] ?? 0) + 1;
-    return counts;
-  }, {});
 }
 
 async function upstreamMetadata(upstreamDir: string) {
@@ -82,10 +89,153 @@ function sourcePathReason(record: ReturnType<typeof buildRecord>): string[] {
     reasons.push(`content_role_${quest.contentRole}`);
   if (quest?.qualityCode === "speaker_unresolved") reasons.push("speaker_name_unresolved");
   if (record.metadata.titleResolutionMethod === "unresolved") reasons.push("title_unresolved");
-  if (quest?.visibility !== "public") {
-    reasons.push(`visibility_${quest?.visibility ?? "unknown"}`);
-  }
+  if (quest?.visibility !== "public") reasons.push(`visibility_${quest?.visibility ?? "unknown"}`);
   return reasons;
+}
+
+function taskLocaleReport(
+  record: ReturnType<typeof buildRecord> | undefined,
+  mainId: string,
+  locale: Locale,
+  publicKeys: Set<string>,
+  excludedByKey: Map<string, string>,
+  failureByKey: Map<string, string>,
+  resolution:
+    | {
+        talkIds: string[];
+        resolvedTalkIds: string[];
+        unresolvedTalkIds: string[];
+        ambiguousTalkIds: string[];
+        candidates: Array<Record<string, unknown>>;
+      }
+    | undefined,
+): ReportObject {
+  if (!record?.quest) {
+    const sourceKey = `quest/${mainId}/locale/${locale}`;
+    return {
+      status: "parser_failed",
+      qualityCode: "parser_failed",
+      reasons: [failureByKey.get(sourceKey) ?? "record_not_built"],
+    };
+  }
+  const quest = record.quest;
+  const sourceFiles = recordSourceFiles(record);
+  return {
+    status: publicKeys.has(`${mainId}/${locale}`)
+      ? "public"
+      : excludedByKey.has(record.sourceKey)
+        ? "excluded"
+        : "built",
+    title: record.title,
+    displayTitle: quest.displayTitle,
+    questType: quest.questType,
+    regionId: quest.regionId,
+    region: quest.regionName,
+    chapterId: quest.chapterId,
+    chapter: quest.chapterTitle,
+    chapterOrder: quest.chapterOrder,
+    seriesId: quest.seriesId,
+    series: quest.seriesTitle,
+    familyId: quest.storyFamilyId,
+    family: quest.storyFamilyTitle,
+    familyProvenance: quest.storyFamilyProvenance,
+    familyOrder: quest.storyFamilyOrder,
+    storyPosition: quest.storyPosition,
+    contentRole: quest.contentRole,
+    dialogueResolutionStatus: quest.dialogueResolutionStatus,
+    talkIds: quest.talkIds ?? [],
+    resolvedTalkIds: quest.resolvedTalkIds ?? [],
+    unresolvedTalkIds: quest.unresolvedTalkIds ?? [],
+    talkSourceKinds: quest.talkSourceKinds ?? [],
+    relationEdgeCount: quest.questRelationEdges?.length ?? 0,
+    relationEdges: quest.questRelationEdges,
+    topology: quest.topology,
+    dialogueDiagnostics: quest.dialogueDiagnostics,
+    storyProjection: quest.storyProjection,
+    talkResolution: resolution
+      ? {
+          talkIds: resolution.talkIds,
+          resolvedTalkIds: resolution.resolvedTalkIds,
+          unresolvedTalkIds: resolution.unresolvedTalkIds,
+          ambiguousTalkIds: resolution.ambiguousTalkIds,
+          candidates: resolution.candidates,
+        }
+      : undefined,
+    subquestCount: quest.subquests.length,
+    dialogueNodeCount: quest.dialogueNodes.length,
+    dialogueEdgeCount: quest.dialogueEdges.length,
+    speakerUnresolvedCount: quest.dialogueNodes.filter(
+      (node) => Boolean(node.speakerKey) && !node.speakerName,
+    ).length,
+    qualityCode: quest.qualityCode,
+    completeness: quest.completeness,
+    completenessReasons: quest.completenessReasons,
+    bodyAvailability:
+      quest.dialogueNodes.length > 0
+        ? "dialogue"
+        : quest.subquests.some((subquest) => Boolean(subquest.objective))
+          ? "objective_only"
+          : "none",
+    sourceFiles,
+    dialogueLineage: record.metadata.provenance?.lineage?.dialogue,
+    reasons: [
+      ...sourcePathReason(record),
+      ...(excludedByKey.has(record.sourceKey)
+        ? [`excluded:${excludedByKey.get(record.sourceKey)}`]
+        : []),
+    ],
+  };
+}
+
+function groupedTitles(
+  tasks: ReportObject[],
+  field: string,
+): Array<{ title: string; ids: string[] }> {
+  const groups = new Map<string, string[]>();
+  for (const task of tasks) {
+    const title = typeof task[field] === "string" ? String(task[field]) : undefined;
+    const id = typeof task.mainQuestId === "string" ? task.mainQuestId : undefined;
+    if (!title || !id) continue;
+    const ids = groups.get(title) ?? [];
+    ids.push(id);
+    groups.set(title, ids);
+  }
+  return [...groups.entries()]
+    .filter(([, ids]) => new Set(ids).size > 1)
+    .map(([title, ids]) => ({ title, ids: [...new Set(ids)].sort() }))
+    .sort(
+      (left, right) => right.ids.length - left.ids.length || left.title.localeCompare(right.title),
+    );
+}
+
+function numberFrom(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function auditMetricSummary(summary: ReportObject | undefined, manifest: ReportObject | undefined) {
+  const topology = (summary?.topologyAudit as ReportObject | undefined) ?? {};
+  const talk = (summary?.talkAudit as ReportObject | undefined) ?? {};
+  const dialogue = (summary?.dialogueAudit as ReportObject | undefined) ?? {};
+  const contentRole = (summary?.contentRoleZh as Record<string, unknown> | undefined) ?? {};
+  const manifestCounts = (manifest?.counts as ReportObject | undefined) ?? {};
+  return {
+    resolvedQuestCount:
+      numberFrom(summary?.talkResolvedQuestCount) ??
+      numberFrom(summary?.resolvedQuestCount) ??
+      null,
+    dialogueNodeCount:
+      numberFrom(dialogue.dialogueNodes) ?? numberFrom(manifestCounts.dialogueNodes) ?? null,
+    fallbackFamilyCount: numberFrom(summary?.fallbackFamilyCount) ?? null,
+    standaloneQuestCount: numberFrom(summary?.standaloneQuestCount) ?? null,
+    aggregateCount: numberFrom(contentRole.aggregate) ?? null,
+    controlCount:
+      (numberFrom(contentRole.control) ?? 0) +
+      (numberFrom(contentRole.trigger) ?? 0) +
+      (numberFrom(contentRole.reward) ?? 0),
+    talkUnresolvedCount:
+      numberFrom(talk.unresolvedTalkIds) ?? numberFrom(summary?.talkProblemQuestCount) ?? null,
+    danglingEdgeCount: numberFrom(dialogue.danglingEdges) ?? null,
+  };
 }
 
 async function main() {
@@ -126,98 +276,39 @@ async function main() {
     const mainId = idText(main.id ?? main.mainQuestId) ?? "unknown";
     const relations = inputs.mainQuestRelations.get(mainId) ?? [];
     const binQuest = inputs.binQuestByMainId.get(mainId);
-    const resolvedTalks = inputs.resolvedTalksByMainId.get(mainId);
+    const resolved = inputs.resolvedTalksByMainId.get(mainId);
     const localesReport = Object.fromEntries(
-      locales.map((locale) => {
-        const record = auditByMainLocale.get(`${mainId}/${locale}`);
-        if (!record) {
-          const sourceKey = `quest/${mainId}/locale/${locale}`;
-          return [
-            locale,
-            {
-              status: "parser_failed",
-              qualityCode: "parser_failed",
-              reasons: [failureByKey.get(`quest/${mainId}/locale/${locale}`) ?? "record_not_built"],
-            },
-          ];
-        }
-        const quest = record.quest!;
-        const sourceFiles = recordSourceFiles(record);
-        const sourceKey = record.sourceKey;
-        return [
+      locales.map((locale) => [
+        locale,
+        taskLocaleReport(
+          auditByMainLocale.get(`${mainId}/${locale}`),
+          mainId,
           locale,
-          {
-            status: publicKeys.has(`${mainId}/${locale}`)
-              ? "public"
-              : excludedByKey.get(sourceKey)
-                ? "excluded"
-                : "built",
-            title: record.title,
-            questType: quest.questType,
-            regionId: quest.regionId,
-            region: quest.regionName,
-            chapterId: quest.chapterId,
-            chapter: quest.chapterTitle,
-            chapterOrder: quest.chapterOrder,
-            seriesId: quest.seriesId,
-            series: quest.seriesTitle,
-            familyId: quest.storyFamilyId,
-            family: quest.storyFamilyTitle,
-            familyProvenance: quest.storyFamilyProvenance,
-            familyOrder: quest.storyFamilyOrder,
-            storyPosition: quest.storyPosition,
-            relatedMainQuestIds: relations,
-            contentRole: quest.contentRole,
-            dialogueResolutionStatus: quest.dialogueResolutionStatus,
-            talkIds: quest.talkIds,
-            resolvedTalkIds: quest.resolvedTalkIds,
-            unresolvedTalkIds: quest.unresolvedTalkIds,
-            talkSourceKinds: quest.talkSourceKinds,
-            relationEdgeCount: quest.questRelationEdges?.length ?? 0,
-            relationEdges: quest.questRelationEdges,
-            topology: quest.topology,
-            binQuest: binQuest
-              ? {
-                  sourceFile: binQuest.sourceFile,
-                  subQuestIds: binQuest.subQuestIds,
-                  contentCounts: binQuest.contentCounts,
-                  completeTalkIds: binQuest.completeTalkIds,
-                }
-              : undefined,
-            talkResolution: resolvedTalks
-              ? {
-                  talkIds: resolvedTalks.talkIds,
-                  resolvedTalkIds: resolvedTalks.resolvedTalkIds,
-                  unresolvedTalkIds: resolvedTalks.unresolvedTalkIds,
-                  ambiguousTalkIds: resolvedTalks.ambiguousTalkIds,
-                  candidates: resolvedTalks.candidates.map((candidate) => ({
-                    talkId: candidate.talkId,
-                    sourceKind: candidate.sourceKind,
-                    sourceFile: candidate.sourceFile,
-                    confidence: candidate.confidence,
-                    evidence: candidate.evidence,
-                  })),
-                }
-              : undefined,
-            subquestCount: quest.subquests.length,
-            dialogueNodeCount: quest.dialogueNodes.length,
-            dialogueEdgeCount: quest.dialogueEdges.length,
-            speakerUnresolvedCount: quest.dialogueNodes.filter(
-              (node) => Boolean(node.speakerKey) && !node.speakerName,
-            ).length,
-            qualityCode: quest.qualityCode,
-            completeness: quest.completeness,
-            completenessReasons: quest.completenessReasons,
-            sourceFiles,
-            dialogueLineage: record.metadata.provenance?.lineage?.dialogue,
-            reasons: [
-              ...sourcePathReason(record),
-              ...(excludedByKey.has(sourceKey) ? [`excluded:${excludedByKey.get(sourceKey)}`] : []),
-            ],
-          },
-        ];
-      }),
-    ) as Record<Locale, Record<string, unknown>>;
+          publicKeys,
+          excludedByKey,
+          failureByKey,
+          resolved
+            ? {
+                talkIds: resolved.talkIds,
+                resolvedTalkIds: resolved.resolvedTalkIds,
+                unresolvedTalkIds: resolved.unresolvedTalkIds,
+                ambiguousTalkIds: resolved.ambiguousTalkIds,
+                candidates: resolved.candidates.map((candidate) => ({
+                  talkId: candidate.talkId,
+                  subQuestId: candidate.subQuestId,
+                  sourceKind: candidate.sourceKind,
+                  sourceFile: candidate.sourceFile,
+                  confidence: candidate.confidence,
+                  score: candidate.score,
+                  status: candidate.status,
+                  evidence: candidate.evidence,
+                  evidences: candidate.evidences,
+                })),
+              }
+            : undefined,
+        ),
+      ]),
+    ) as Record<Locale, ReportObject>;
     const zh = localesReport["zh-CN"];
     return {
       mainQuestId: mainId,
@@ -225,47 +316,120 @@ async function main() {
       rawType: main.type ?? main.questType,
       directSeries: main.series,
       relationIds: relations,
-      contentRole: zh?.contentRole,
-      dialogueResolutionStatus: zh?.dialogueResolutionStatus,
-      talkIds: zh?.talkIds ?? [],
-      resolvedTalkIds: zh?.resolvedTalkIds ?? [],
-      unresolvedTalkIds: zh?.unresolvedTalkIds ?? [],
-      relationEdgeCount: zh?.relationEdgeCount ?? 0,
+      contentRole: zh.contentRole,
+      dialogueResolutionStatus: zh.dialogueResolutionStatus,
+      talkIds: zh.talkIds ?? [],
+      resolvedTalkIds: zh.resolvedTalkIds ?? [],
+      unresolvedTalkIds: zh.unresolvedTalkIds ?? [],
+      relationEdgeCount: zh.relationEdgeCount ?? 0,
       codexSourceFile: inputs.codexQuestByMainId.get(mainId)?.relativePath,
       explicitQuestRows: (inputs.questByMainId.get(mainId) ?? []).length,
       locales: localesReport,
-      qualityCode: zh?.qualityCode,
-      familyId: zh?.familyId,
-      family: zh?.family,
-      chapter: zh?.chapter,
-      dialogueNodeCount: zh?.dialogueNodeCount ?? 0,
-      sourceFiles: zh?.sourceFiles ?? [],
+      qualityCode: zh.qualityCode,
+      familyId: zh.familyId,
+      family: zh.family,
+      chapter: zh.chapter,
+      dialogueNodeCount: zh.dialogueNodeCount ?? 0,
+      sourceFiles: zh.sourceFiles ?? [],
+      binQuest: binQuest
+        ? {
+            sourceFile: binQuest.sourceFile,
+            subQuestIds: binQuest.subQuestIds,
+            contentCounts: binQuest.contentCounts,
+            execCounts: binQuest.execCounts,
+            completeTalkIds: binQuest.completeTalkIds,
+            relationEdges: binQuest.relationEdges,
+          }
+        : undefined,
     };
   });
 
-  const questTalkFiles = Object.keys(inputs.questTalkInputHashes).sort();
-  const matchedQuestTalkFiles = new Set(
-    result.auditRecords.flatMap((record) =>
-      recordSourceFiles(record).filter((path) => path.startsWith("BinOutput/Talk/Quest/")),
-    ),
-  );
-  const questTalkFilesWithoutParsedNodes = questTalkFiles.filter(
-    (path) => !matchedQuestTalkFiles.has(path),
-  );
-  const duplicateTitles = new Map<string, string[]>();
-  for (const task of tasks) {
-    const title =
-      typeof task.locales["zh-CN"]?.title === "string" ? task.locales["zh-CN"].title : undefined;
-    if (!title) continue;
-    const list = duplicateTitles.get(title) ?? [];
-    list.push(task.mainQuestId);
-    duplicateTitles.set(title, list);
-  }
-  const duplicateTitleGroups = [...duplicateTitles.entries()]
-    .filter(([, ids]) => ids.length > 1)
-    .map(([title, ids]) => ({ title, mainQuestIds: ids.sort() }));
-
   const zhTasks = tasks.map((task) => task.locales["zh-CN"]);
+  const familyTasks = new Map<string, typeof tasks>();
+  for (const task of tasks) {
+    const familyId = typeof task.familyId === "string" ? task.familyId : undefined;
+    if (!familyId) continue;
+    const list = familyTasks.get(familyId) ?? [];
+    list.push(task);
+    familyTasks.set(familyId, list);
+  }
+  const familyTitles = tasks.map((task) => ({
+    mainQuestId: task.mainQuestId,
+    family: task.family,
+  }));
+  const chapterTitles = tasks.map((task) => ({
+    mainQuestId: task.mainQuestId,
+    chapter: task.chapter,
+  }));
+  const fallbackFamilies = [...familyTasks.keys()].filter((id) =>
+    id.startsWith("genshin:standalone:"),
+  );
+  const standaloneTasks = tasks.filter(
+    (task) => typeof task.familyId === "string" && task.familyId.startsWith("genshin:standalone:"),
+  );
+  const familiesWithOneQuest = [...familyTasks.entries()]
+    .filter(([, members]) => members.length === 1)
+    .map(([id]) => id)
+    .sort();
+  const familiesWithOnlyAggregate = [...familyTasks.entries()]
+    .filter(
+      ([, members]) =>
+        members.length > 0 && members.every((task) => task.contentRole === "aggregate"),
+    )
+    .map(([id]) => id)
+    .sort();
+  const orphanAggregate = tasks
+    .filter((task) => task.contentRole === "aggregate")
+    .filter((task) => {
+      const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
+      return !Array.isArray(topology?.childQuestIds) || topology.childQuestIds.length === 0;
+    })
+    .map((task) => task.mainQuestId)
+    .sort();
+  const crossRegionFamily = [...familyTasks.entries()]
+    .filter(([, members]) => {
+      const regions = new Set(
+        members.map((task) => task.locales["zh-CN"].regionId as string | undefined).filter(Boolean),
+      );
+      return regions.size > 1;
+    })
+    .map(([id]) => id)
+    .sort();
+
+  const topologyEdges = tasks.flatMap((task) => {
+    const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
+    return Array.isArray(topology?.derivedRelationEdges) ? topology.derivedRelationEdges : [];
+  }) as ReportObject[];
+  const rawEdges = tasks.flatMap((task) => {
+    const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
+    return Array.isArray(topology?.rawRelationEdges) ? topology.rawRelationEdges : [];
+  }) as ReportObject[];
+  const topologyAudit = {
+    rawRelationEdges: rawEdges.length,
+    derivedRelationEdges: topologyEdges.length,
+    requiresEdges: topologyEdges.filter((edge) => edge.relationType === "requires").length,
+    aggregateEdges: topologyEdges.filter((edge) => edge.relationType === "aggregate_of").length,
+    startsAfterEdges: topologyEdges.filter((edge) => edge.relationType === "starts_after").length,
+    cycles: tasks
+      .filter((task) => (task.locales["zh-CN"].topology as ReportObject | undefined)?.cycle)
+      .map((task) => task.mainQuestId),
+    orphanNodes: tasks
+      .filter((task) => (task.locales["zh-CN"].relationEdgeCount ?? 0) === 0)
+      .map((task) => task.mainQuestId),
+    connectedComponents: [
+      ...new Map(
+        [...inputs.questFamilyComponents.values()].map((component) => [
+          [...component].sort().join(","),
+          component,
+        ]),
+      ).values(),
+    ],
+    danglingEdges: tasks.reduce((sum, task) => {
+      const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
+      return sum + (Array.isArray(topology?.danglingEdges) ? topology.danglingEdges.length : 0);
+    }, 0),
+  };
+
   const talkResolutionProblems = [...inputs.resolvedTalksByMainId.entries()].flatMap(
     ([mainQuestId, resolved]) => [
       ...(resolved.unresolvedTalkIds.length
@@ -276,15 +440,192 @@ async function main() {
         : []),
     ],
   );
+  const referencedTalkIds = new Set(tasks.flatMap((task) => stringArray(task.talkIds)));
   const sourceFilesUsed = new Set(tasks.flatMap((task) => task.sourceFiles));
   const registeredTalkFilesNotReferenced = inputs.talkRegistry.files
     .filter((file) => !sourceFilesUsed.has(file.relativePath))
     .map((file) => ({
       relativePath: file.relativePath,
       sourceKind: file.sourceKind,
+      embeddedTalkId: file.embeddedTalkId,
       parsed: file.parsed,
+      metadataScanned: file.metadataScanned,
       dialogueRowCount: file.dialogueRowCount ?? 0,
     }));
+  const orphanDialogueAssets = inputs.talkRegistry.assets
+    .filter(
+      (asset) =>
+        asset.dialogueRows.length > 0 && (!asset.talkId || !referencedTalkIds.has(asset.talkId)),
+    )
+    .map((asset) => ({
+      talkId: asset.talkId,
+      sourceKind: asset.sourceKind,
+      relativePath: asset.relativePath,
+      dialogueRows: asset.dialogueRows.length,
+    }));
+  const metadataScanFailures = inputs.talkRegistry.files
+    .filter((file) => file.metadataScanned && !file.fileHash)
+    .map((file) => file.relativePath);
+
+  const zhRecords = result.auditRecords.filter((record) => record.locale === "zh-CN");
+  const dialogueNodes = zhRecords.flatMap((record) => record.quest?.dialogueNodes ?? []);
+  const dialogueEdges = zhRecords.flatMap((record) => record.quest?.dialogueEdges ?? []);
+  const bodyGroups = new Map<string, string[]>();
+  const speakerBodyGroups = new Map<string, string[]>();
+  const dialogIdTalkGroups = new Map<string, Set<string>>();
+  for (const node of dialogueNodes) {
+    const body = node.body.trim();
+    if (!body) continue;
+    const nodeKey = node.nodeKey;
+    const bodyList = bodyGroups.get(body) ?? [];
+    bodyList.push(nodeKey);
+    bodyGroups.set(body, bodyList);
+    const speakerBody = `${node.speakerKey ?? ""}\u0000${body}`;
+    const speakerList = speakerBodyGroups.get(speakerBody) ?? [];
+    speakerList.push(nodeKey);
+    speakerBodyGroups.set(speakerBody, speakerList);
+    const talkId = typeof node.metadata?.talkId === "string" ? node.metadata.talkId : undefined;
+    if (talkId) {
+      const talkIds = dialogIdTalkGroups.get(String(node.nodeId)) ?? new Set<string>();
+      talkIds.add(talkId);
+      dialogIdTalkGroups.set(String(node.nodeId), talkIds);
+    }
+  }
+  const duplicateGroups = (groups: Map<string, string[]>) =>
+    [...groups.entries()]
+      .filter(([, ids]) => ids.length > 1)
+      .map(([key, ids]) => ({ key, count: ids.length, nodeKeys: ids.slice(0, 20) }))
+      .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key));
+  const dialogueAudit = {
+    dialogueNodes: dialogueNodes.length,
+    dialogueEdges: dialogueEdges.length,
+    danglingEdges: zhRecords.reduce(
+      (sum, record) => sum + (record.quest?.dialogueDiagnostics?.danglingEdges.length ?? 0),
+      0,
+    ),
+    rootlessGraphs: zhRecords
+      .filter((record) => record.quest?.dialogueDiagnostics?.graphHasNoRoot)
+      .map((record) => record.quest?.mainQuestId),
+    cyclicGraphs: zhRecords
+      .filter((record) => record.quest?.dialogueDiagnostics?.cycle)
+      .map((record) => record.quest?.mainQuestId),
+    missingTextNodes: zhRecords.reduce(
+      (sum, record) => sum + (record.quest?.dialogueDiagnostics?.missingTextNodes.length ?? 0),
+      0,
+    ),
+    missingSpeakerNodes: zhRecords.reduce(
+      (sum, record) => sum + (record.quest?.dialogueDiagnostics?.missingSpeakerNodes.length ?? 0),
+      0,
+    ),
+    duplicateBodyNodes: duplicateGroups(bodyGroups).reduce(
+      (sum, group) => sum + group.count - 1,
+      0,
+    ),
+    duplicateSpeakerBodyNodes: duplicateGroups(speakerBodyGroups).reduce(
+      (sum, group) => sum + group.count - 1,
+      0,
+    ),
+    duplicateDialogIdsAcrossTalks: [...dialogIdTalkGroups.entries()]
+      .filter(([, talkIds]) => talkIds.size > 1)
+      .map(([dialogId, talkIds]) => ({ dialogId, talkIds: [...talkIds].sort() })),
+    duplicateBodyGroups: duplicateGroups(bodyGroups).slice(0, 200),
+    duplicateSpeakerBodyGroups: duplicateGroups(speakerBodyGroups).slice(0, 200),
+  };
+
+  const duplicateFamilyTitles = groupedTitles(
+    tasks.map((task) => ({ mainQuestId: task.mainQuestId, family: task.family })),
+    "family",
+  );
+  const duplicateChapterTitles = groupedTitles(
+    tasks.map((task) => ({ mainQuestId: task.mainQuestId, chapter: task.chapter })),
+    "chapter",
+  );
+  const summary = {
+    mainQuests: inputs.mainQuest.length,
+    auditLocaleRecords: result.auditRecords.length,
+    publicLocaleRecords: result.records.length,
+    excludedLocaleRecords: result.manifest.excluded.length,
+    parserFailures: result.manifest.failures.length,
+    metadataOnlyZh: tasks.filter((task) => task.qualityCode === "metadata_only").length,
+    partialZh: tasks.filter((task) => task.qualityCode === "partial_dialogue").length,
+    completeZh: tasks.filter((task) => task.qualityCode === "complete").length,
+    unresolvedSpeakerZh: tasks.filter((task) => task.qualityCode === "speaker_unresolved").length,
+    resolvedQuestCount: zhTasks.filter((task) => task.dialogueResolutionStatus === "resolved")
+      .length,
+    familyCount: familyTasks.size,
+    fallbackFamilyCount: fallbackFamilies.length,
+    standaloneQuestCount: standaloneTasks.length,
+    duplicateTitleGroups: duplicateChapterTitles.length,
+    duplicateFamilyTitles,
+    duplicateChapterTitles,
+    familiesWithOneQuest,
+    familiesWithOnlyAggregate,
+    orphanAggregate,
+    crossRegionFamily,
+    contentRoleZh: countValues(
+      zhTasks.flatMap((item) => (typeof item.contentRole === "string" ? [item.contentRole] : [])),
+    ),
+    dialogueResolutionStatusZh: countValues(
+      zhTasks.flatMap((item) =>
+        typeof item.dialogueResolutionStatus === "string" ? [item.dialogueResolutionStatus] : [],
+      ),
+    ),
+    talkResolvedQuestCount: zhTasks.filter((item) => item.dialogueResolutionStatus === "resolved")
+      .length,
+    talkProblemQuestCount: talkResolutionProblems.length,
+    topologyAudit,
+    talkAudit: {
+      expectedTalkIds: [...inputs.resolvedTalksByMainId.values()].reduce(
+        (sum, item) => sum + item.talkIds.length,
+        0,
+      ),
+      resolvedTalkIds: [...inputs.resolvedTalksByMainId.values()].reduce(
+        (sum, item) => sum + item.resolvedTalkIds.length,
+        0,
+      ),
+      unresolvedTalkIds: [...inputs.resolvedTalksByMainId.values()].reduce(
+        (sum, item) => sum + item.unresolvedTalkIds.length,
+        0,
+      ),
+      ambiguousTalkIds: [...inputs.resolvedTalksByMainId.values()].reduce(
+        (sum, item) => sum + item.ambiguousTalkIds.length,
+        0,
+      ),
+      duplicateTalkAssets: inputs.talkRegistry.duplicateTalkIds.length,
+      talkAssetsByKind: inputs.talkRegistry.coverage.fileCountsByKind,
+      lazyLoadedByKind: inputs.talkRegistry.coverage.lazyLoadedByKind ?? {},
+      metadataScannedFiles: inputs.talkRegistry.coverage.metadataScannedFiles ?? 0,
+    },
+    dialogueAudit,
+  };
+
+  const baselinePath = argValue("baseline");
+  let baseline: ReportObject | undefined;
+  if (baselinePath) {
+    const requestedPath = resolve(baselinePath);
+    const baselineFile = (await stat(requestedPath)).isDirectory()
+      ? `${requestedPath}.json`
+      : requestedPath;
+    baseline = JSON.parse(await readFile(baselineFile, "utf8")) as ReportObject;
+  }
+  const currentMetric = auditMetricSummary(summary, result.manifest as unknown as ReportObject);
+  const beforeMetric = baseline
+    ? auditMetricSummary(
+        baseline.summary as ReportObject | undefined,
+        baseline.conversionManifest as ReportObject | undefined,
+      )
+    : undefined;
+  const delta = Object.fromEntries(
+    Object.entries(currentMetric).map(([key, current]) => {
+      const before = beforeMetric?.[key as keyof typeof currentMetric];
+      return [
+        key,
+        typeof current === "number" && typeof before === "number" ? current - before : null,
+      ];
+    }),
+  );
+  const beforeAfter = { before: beforeMetric ?? null, after: currentMetric, delta };
+
   const focusIds = [
     "21009",
     "72236",
@@ -304,75 +645,33 @@ async function main() {
     "74075",
     "74076",
     "74077",
-    "74165",
     "74078",
+    "74165",
+    "74183",
     "74184",
     "74194",
-    "74183",
     "74195",
     "74196",
     "76148",
     "76152",
   ];
-  const baselinePath = argValue("baseline");
-  let baseline: Record<string, unknown> | undefined;
-  if (baselinePath) {
-    try {
-      const requestedPath = resolve(baselinePath);
-      const baselineFile = (await stat(requestedPath)).isDirectory()
-        ? `${requestedPath}.json`
-        : requestedPath;
-      baseline = JSON.parse(await readFile(baselineFile, "utf8")) as Record<string, unknown>;
-    } catch (error) {
-      throw new Error(
-        `baseline_read_failed:${baselinePath}:${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     upstream: { directory: upstreamDir, ...git },
-    summary: {
-      mainQuests: inputs.mainQuest.length,
-      auditLocaleRecords: result.auditRecords.length,
-      publicLocaleRecords: result.records.length,
-      excludedLocaleRecords: result.manifest.excluded.length,
-      parserFailures: result.manifest.failures.length,
-      metadataOnlyZh: tasks.filter((task) => task.qualityCode === "metadata_only").length,
-      partialZh: tasks.filter((task) => task.qualityCode === "partial_dialogue").length,
-      completeZh: tasks.filter((task) => task.qualityCode === "complete").length,
-      unresolvedSpeakerZh: tasks.filter((task) => task.qualityCode === "speaker_unresolved").length,
-      familyCount: new Set(tasks.map((task) => task.familyId).filter(Boolean)).size,
-      duplicateTitleGroups: duplicateTitleGroups.length,
-      contentRoleZh: countValues(
-        zhTasks.flatMap((item) =>
-          typeof item?.contentRole === "string" ? [item.contentRole] : [],
-        ),
-      ),
-      dialogueResolutionStatusZh: countValues(
-        zhTasks.flatMap((item) =>
-          typeof item?.dialogueResolutionStatus === "string" ? [item.dialogueResolutionStatus] : [],
-        ),
-      ),
-      talkResolvedQuestCount: zhTasks.filter(
-        (item) => item?.dialogueResolutionStatus === "resolved",
-      ).length,
-      talkProblemQuestCount: talkResolutionProblems.length,
-    },
+    summary: { ...summary, beforeAfter },
     conversionManifest: result.manifest,
     sourceAudit: {
-      questTalkFiles: questTalkFiles.length,
-      questTalkRows: inputs.questTalkDialogRows.length,
-      questTalkFilesWithParsedNodes: matchedQuestTalkFiles.size,
-      questTalkFilesWithoutParsedNodes,
-      questTalkFailures: inputs.questTalkFailures,
       binQuestFiles: inputs.binQuest.length,
       binQuestParsedMainQuests: inputs.binQuestByMainId.size,
       binQuestFailures: inputs.binQuestFailures,
       binQuestContentCounts: inputs.binQuest.reduce<Record<string, number>>((counts, record) => {
         for (const [key, value] of Object.entries(record.contentCounts))
+          counts[key] = (counts[key] ?? 0) + value;
+        return counts;
+      }, {}),
+      binQuestExecCounts: inputs.binQuest.reduce<Record<string, number>>((counts, record) => {
+        for (const [key, value] of Object.entries(record.execCounts ?? {}))
           counts[key] = (counts[key] ?? 0) + value;
         return counts;
       }, {}),
@@ -383,90 +682,97 @@ async function main() {
       },
       talkResolutionProblems,
       registeredTalkFilesNotReferenced,
+      orphanDialogueAssets,
+      metadataScanFailures,
       codexFiles: inputs.codexQuest.length,
       codexFilesWithoutMainQuest: inputs.codexQuest
-        .filter((item) => !inputs.mainQuestById.has(item.value.IMJHJGBNMMD as string))
+        .filter((item) => !inputs.mainQuestById.has(String(item.value.IMJHJGBNMMD ?? "")))
         .map((item) => item.relativePath),
-      duplicateTitleGroups,
+      duplicateFamilyTitles,
+      duplicateChapterTitles,
+      curatedOverrides: inputs.storyFamilyOverrides.map((override) => ({
+        id: override.id,
+        questIds: override.questIds,
+        reason: override.reason,
+        evidence: override.evidence,
+        reviewedAt: override.reviewedAt,
+        temporary: override.temporary,
+        obsolete: override.obsolete === true,
+      })),
     },
     focus: tasks.filter((task) => focusIds.includes(task.mainQuestId)),
     baselineComparison: baseline
-      ? {
-          baselinePath: resolve(baselinePath!),
-          baselineSummary: baseline.summary,
-          currentSummary: undefined,
-        }
+      ? { baselinePath: resolve(baselinePath!), before: beforeMetric, after: currentMetric, delta }
       : undefined,
     tasks,
   };
-  if (report.baselineComparison) report.baselineComparison.currentSummary = report.summary;
 
   await mkdir(outputBase, { recursive: true });
   await writeFile(`${outputBase}.json`, JSON.stringify(report, null, 2) + "\n", "utf8");
   const problemTasks = tasks.filter((task) => {
     const zh = task.locales["zh-CN"];
     return (
-      task.qualityCode !== "complete" &&
-      !["control", "aggregate"].includes(String(zh?.contentRole ?? ""))
+      zh.qualityCode !== "complete" &&
+      !["control", "aggregate"].includes(String(zh.contentRole ?? ""))
     );
+  });
+  const focusRows = report.focus.map((task) => {
+    const zh = task.locales["zh-CN"];
+    return `| ${task.mainQuestId} | ${String(zh.title ?? "")} | ${String(zh.family ?? "")} | ${String(zh.chapter ?? "")} | ${String(zh.dialogueNodeCount ?? 0)} | ${String(zh.contentRole ?? "unknown")} | ${String(zh.dialogueResolutionStatus ?? "unknown")} | ${String(zh.qualityCode ?? "parser_failed")} |`;
   });
   const markdown = [
     "# 原神任务解析审计",
     "",
     `- 上游：\`${upstreamDir}\``,
     `- Commit：\`${git.commit}\``,
-    `- 主任务：${report.summary.mainQuests}`,
-    `- 可发布双语记录：${report.summary.publicLocaleRecords}`,
-    `- 完整/部分/仅元数据（中文）：${report.summary.completeZh}/${report.summary.partialZh}/${report.summary.metadataOnlyZh}`,
-    `- 解析失败：${report.summary.parserFailures}`,
-    `- 系列：${report.summary.familyCount}`,
-    `- Talk 已解析任务：${report.summary.talkResolvedQuestCount}；存在 Talk 问题的任务：${report.summary.talkProblemQuestCount}`,
+    `- 主任务：${summary.mainQuests}`,
+    `- 可发布双语记录：${summary.publicLocaleRecords}`,
+    `- 完整/部分/仅元数据（中文）：${summary.completeZh}/${summary.partialZh}/${summary.metadataOnlyZh}`,
+    `- 解析失败：${summary.parserFailures}`,
+    `- Story Family：${summary.familyCount}；区域级其他独立任务：${summary.fallbackFamilyCount}；独立任务条目：${summary.standaloneQuestCount}`,
+    `- Talk 已解析任务：${summary.talkResolvedQuestCount}；存在 Talk 问题的任务：${summary.talkProblemQuestCount}`,
+    "",
+    "## BEFORE / AFTER / DELTA",
+    "",
+    "```json",
+    JSON.stringify(beforeAfter, null, 2),
+    "```",
     "",
     "## 重点核对",
     "",
     "| 主任务 | 标题 | 系列 | 章节 | 对白 | 内容角色 | Talk 状态 | 质量 |",
     "| --- | --- | --- | --- | ---: | --- | --- | --- |",
-    ...report.focus.map((task) => {
-      const zh = task.locales["zh-CN"];
-      return `| ${task.mainQuestId} | ${String(zh?.title ?? "")} | ${String(zh?.family ?? "")} | ${String(zh?.chapter ?? "")} | ${String(zh?.dialogueNodeCount ?? 0)} | ${String(zh?.contentRole ?? "unknown")} | ${String(zh?.dialogueResolutionStatus ?? "unknown")} | ${String(zh?.qualityCode ?? "parser_failed")} |`;
-    }),
+    ...focusRows,
     "",
     "## 非完整任务",
     "",
     ...problemTasks.slice(0, 200).map((task) => {
       const zh = task.locales["zh-CN"];
-      return `- ${task.mainQuestId} ${String(zh?.title ?? task.rawTitle ?? "")}：${String(zh?.qualityCode ?? "parser_failed")}；${(Array.isArray(zh?.reasons) ? zh.reasons : []).join(", ")}`;
+      return `- ${task.mainQuestId} ${String(zh.title ?? task.rawTitle ?? "")}：${String(zh.qualityCode ?? "parser_failed")}；${(Array.isArray(zh.reasons) ? zh.reasons : []).join(", ")}`;
     }),
     problemTasks.length > 200 ? `- 其余 ${problemTasks.length - 200} 条见 JSON。` : "",
     "",
-    "## 来源覆盖",
+    "## Story Structure Audit",
     "",
-    `- Talk/Quest 文件：${report.sourceAudit.questTalkFiles}；有解析节点：${report.sourceAudit.questTalkFilesWithParsedNodes}；未被节点引用：${report.sourceAudit.questTalkFilesWithoutParsedNodes.length}`,
-    `- BinOutput/Quest 文件：${report.sourceAudit.binQuestFiles}；成功关联主任务：${report.sourceAudit.binQuestParsedMainQuests}；读取失败：${report.sourceAudit.binQuestFailures.length}`,
-    `- Talk 全局注册表：${report.sourceAudit.talkRegistry.coverage.totalFiles} 个文件；已解析 ${report.sourceAudit.talkRegistry.coverage.parsedFiles} 个；重复 Talk ID ${report.sourceAudit.talkRegistry.duplicateTalkIds.length} 个；NpcGroup 关系边 ${report.sourceAudit.talkRegistry.npcGroupRelationEdges}`,
-    `- 已注册但当前任务正文未引用的 Talk 文件：${report.sourceAudit.registeredTalkFilesNotReferenced.length}（其中是否为孤立来源需结合 sourceKind 和关系审计判断）`,
-    `- CodexQuest 文件：${report.sourceAudit.codexFiles}`,
+    `- 系列：${summary.familyCount}；单任务系列：${summary.familiesWithOneQuest.length}；仅 aggregate 系列：${summary.familiesWithOnlyAggregate.length}`,
+    `- 重复系列标题：${summary.duplicateFamilyTitles.length}；重复章节标题：${summary.duplicateChapterTitles.length}`,
+    `- 孤立 aggregate：${summary.orphanAggregate.length}；跨地区系列：${summary.crossRegionFamily.length}`,
     "",
-    "## 内容角色与对白状态",
+    "## Topology / Talk / Dialogue Audit",
     "",
-    `- 内容角色：${Object.entries(report.summary.contentRoleZh)
-      .map(([key, value]) => `${key}=${value}`)
-      .join("；")}`,
-    `- 对白状态：${Object.entries(report.summary.dialogueResolutionStatusZh)
-      .map(([key, value]) => `${key}=${value}`)
-      .join("；")}`,
-    `- Talk 未解析/歧义清单：${report.sourceAudit.talkResolutionProblems.length} 条，详见 JSON。`,
+    `- Raw edges：${topologyAudit.rawRelationEdges}；Derived edges：${topologyAudit.derivedRelationEdges}；requires：${topologyAudit.requiresEdges}；aggregate：${topologyAudit.aggregateEdges}`,
+    `- 拓扑 cycle：${topologyAudit.cycles.length}；拓扑 dangling：${topologyAudit.danglingEdges}`,
+    `- Talk expected/resolved/unresolved/ambiguous：${summary.talkAudit.expectedTalkIds}/${summary.talkAudit.resolvedTalkIds}/${summary.talkAudit.unresolvedTalkIds}/${summary.talkAudit.ambiguousTalkIds}`,
+    `- Dialogue nodes/edges/dangling：${dialogueAudit.dialogueNodes}/${dialogueAudit.dialogueEdges}/${dialogueAudit.danglingEdges}`,
+    `- rootless/cyclic graph：${dialogueAudit.rootlessGraphs.length}/${dialogueAudit.cyclicGraphs.length}；重复正文额外节点：${dialogueAudit.duplicateBodyNodes}`,
+    `- Talk 全目录 metadata scan：${summary.talkAudit.metadataScannedFiles}；孤立对白资产：${orphanDialogueAssets.length}；metadata scan 失败：${metadataScanFailures.length}`,
     "",
-    "本报告只读取上游文件并在内存中运行转换，不写入数据库；可据此统一修复规则后再执行一次候选导入。",
+    "本报告只读取上游文件并在内存中运行转换，不写入数据库；应在所有规则完成后再执行一次候选导入。",
   ].join("\n");
   await writeFile(`${outputBase}.md`, markdown + "\n", "utf8");
   console.log(
     JSON.stringify(
-      {
-        json: `${outputBase}.json`,
-        markdown: `${outputBase}.md`,
-        summary: report.summary,
-      },
+      { json: `${outputBase}.json`, markdown: `${outputBase}.md`, summary: report.summary },
       null,
       2,
     ),

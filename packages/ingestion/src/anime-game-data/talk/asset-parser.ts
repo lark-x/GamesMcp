@@ -121,6 +121,27 @@ export function schemaSignature(value: Json): string {
   return Object.keys(value).sort().join(",");
 }
 
+/** Read only the identity metadata used by the registry's first pass. */
+export function scanTalkAssetMetadata(
+  raw: string | Uint8Array,
+  relativePath: string,
+  sourceKind: TalkSourceKind,
+): Pick<
+  TalkAssetRecord,
+  "talkId" | "sourceKind" | "relativePath" | "fileHash" | "schemaSignature" | "metadata"
+> {
+  const text = typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8");
+  const value = asObject(JSON.parse(text));
+  return {
+    talkId: assetId(value, relativePath),
+    sourceKind,
+    relativePath,
+    fileHash: createHash("sha256").update(text).digest("hex"),
+    schemaSignature: schemaSignature(value),
+    metadata: { topLevelKeys: Object.keys(value).sort() },
+  };
+}
+
 export function parseTalkAsset(
   raw: string | Uint8Array,
   relativePath: string,

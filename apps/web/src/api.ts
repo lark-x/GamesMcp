@@ -133,6 +133,7 @@ export type QuestSearchHit = {
     | "unknown";
   dialogueResolutionStatus?:
     | "resolved"
+    | "partial"
     | "not_applicable"
     | "talk_reference_missing"
     | "talk_asset_missing"
@@ -173,6 +174,22 @@ export type QuestDetail = QuestSearchHit & {
   }>;
   participants: Array<{ id: string; sourceKey?: string | null; name: string; type: string }>;
   prerequisites: string[];
+  topology?: {
+    prerequisiteQuestIds: string[];
+    childQuestIds: string[];
+    parentQuestIds: string[];
+    storyOrder?: number;
+    aggregateParentQuestId?: string;
+    cycle?: boolean;
+    cycleNodeIds?: string[];
+  };
+  talkProvenance?: {
+    talkIds: string[];
+    resolvedTalkIds: string[];
+    unresolvedTalkIds: string[];
+    sourceKinds?: string[];
+    diagnostics?: Record<string, unknown>;
+  };
   citations: Array<{
     documentId: string;
     locale: string;
@@ -215,53 +232,16 @@ export type QuestDetail = QuestSearchHit & {
   };
 };
 
-export type StoryQuestEntry = {
-  questKey: string;
-  title: string;
-  displayTitle?: string;
-  order: number;
-  completeness: "complete" | "partial" | "metadata_only";
-  bodyAvailability: "dialogue" | "document" | "objective_only" | "unavailable";
-  qualityCode?:
-    | "complete"
-    | "partial_dialogue"
-    | "metadata_only"
-    | "source_missing"
-    | "parser_failed"
-    | "speaker_unresolved";
-  contentRole?: QuestSearchHit["contentRole"];
-  dialogueResolutionStatus?: QuestSearchHit["dialogueResolutionStatus"];
-};
+import type {
+  StoryCatalog as ContractStoryCatalog,
+  StoryChapter,
+  StoryFamily,
+  StoryRegion,
+  StoryQuestEntry,
+} from "@gip/contracts";
 
-export type StoryChapter = {
-  id: string;
-  name: string;
-  order: number;
-  series?: string;
-  quests: StoryQuestEntry[];
-};
-
-export type StoryFamily = {
-  id: string;
-  name: string;
-  order: number;
-  provenance: "upstream" | "derived" | "curated" | "fallback";
-  chapters: StoryChapter[];
-};
-
-export type StoryRegion = {
-  id: string;
-  name: string;
-  order: number;
-  families: StoryFamily[];
-  chapters: StoryChapter[];
-};
-
-export type StoryCatalog = {
-  gameId: string;
-  revisionId?: string | null;
-  regions: StoryRegion[];
-};
+export type { StoryChapter, StoryFamily, StoryRegion, StoryQuestEntry };
+export type StoryCatalog = ContractStoryCatalog;
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem("gip.adminToken");
   const r = await fetch(path, {

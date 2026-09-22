@@ -21,6 +21,10 @@
         "74165",
         "74078"
       ],
+      "reason": "公开任务系列边界用于校验水仙十字相关主任务的跨章节归并。",
+      "evidence": ["https://wiki.biligame.com/ys/水仙的追迹"],
+      "reviewedAt": "2026-09-22",
+      "temporary": true,
       "chapterOrders": {
         "10146": 10,
         "10148": 20,
@@ -37,13 +41,11 @@
         "zh-CN": "谐律上的咏叙诗",
         "en": "Canticles of Harmony"
       },
-      "questIds": [
-        "74184",
-        "74194",
-        "74183",
-        "74195",
-        "74196"
-      ],
+      "questIds": ["74184", "74194", "74183", "74195", "74196"],
+      "reason": "公开剧情章节顺序用于核对序曲、第一至三章及终章的源数据顺序。",
+      "evidence": ["https://www.gamersky.com/handbook/202405/1739882.shtml"],
+      "reviewedAt": "2026-09-22",
+      "temporary": true,
       "chapterOrders": {
         "10183": 10,
         "10184": 20,
@@ -58,13 +60,11 @@
         "zh-CN": "山中好长日",
         "en": "A Long Day in the Mountains"
       },
-      "questIds": [
-        "70065",
-        "76095",
-        "76148",
-        "76152",
-        "76096"
-      ],
+      "questIds": ["70065", "76095", "76148", "76152", "76096"],
+      "reason": "源数据的主任务关系与章节信息共同指向同一大型任务系列。",
+      "evidence": ["https://wiki.biligame.com/ys/枫丹探索专题"],
+      "reviewedAt": "2026-09-22",
+      "temporary": true,
       "chapterOrders": {
         "10086": 10,
         "10094": 20,

@@ -586,7 +586,10 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     return importOperations.getImport({ db: this.db }, batchId);
   }
 
-  async listImports(gameId?: string, options?: { includePayload?: boolean }): Promise<ImportBatch[]> {
+  async listImports(
+    gameId?: string,
+    options?: { includePayload?: boolean; limit?: number },
+  ): Promise<ImportBatch[]> {
     return importOperations.listImports({ db: this.db }, gameId, options);
   }
 

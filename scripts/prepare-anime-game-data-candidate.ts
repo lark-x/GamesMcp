@@ -40,7 +40,7 @@ try {
   // Candidate selection only needs batch metadata. Loading every historical
   // staged JSONB payload here can materialize multiple generations of the
   // full quest export before the selected batches are read by the builder.
-  const imports = await repository.listImports(game.id, { includePayload: false });
+  const imports = await repository.listImports(game.id, { includePayload: false, limit: 5000 });
   const selected = new Map<Category, Array<(typeof imports)[number]>>();
   for (const batch of imports) {
     if (batch.status === "cancelled") continue;

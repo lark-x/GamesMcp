@@ -1,4 +1,9 @@
-export { parseTalkAsset, parseTalkAssetValue, schemaSignature } from "./asset-parser.js";
+export {
+  parseTalkAsset,
+  parseTalkAssetValue,
+  scanTalkAssetMetadata,
+  schemaSignature,
+} from "./asset-parser.js";
 export { parseNpcGroupRelations } from "./npc-group-parser.js";
 export { buildTalkSourceRegistry, loadTalkSourceRegistry } from "./source-registry.js";
 export { resolveQuestTalks } from "./talk-resolver.js";
@@ -7,6 +12,7 @@ export type {
   TalkCandidate,
   TalkDialogueRow,
   TalkRelationEvidence,
+  TalkEvidence,
   TalkSourceFile,
   TalkSourceKind,
   TalkSourceRegistry,

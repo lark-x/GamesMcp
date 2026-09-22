@@ -1,19 +1,26 @@
 export type QuestRelationType =
+  | "contains_subquest"
   | "complete_talk"
   | "quest_state_equal"
+  | "quest_state_not_equal"
   | "add_quest_progress"
   | "main_quest_relation"
+  | "talk_excel_relation"
   | "npc_group_condition"
   | "npc_group_trigger"
   | "starts_after"
   | "requires"
+  | "aggregate_of"
   | "aggregates"
   | "contains_talk"
   | "story_order";
 
 export type QuestRelationEdge = {
+  edgeId?: string;
   fromQuestId: string;
   toQuestId?: string;
+  fromSubQuestId?: string;
+  toSubQuestId?: string;
   talkId?: string;
   relationType: QuestRelationType;
   rawRelationType?: string;
@@ -22,6 +29,8 @@ export type QuestRelationEdge = {
   sourceHash: string;
   derived: boolean;
   confidence: number;
+  expectedState?: string | number;
+  evidenceEdges?: string[];
   metadata?: Record<string, unknown>;
 };
 
@@ -40,8 +49,13 @@ export type QuestBinRecord = {
   sourceHash: string;
   subQuestIds: string[];
   contents: QuestBinContent[];
+  execs?: QuestBinContent[];
+  contentEdges?: QuestRelationEdge[];
+  execEdges?: QuestRelationEdge[];
+  containsSubQuestEdges?: QuestRelationEdge[];
   relationEdges: QuestRelationEdge[];
   contentCounts: Record<string, number>;
+  execCounts?: Record<string, number>;
   hasCompleteTalk: boolean;
   completeTalkIds: string[];
 };
@@ -58,6 +72,7 @@ export type QuestContentRole =
 
 export type DialogueResolutionStatus =
   | "resolved"
+  | "partial"
   | "not_applicable"
   | "talk_reference_missing"
   | "talk_asset_missing"
@@ -73,18 +88,37 @@ export type QuestTopology = {
   storyOrder?: number;
   contentRole: QuestContentRole;
   relationEdges: QuestRelationEdge[];
+  rawRelationEdges?: QuestRelationEdge[];
+  derivedRelationEdges?: QuestRelationEdge[];
+  subQuestIds?: string[];
+  subQuestOrder?: string[];
+  subQuestRelationEdges?: QuestRelationEdge[];
+  aggregateParentQuestId?: string;
+  cycle?: boolean;
+  cycleNodeIds?: string[];
+  danglingEdges?: QuestRelationEdge[];
 };
+
+export type StoryProjectionEntryType = "quest" | "collection" | "aggregate";
 
 export type StoryProjectionQuest = {
   questId: string;
   title: string;
   order: number;
+  displayTitle?: string;
+  entryType?: StoryProjectionEntryType;
   chapterId?: string;
   chapterTitle?: string;
+  chapterOrder?: number;
   familyId?: string;
   familyTitle?: string;
+  familyOrder?: number;
   contentRole: QuestContentRole;
   dialogueResolutionStatus: DialogueResolutionStatus;
+  qualityCode?: string;
+  bodyAvailability?: string;
+  parentQuestId?: string;
+  childQuestIds?: string[];
 };
 
 export type StoryProjectionChapter = {
@@ -99,6 +133,8 @@ export type StoryProjectionFamily = {
   title: string;
   order: number;
   chapters: StoryProjectionChapter[];
+  quests?: StoryProjectionQuest[];
+  collections?: StoryProjectionQuest[];
 };
 
 export type StoryProjectionRegion = {

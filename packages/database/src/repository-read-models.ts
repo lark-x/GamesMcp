@@ -1317,7 +1317,7 @@ export class RepositoryReadModels {
     // parents (which may act as collection entries) in the catalogue.
     const visibleDocRows = docRows.filter((row) => {
       const role = questMetadata(row).contentRole;
-      return role !== "control" && role !== "trigger" && role !== "reward";
+      return !["control", "trigger", "reward", "metadata", "unknown"].includes(String(role));
     });
 
     const documentIds = visibleDocRows.map((row) => row.documentId);
@@ -1418,6 +1418,192 @@ export class RepositoryReadModels {
       };
     }
 
+    // Current Genshin and Star Rail revisions carry an explicit Story
+    // Projection entry on every public quest record. The read model consumes
+    // that projection verbatim; it must not recreate families or chapters
+    // from titles, numeric ids, or a generic fallback bucket.
+    if (
+      visibleDocRows.some((row) => {
+        const projection = questMetadata(row).storyProjection;
+        return Boolean(projection && typeof projection === "object");
+      })
+    ) {
+      type ProjectionMeta = {
+        regionId?: string;
+        regionTitle?: string;
+        regionOrder?: number;
+        familyId: string;
+        familyTitle: string;
+        familyOrder?: number;
+        chapterId?: string;
+        chapterTitle?: string;
+        chapterOrder?: number;
+        entryType?: "quest" | "collection" | "aggregate";
+        displayTitle?: string;
+        parentQuestId?: string;
+        childQuestIds?: string[];
+      };
+      type ChapterBucket = {
+        id: string;
+        name: string;
+        order: number;
+        quests: StoryQuestEntry[];
+      };
+      type FamilyBucket = {
+        id: string;
+        name: string;
+        order: number;
+        provenance: StoryFamily["provenance"];
+        quests: StoryQuestEntry[];
+        collections: StoryQuestEntry[];
+        chapters: Map<string, ChapterBucket>;
+      };
+      const regionMap = new Map<
+        string,
+        {
+          id: string;
+          name: string;
+          order: number;
+          families: Map<string, FamilyBucket>;
+        }
+      >();
+      for (const row of visibleDocRows) {
+        const meta = questMetadata(row);
+        const projection = meta.storyProjection as ProjectionMeta | undefined;
+        if (!projection?.familyId) continue;
+        const regionId = projection.regionId ?? String(meta.regionId ?? "other");
+        const region = regionMap.get(regionId) ?? {
+          id: regionId,
+          name: projection.regionTitle ?? String(meta.regionName ?? meta.region ?? regionId),
+          order: projection.regionOrder ?? 99,
+          families: new Map<string, FamilyBucket>(),
+        };
+        const family = region.families.get(projection.familyId) ?? {
+          id: projection.familyId,
+          name: projection.familyTitle,
+          order: projection.familyOrder ?? Number(meta.storyFamilyOrder ?? 999999),
+          provenance: meta.storyFamilyProvenance ?? "derived",
+          quests: [],
+          collections: [],
+          chapters: new Map<string, ChapterBucket>(),
+        };
+        const questKey = meta.questKey ?? questKeyFromInput(row.sourceKey);
+        const contentRole = meta.contentRole;
+        const entryType =
+          projection.entryType ?? (contentRole === "aggregate" ? "collection" : "quest");
+        const dialogueCount = dialogueCounts.get(row.documentId) ?? 0;
+        const subquestCount = subquestCounts.get(row.documentId) ?? 0;
+        const bodyAvailability: BodyAvailability =
+          entryType !== "quest" || contentRole === "aggregate"
+            ? "none"
+            : dialogueCount > 0
+              ? "dialogue"
+              : row.hasBody
+                ? "document"
+                : subquestCount > 0
+                  ? "objective_only"
+                  : "none";
+        const completeness: "complete" | "partial" | "metadata_only" =
+          meta.completeness === "complete" ||
+          meta.completeness === "partial" ||
+          meta.completeness === "metadata_only"
+            ? meta.completeness
+            : "metadata_only";
+        const entry: StoryQuestEntry = {
+          questKey,
+          title: row.title,
+          displayTitle: projection.displayTitle,
+          order: Number(meta.topology?.storyOrder ?? meta.storyPosition ?? meta.order ?? 0),
+          completeness,
+          bodyAvailability,
+          entryType,
+          childQuestIds: projection.childQuestIds ?? meta.topology?.childQuestIds ?? [],
+          parentQuestId: projection.parentQuestId ?? meta.topology?.aggregateParentQuestId,
+          qualityCode: meta.qualityCode,
+          contentRole,
+          dialogueResolutionStatus: meta.dialogueResolutionStatus,
+        };
+        if (entryType === "collection" || entryType === "aggregate") {
+          family.collections.push(entry);
+        } else if (projection.chapterId) {
+          const chapter = family.chapters.get(projection.chapterId) ?? {
+            id: projection.chapterId,
+            name: projection.chapterTitle ?? projection.chapterId,
+            order: projection.chapterOrder ?? Number(meta.chapterOrder ?? entry.order ?? 0),
+            quests: [],
+          };
+          chapter.quests.push(entry);
+          family.chapters.set(chapter.id, chapter);
+        } else {
+          family.quests.push(entry);
+        }
+        region.families.set(family.id, family);
+        regionMap.set(region.id, region);
+      }
+      const regions: StoryRegion[] = [...regionMap.values()]
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
+        .map((region) => {
+          const families = [...region.families.values()]
+            .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
+            .map((family) => {
+              const chapters = [...family.chapters.values()]
+                .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
+                .map((chapter) => {
+                  const titleCounts = new Map<string, number>();
+                  for (const quest of chapter.quests)
+                    titleCounts.set(quest.title, (titleCounts.get(quest.title) ?? 0) + 1);
+                  return {
+                    ...chapter,
+                    quests: chapter.quests
+                      .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey))
+                      .map((quest) => ({
+                        ...quest,
+                        displayTitle:
+                          quest.displayTitle ??
+                          (titleCounts.get(quest.title)! > 1
+                            ? `${quest.title}（任务 ${quest.questKey.split("/").pop()}）`
+                            : quest.title),
+                      })),
+                  };
+                });
+              const withDisplayTitles = (entries: StoryQuestEntry[]): StoryQuestEntry[] => {
+                const titleCounts = new Map<string, number>();
+                for (const quest of entries)
+                  titleCounts.set(quest.title, (titleCounts.get(quest.title) ?? 0) + 1);
+                return entries
+                  .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey))
+                  .map((quest) => ({
+                    ...quest,
+                    displayTitle:
+                      quest.displayTitle ??
+                      (titleCounts.get(quest.title)! > 1
+                        ? `${quest.title}（任务 ${quest.questKey.split("/").pop()}）`
+                        : quest.title),
+                  }));
+              };
+              const direct = withDisplayTitles(family.quests);
+              const collections = withDisplayTitles(family.collections);
+              return {
+                id: family.id,
+                name: family.name,
+                order: family.order,
+                provenance: family.provenance,
+                quests: direct,
+                collections,
+                chapters,
+              };
+            });
+          return {
+            id: region.id,
+            name: region.name,
+            order: region.order,
+            families,
+            chapters: families.flatMap((family) => family.chapters),
+          };
+        });
+      return { gameId, revisionId: revision.id, regions };
+    }
+
     const regionOrder: Record<string, number> = {
       space_station: 1,
       herta_space_station: 1,
@@ -1509,9 +1695,9 @@ export class RepositoryReadModels {
         ? String(rawChapterId)
         : `fallback_${regionId}_${fallbackChapterKey}`;
       let chapterName = hasNamedChapter
-        ? String(meta.chapterTitle ?? meta.chapter ?? series ?? `${regionName}散篇任务`)
-        : (series ?? `${regionName}散篇任务`);
-      chapterName = cleanName(chapterName) ?? `${regionName}散篇任务`;
+        ? String(meta.chapterTitle ?? meta.chapter ?? series ?? "其他任务")
+        : (series ?? "其他任务");
+      chapterName = cleanName(chapterName) ?? "其他任务";
       if (chapterNum && !chapterName.startsWith(chapterNum)) {
         chapterName = `${chapterNum} ${chapterName}`;
       }
@@ -1548,7 +1734,7 @@ export class RepositoryReadModels {
               ? "partial_dialogue"
               : "source_missing");
       const familyName =
-        cleanName(meta.storyFamilyTitle) ?? (series && !genericSeries ? series : "散篇任务");
+        cleanName(meta.storyFamilyTitle) ?? (series && !genericSeries ? series : "其他独立任务");
       const familyId =
         explicitFamilyId ??
         (series && !genericSeries
@@ -2134,6 +2320,14 @@ export class RepositoryReadModels {
       })),
       participants: participantRows.map((row) => asEntitySummary(row)),
       prerequisites: metadata.prerequisites ?? [],
+      topology: metadata.topology,
+      talkProvenance: {
+        talkIds: metadata.talkIds ?? [],
+        resolvedTalkIds: metadata.resolvedTalkIds ?? [],
+        unresolvedTalkIds: metadata.unresolvedTalkIds ?? [],
+        sourceKinds: metadata.talkSourceKinds ?? [],
+        diagnostics: metadata.dialogueDiagnostics,
+      },
       citations: pageRows.map((row) => ({
         documentId: document.id,
         locale: document.locale,

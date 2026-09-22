@@ -27,9 +27,8 @@ export function buildStoryTree(
     // keys as an additional allow-list so a hit inside a line of dialogue is
     // reflected in the final tree instead of being lost because the title or
     // chapter name did not match locally.
-    const searchMatches = query && entries.length > 0
-      ? new Set(entries.map((entry) => entry.questKey))
-      : undefined;
+    const searchMatches =
+      query && entries.length > 0 ? new Set(entries.map((entry) => entry.questKey)) : undefined;
     const result: StoryTreeNode[] = [];
     for (const region of catalog.regions) {
       const regionNode: StoryTreeNode = {
@@ -44,7 +43,7 @@ export function buildStoryTree(
         : [
             {
               id: `legacy:${region.id}`,
-              name: "散篇任务",
+              name: "其他独立任务",
               order: 0,
               provenance: "fallback" as const,
               chapters: region.chapters,
@@ -58,18 +57,68 @@ export function buildStoryTree(
           order: family.order,
           children: [],
         };
+        const familyEntries = [...(family.quests ?? []), ...(family.collections ?? [])];
+        const allFamilyEntries = [
+          ...familyEntries,
+          ...family.chapters.flatMap((chapter) => chapter.quests),
+        ];
+        const matchesEntry = (q: (typeof familyEntries)[number], contextTitle?: string) => {
+          if (!query) return true;
+          const title = (q.displayTitle ?? q.title).toLowerCase();
+          const localMatch =
+            title.includes(query) ||
+            q.title.toLowerCase().includes(query) ||
+            (contextTitle ?? "").toLowerCase().includes(query) ||
+            family.name.toLowerCase().includes(query) ||
+            region.name.toLowerCase().includes(query);
+          return searchMatches?.has(q.questKey) || localMatch;
+        };
+        const questNode = (q: (typeof familyEntries)[number]): StoryTreeNode => ({
+          id: `quest:${q.questKey}`,
+          type: "quest",
+          title: q.displayTitle ?? q.title,
+          order: q.order,
+          questKey: q.questKey,
+        });
+        const collectionNode = (q: (typeof familyEntries)[number]): StoryTreeNode => {
+          const childIds = new Set(
+            (q.childQuestIds ?? []).flatMap((id) => [id, `quest/${id}`, `mission/${id}`]),
+          );
+          const children = allFamilyEntries
+            .filter(
+              (candidate) =>
+                candidate.entryType !== "collection" &&
+                candidate.entryType !== "aggregate" &&
+                (childIds.has(candidate.questKey) ||
+                  candidate.parentQuestId === q.questKey ||
+                  candidate.parentQuestId === q.questKey.replace(/^(?:quest|mission)\//u, "") ||
+                  candidate.parentQuestId === q.questKey.replace(/^quest\//u, "")),
+            )
+            .filter((candidate) => matchesEntry(candidate, q.title))
+            .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey))
+            .map(questNode);
+          return {
+            id: `collection:${q.questKey}`,
+            type: "collection",
+            title: q.displayTitle ?? q.title,
+            order: q.order,
+            children,
+          };
+        };
+        const directEntries = familyEntries
+          .filter((q) => q.entryType !== "collection" && q.entryType !== "aggregate")
+          .filter((q) => matchesEntry(q))
+          .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
+        const collections = familyEntries
+          .filter((q) => q.entryType === "collection" || q.entryType === "aggregate")
+          .filter((q) => matchesEntry(q))
+          .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
+        familyNode.children!.push(
+          ...collections.map(collectionNode),
+          ...directEntries.map(questNode),
+        );
         for (const chapter of family.chapters) {
-          const filteredQuests = chapter.quests.filter((q) => {
-            if (!query) return true;
-            const title = (q.displayTitle ?? q.title).toLowerCase();
-            const localMatch =
-              title.includes(query) ||
-              q.title.toLowerCase().includes(query) ||
-              chapter.name.toLowerCase().includes(query) ||
-              family.name.toLowerCase().includes(query) ||
-              region.name.toLowerCase().includes(query);
-            return searchMatches?.has(q.questKey) || localMatch;
-          });
+          const filteredQuests = chapter.quests.filter((q) => matchesEntry(q, chapter.name));
           if (filteredQuests.length === 0) continue;
 
           familyNode.children!.push({
@@ -81,16 +130,13 @@ export function buildStoryTree(
               .sort(
                 (a, b) =>
                   a.order - b.order ||
-                  (a.displayTitle ?? a.title).localeCompare(b.displayTitle ?? b.title, "zh-Hans-CN") ||
+                  (a.displayTitle ?? a.title).localeCompare(
+                    b.displayTitle ?? b.title,
+                    "zh-Hans-CN",
+                  ) ||
                   a.questKey.localeCompare(b.questKey),
               )
-              .map((q) => ({
-                id: `quest:${q.questKey}`,
-                type: "quest" as const,
-                title: q.displayTitle ?? q.title,
-                order: q.order,
-                questKey: q.questKey,
-              })),
+              .map(questNode),
           });
         }
         if (familyNode.children!.length > 0) regionNode.children!.push(familyNode);
@@ -100,9 +146,13 @@ export function buildStoryTree(
       }
     }
     for (const region of result) {
-      region.children?.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, "zh-Hans-CN"));
+      region.children?.sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, "zh-Hans-CN"),
+      );
       for (const family of region.children ?? []) {
-        family.children?.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, "zh-Hans-CN"));
+        family.children?.sort(
+          (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, "zh-Hans-CN"),
+        );
       }
     }
     if (result.length > 0) return result;
@@ -300,9 +350,7 @@ export function StoryCatalog({
           key={node.id}
           className={`story-tree-quest ${isActive ? "is-active" : ""}`}
           aria-current={isActive ? "page" : undefined}
-          onClick={() =>
-            node.questKey && onSelect({ questKey: node.questKey, title: node.title })
-          }
+          onClick={() => node.questKey && onSelect({ questKey: node.questKey, title: node.title })}
         >
           <span>{node.title}</span>
         </button>
@@ -311,17 +359,19 @@ export function StoryCatalog({
 
     const isExpanded = isSearching || expandedIds.has(node.id);
     const isChapter = node.type === "chapter";
-    const containerClass = isChapter ? "story-tree-chapter" : "story-tree-series";
+    const isCollection = node.type === "collection";
+    const containerClass = isChapter
+      ? "story-tree-chapter"
+      : isCollection
+        ? "story-tree-collection"
+        : "story-tree-series";
     const headerClass = isChapter
       ? "story-tree-header story-tree-chapter-header"
-      : "story-tree-header story-tree-series-header";
+      : isCollection
+        ? "story-tree-header story-tree-collection-header"
+        : "story-tree-header story-tree-series-header";
     return (
-      <section
-        key={node.id}
-        className={containerClass}
-        role="treeitem"
-        aria-expanded={isExpanded}
-      >
+      <section key={node.id} className={containerClass} role="treeitem" aria-expanded={isExpanded}>
         <button
           type="button"
           className={headerClass}
@@ -337,7 +387,7 @@ export function StoryCatalog({
           <span className="story-tree-toggle-icon" aria-hidden="true">
             {isExpanded ? "▾" : "▸"}
           </span>
-          {isChapter ? <span>{node.title}</span> : <strong>{node.title}</strong>}
+          {isChapter || isCollection ? <span>{node.title}</span> : <strong>{node.title}</strong>}
         </button>
         {isExpanded && node.children?.length ? (
           <div
@@ -391,7 +441,11 @@ export function StoryCatalog({
         ) : (
           <ArchiveEmpty
             title={isStarRail ? "暂无星铁开拓任务" : "没有任务结果"}
-            detail={isStarRail ? "当前游戏星铁任务尚未载入，或可尝试调整筛选条件。" : "尝试切换语言、类型或缩短关键词。"}
+            detail={
+              isStarRail
+                ? "当前游戏星铁任务尚未载入，或可尝试调整筛选条件。"
+                : "尝试切换语言、类型或缩短关键词。"
+            }
           />
         )}
       </div>

@@ -11,12 +11,16 @@ export type StoryProjectionInput = StoryProjectionQuest & {
   familyId: string;
   familyTitle: string;
   familyOrder?: number;
-  chapterId: string;
-  chapterTitle: string;
+  chapterId?: string;
+  chapterTitle?: string;
   chapterOrder?: number;
 };
 
-/** Project data quests into Region → Family → Chapter → Quest without inventing dialogue stages. */
+/**
+ * Project the already-resolved story structure into the read model.  This
+ * function deliberately does not infer a family/chapter from a title or an
+ * id: an absent chapter remains a direct family quest.
+ */
 export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjectionRegion[] {
   const regions = new Map<string, StoryProjectionRegion>();
   for (const row of rows) {
@@ -33,18 +37,10 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
         title: row.familyTitle,
         order: row.familyOrder ?? 0,
         chapters: [],
+        quests: [],
+        collections: [],
       } satisfies StoryProjectionFamily;
       region.families.push(family);
-    }
-    let chapter = family.chapters.find((item) => item.id === row.chapterId);
-    if (!chapter) {
-      chapter = {
-        id: row.chapterId,
-        title: row.chapterTitle,
-        order: row.chapterOrder ?? 0,
-        quests: [],
-      };
-      family.chapters.push(chapter);
     }
     const {
       regionId: _regionId,
@@ -53,12 +49,31 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
       familyId: _familyId,
       familyTitle: _familyTitle,
       familyOrder: _familyOrder,
-      chapterId: _chapterId,
-      chapterTitle: _chapterTitle,
-      chapterOrder: _chapterOrder,
-      ...quest
+      chapterId,
+      chapterTitle,
+      chapterOrder,
+      ...entry
     } = row;
-    chapter.quests.push(quest);
+    const entryType = row.entryType ?? "quest";
+    if (entryType === "collection" || entryType === "aggregate") {
+      family.collections ??= [];
+      family.collections.push(entry);
+    } else if (chapterId) {
+      let chapter = family.chapters.find((item) => item.id === chapterId);
+      if (!chapter) {
+        chapter = {
+          id: chapterId,
+          title: chapterTitle ?? chapterId,
+          order: chapterOrder ?? 0,
+          quests: [],
+        };
+        family.chapters.push(chapter);
+      }
+      chapter.quests.push(entry);
+    } else {
+      family.quests ??= [];
+      family.quests.push(entry);
+    }
     regions.set(row.regionId, region);
   }
   const byOrder = <T extends { order: number }>(items: T[]): T[] =>
@@ -69,6 +84,8 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
   for (const region of regions.values()) {
     for (const family of region.families) {
       for (const chapter of family.chapters) byOrder(chapter.quests);
+      if (family.quests) byOrder(family.quests);
+      if (family.collections) byOrder(family.collections);
       byOrder(family.chapters);
     }
     byOrder(region.families);

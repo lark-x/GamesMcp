@@ -18,18 +18,49 @@ function ids(value: unknown): string[] {
   return value.map(idText).filter((item): item is string => Boolean(item));
 }
 
-function collectConditionQuestIds(value: unknown): string[] {
-  const result: string[] = [];
+type ConditionEvidence = {
+  questId: string;
+  conditionType: string;
+  expectedState?: string;
+};
+
+function normalizeConditionType(value: unknown): string | undefined {
+  const raw = idText(value)?.toUpperCase();
+  if (!raw) return undefined;
+  const normalized = raw.replace(/^QUEST_COND_/u, "QUEST_");
+  return new Set([
+    "QUEST_STATE_EQUAL",
+    "QUEST_STATE_NOT_EQUAL",
+    "QUEST_VAR_EQUAL",
+    "QUEST_FINISH",
+  ]).has(normalized)
+    ? normalized
+    : undefined;
+}
+
+function collectConditionEvidence(value: unknown): ConditionEvidence[] {
+  const result: ConditionEvidence[] = [];
   const visit = (item: unknown): void => {
     if (Array.isArray(item)) {
       for (const child of item) visit(child);
       return;
     }
     const object = asObject(item);
+    const conditionType = normalizeConditionType(
+      object._type ?? object.type ?? object.conditionType,
+    );
     const params = object.param ?? object._param;
-    if (Array.isArray(params)) {
+    // A numeric first parameter is a quest id only for a known quest condition
+    // type. This prevents NPC group scene ids and arbitrary Lua parameters from
+    // becoming fake quest relations.
+    if (conditionType && Array.isArray(params)) {
       const first = idText(params[0]);
-      if (first) result.push(first);
+      if (first)
+        result.push({
+          questId: first,
+          conditionType,
+          expectedState: idText(params[1]),
+        });
     }
     for (const child of Object.values(object)) {
       if (child && typeof child === "object") visit(child);
@@ -60,11 +91,34 @@ export function parseNpcGroupRelations(
     const explicitQuestIds = ids(
       row.CNFDMCLNLGI ?? row.questIds ?? row.mainQuestIds ?? row.questId,
     );
-    const conditionQuestIds = collectConditionQuestIds(
+    const conditionEvidence = collectConditionEvidence(
       row.FCBOEAHDNOL ?? row.conditions ?? row.condition,
     );
-    const questIds = [...new Set([...explicitQuestIds, ...conditionQuestIds])];
+    const questIds = [
+      ...new Set([...explicitQuestIds, ...conditionEvidence.map((item) => item.questId)]),
+    ];
     for (const questId of questIds) {
+      const condition = conditionEvidence.find((item) => item.questId === questId);
+      if (condition) {
+        edges.push({
+          fromQuestId: questId,
+          talkId,
+          relationType: "npc_group_condition",
+          rawRelationType: condition.conditionType,
+          sourceFile,
+          sourcePath: `OJACLOOEAMG[${index}].FCBOEAHDNOL`,
+          sourceHash,
+          derived: false,
+          confidence: 1,
+          expectedState: condition.expectedState,
+          metadata: {
+            groupId,
+            triggerIndex: index,
+            conditionType: condition.conditionType,
+            sourceKind: "npc_group" satisfies TalkSourceKind,
+          },
+        });
+      }
       edges.push({
         fromQuestId: questId,
         toQuestId: undefined,
@@ -74,11 +128,12 @@ export function parseNpcGroupRelations(
         sourcePath: `OJACLOOEAMG[${index}]`,
         sourceHash,
         derived: false,
-        confidence: explicitQuestIds.includes(questId) ? 1 : 0.8,
+        confidence: explicitQuestIds.includes(questId) ? 1 : 0.9,
         metadata: {
           groupId,
           triggerIndex: index,
           sourceKind: "npc_group" satisfies TalkSourceKind,
+          conditionType: condition?.conditionType,
         },
       });
     }

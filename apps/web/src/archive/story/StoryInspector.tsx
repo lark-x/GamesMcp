@@ -60,9 +60,26 @@ export function StoryInspector({
       <InspectorSection title="前置 / 后续">
         <InspectorField
           label="前置任务"
-          value={quest.prerequisites.length ? quest.prerequisites.join("、") : "暂无"}
+          value={
+            quest.topology?.prerequisiteQuestIds?.length
+              ? quest.topology.prerequisiteQuestIds.join("、")
+              : quest.prerequisites.length
+                ? quest.prerequisites.join("、")
+                : "暂无"
+          }
         />
-        <InspectorField label="后续任务" value="暂无后续任务数据" />
+        <InspectorField
+          label="后续任务"
+          value={
+            quest.topology?.childQuestIds?.length ? quest.topology.childQuestIds.join("、") : "暂无"
+          }
+        />
+        {quest.topology?.cycle ? (
+          <InspectorField
+            label="拓扑诊断"
+            value={`存在循环：${quest.topology.cycleNodeIds?.join("、") ?? "未知"}`}
+          />
+        ) : null}
       </InspectorSection>
 
       <InspectorSection title="地点">
@@ -70,10 +87,7 @@ export function StoryInspector({
       </InspectorSection>
 
       <InspectorSection title="来源">
-        <InspectorField
-          label="数据来源"
-          value={quest.citations[0]?.sourceName ?? "来源未解析"}
-        />
+        <InspectorField label="数据来源" value={quest.citations[0]?.sourceName ?? "来源未解析"} />
         <InspectorField label="Document ID" value={<code>{quest.documentId || "—"}</code>} />
         <InspectorField label="Revision" value={<code>{quest.revision || "—"}</code>} />
 
