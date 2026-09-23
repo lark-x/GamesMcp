@@ -25,17 +25,11 @@ export function TextCatalogEntry({ entry, isActive, onSelect }: TextCatalogEntry
       onClick={() => onSelect(entry)}
       aria-current={isActive ? "true" : undefined}
     >
-      <span className="text-catalog-entry-title">
-        {entry.title}
-      </span>
+      <span className="text-catalog-entry-title">{entry.title}</span>
       <div className="text-catalog-entry-meta">
-        <span className="text-catalog-entry-snippet">
-          {displayText}
-        </span>
+        <span className="text-catalog-entry-snippet">{displayText}</span>
         {entry.gameVersion && (
-          <span className="text-catalog-entry-version">
-            v{entry.gameVersion}
-          </span>
+          <span className="text-catalog-entry-version">v{entry.gameVersion}</span>
         )}
       </div>
     </button>

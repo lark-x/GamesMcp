@@ -318,10 +318,7 @@ export async function createMcpRuntime() {
 
   const pool = createPool(config.databaseUrl);
 
-  const repository = new SqlKnowledgeRepository(
-    createDatabase(pool),
-    config.dataDir,
-  );
+  const repository = new SqlKnowledgeRepository(createDatabase(pool), config.dataDir);
 
   const providers = createProviderRegistry(config.providers);
 
@@ -431,7 +428,7 @@ HTTP：
 需要：
 
 ```ts
-Map<string, SessionContext>
+Map<string, SessionContext>;
 ```
 
 ---
@@ -664,10 +661,7 @@ Authorization: Bearer <MCP_AUTH_TOKEN>
 `auth.ts`：
 
 ```ts
-function verifyMcpAuth(
-  request: IncomingMessage,
-  config: RuntimeConfig["mcp"],
-): boolean
+function verifyMcpAuth(request: IncomingMessage, config: RuntimeConfig["mcp"]): boolean;
 ```
 
 ---
@@ -679,7 +673,7 @@ function verifyMcpAuth(
 不要：
 
 ```ts
-provided === expected
+provided === expected;
 ```
 
 直接比较敏感 Token。
@@ -1024,55 +1018,55 @@ apps/mcp-server/package.json
 建议：
 
 ```yaml
-  mcp:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: mcp-runtime
+mcp:
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    target: mcp-runtime
 
-    env_file:
-      - .env
+  env_file:
+    - .env
 
-    environment:
-      NODE_ENV: production
+  environment:
+    NODE_ENV: production
 
-      DATABASE_URL: postgres://gip:gip@postgres:5432/gip
-      DATA_DIR: /app/data
+    DATABASE_URL: postgres://gip:gip@postgres:5432/gip
+    DATA_DIR: /app/data
 
-      MCP_HTTP_ENABLED: "true"
-      MCP_HOST: 0.0.0.0
-      MCP_PORT: 4200
-      MCP_PATH: /mcp
+    MCP_HTTP_ENABLED: "true"
+    MCP_HOST: 0.0.0.0
+    MCP_PORT: 4200
+    MCP_PATH: /mcp
 
-      GAMESMCP_ISTAROTH_URL: http://istaroth:8000/mcp
-      GAMESMCP_GENSHIN_ISTAROTH_URL: http://istaroth:8000/mcp
-      GAMESMCP_STARRAIL_ISTAROTH_URL: http://istaroth-starrail:8000/mcp
+    GAMESMCP_ISTAROTH_URL: http://istaroth:8000/mcp
+    GAMESMCP_GENSHIN_ISTAROTH_URL: http://istaroth:8000/mcp
+    GAMESMCP_STARRAIL_ISTAROTH_URL: http://istaroth-starrail:8000/mcp
 
-      GAMESMCP_STARRAIL_DATA_DIR: /app/data/games/starrail/turn-based-game-data
+    GAMESMCP_STARRAIL_DATA_DIR: /app/data/games/starrail/turn-based-game-data
 
-    depends_on:
-      postgres:
-        condition: service_healthy
+  depends_on:
+    postgres:
+      condition: service_healthy
 
-    ports:
-      - "127.0.0.1:4200:4200"
+  ports:
+    - "127.0.0.1:4200:4200"
 
-    volumes:
-      - "${DATA_DIR:?DATA_DIR must point to a persistent external data directory}:/app/data"
+  volumes:
+    - "${DATA_DIR:?DATA_DIR must point to a persistent external data directory}:/app/data"
 
-    restart: unless-stopped
+  restart: unless-stopped
 
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:4200/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-        ]
-      interval: 15s
-      timeout: 5s
-      retries: 10
+  healthcheck:
+    test:
+      [
+        "CMD",
+        "node",
+        "-e",
+        "fetch('http://127.0.0.1:4200/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+      ]
+    interval: 15s
+    timeout: 5s
+    retries: 10
 ```
 
 ---

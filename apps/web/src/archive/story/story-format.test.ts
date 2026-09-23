@@ -72,7 +72,7 @@ describe("story catalog filtering", () => {
                 {
                   ...catalogEntry("quest/76152", "狮子奋迅"),
                   entryType: "collection",
-                  childQuestIds: ["child"],
+                  aggregateChildQuestIds: ["child"],
                 },
               ],
             },
@@ -126,7 +126,7 @@ describe("story catalog filtering", () => {
                 {
                   ...catalogEntry("mission/collection", "合集任务"),
                   entryType: "collection",
-                  childQuestIds: ["child"],
+                  aggregateChildQuestIds: ["child"],
                 },
               ],
               chapters: [

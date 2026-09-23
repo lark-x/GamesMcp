@@ -304,10 +304,7 @@ export class LocalJsonAdapter implements SourceAdapter {
       file.content ||
       (snapshot.metadata.snapshotFormat === "stream-v1"
         ? await readFile(
-            resolve(
-              dirname(snapshot.storagePath),
-              `${snapshot.contentHash}.file-0`,
-            ),
+            resolve(dirname(snapshot.storagePath), `${snapshot.contentHash}.file-0`),
             "utf8",
           )
         : file.content);

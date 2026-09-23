@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { textKindSchema, type TextKind } from "../packages/contracts/src/text.js";
+import type { TextKind } from "../packages/contracts/src/text.js";
 import { createDatabase, createPool } from "../packages/database/src/client.js";
 import { SqlKnowledgeRepository } from "../packages/database/src/repository.js";
 
@@ -48,7 +48,9 @@ function safeReadJsonArray(filePath: string): unknown[] {
   }
 }
 
-export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?? "postgres://gip:gip@127.0.0.1:5432/gip") {
+export async function auditTextCoverage(
+  databaseUrl = process.env.DATABASE_URL ?? "postgres://gip:gip@127.0.0.1:5432/gip",
+) {
   console.log("=== GamesMcp 跨游戏文本覆盖率与五层质量审计 ===");
   const pool = createPool(databaseUrl);
   const db = createDatabase(pool);
@@ -77,10 +79,6 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
 
     // 2. Audit Genshin Impact
     console.log("\n--- Auditing Genshin Impact Coverage ---");
-    // Enumerate every canonical Text Kind instead of a hand-maintained list so a
-    // newly populated kind can never be silently skipped by this audit.
-    const allKinds: TextKind[] = [...textKindSchema.options];
-
     const genshinReport: GameTextCoverageReport = {
       gameId: GENSHIN_GAME_ID,
       gameName: "Genshin Impact",
@@ -97,10 +95,13 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
     };
 
     // Baseline audit in Genshin
-    const gsBaselineRes = await pool.query(`
+    const gsBaselineRes = await pool.query(
+      `
       SELECT count(*)::int as count FROM knowledge.documents
       WHERE revision_id = $1 AND (metadata->>'source' IN ('baseline', 'fixture') OR metadata->'provenance'->>'source' IN ('baseline', 'fixture'))
-    `, [genshinRev.id]);
+    `,
+      [genshinRev.id],
+    );
     const gsBaselineCount = Number(gsBaselineRes.rows[0]?.count ?? 0);
     genshinReport.qualityGates.productionBaselineCount = gsBaselineCount;
     if (gsBaselineCount > 0) genshinReport.qualityGates.productionBaselineZero = false;
@@ -110,19 +111,44 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
       ? resolve("data/upstream/AnimeGameData-current")
       : resolve("data/upstream/AnimeGameData");
     const gsSourceCounts: Partial<Record<TextKind, number>> = {
-      books: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/BooksCodexExcelConfigData.json")).length,
-      "character-stories": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/FetterStoryExcelConfigData.json")).length,
-      voices: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/AvatarVoiceExcelConfigData.json")).length ||
-        safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/FettersExcelConfigData.json")).length,
-      "item-texts": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/MaterialCodexExcelConfigData.json")).length,
-      tutorials: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/TutorialExcelConfigData.json")).length,
-      guides: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/GuideV2ExcelConfigData.json")).length,
-      "exploration-tips": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/PushTipsConfigData.json")).length,
-      "system-tips": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/NewActivityPushTipsConfigData.json")).length,
-      "loading-tips": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/LoadingTipsExcelConfigData.json")).length,
-      gcg: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/GCGTutorialTextExcelConfigData.json")).length,
-      "activity-tutorials": safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/ActivitySnowRaceHideTutorialExcelConfigData.json")).length,
-      mechanics: safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/TutorialCatalogExcelConfigData.json")).length,
+      books: safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/BooksCodexExcelConfigData.json"),
+      ).length,
+      "character-stories": safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/FetterStoryExcelConfigData.json"),
+      ).length,
+      voices:
+        safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/AvatarVoiceExcelConfigData.json"))
+          .length ||
+        safeReadJsonArray(resolve(gsUpstreamDir, "ExcelBinOutput/FettersExcelConfigData.json"))
+          .length,
+      "item-texts": safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/MaterialCodexExcelConfigData.json"),
+      ).length,
+      tutorials: safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/TutorialExcelConfigData.json"),
+      ).length,
+      guides: safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/GuideV2ExcelConfigData.json"),
+      ).length,
+      "exploration-tips": safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/PushTipsConfigData.json"),
+      ).length,
+      "system-tips": safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/NewActivityPushTipsConfigData.json"),
+      ).length,
+      "loading-tips": safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/LoadingTipsExcelConfigData.json"),
+      ).length,
+      gcg: safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/GCGTutorialTextExcelConfigData.json"),
+      ).length,
+      "activity-tutorials": safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/ActivitySnowRaceHideTutorialExcelConfigData.json"),
+      ).length,
+      mechanics: safeReadJsonArray(
+        resolve(gsUpstreamDir, "ExcelBinOutput/TutorialCatalogExcelConfigData.json"),
+      ).length,
     };
 
     // Kinds whose upstream source tables belong to Genshin. Star Rail-only kinds
@@ -144,7 +170,8 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
 
     for (const kind of genshinOwnedKinds) {
       const catalog = await repository.listTextCatalog(GENSHIN_GAME_ID, { kind, limit: 1 });
-      const totalAcrossGroups = catalog.groups.reduce((sum, g) => sum + g.count, 0) || catalog.total;
+      const totalAcrossGroups =
+        catalog.groups.reduce((sum, g) => sum + g.count, 0) || catalog.total;
       const rawCount = gsSourceCounts[kind] ?? totalAcrossGroups;
       const metrics: LayerMetrics = {
         sourceRawRecords: rawCount,
@@ -203,15 +230,22 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
     };
 
     // Baseline audit in Star Rail
-    const srBaselineDocs = await pool.query(`
+    const srBaselineDocs = await pool.query(
+      `
       SELECT count(*)::int as count FROM knowledge.documents
       WHERE revision_id = $1 AND (metadata->>'source' IN ('baseline', 'fixture') OR metadata->'provenance'->>'source' IN ('baseline', 'fixture'))
-    `, [starrailRev.id]);
-    const srBaselineChars = await pool.query(`
+    `,
+      [starrailRev.id],
+    );
+    const srBaselineChars = await pool.query(
+      `
       SELECT count(*)::int as count FROM knowledge.genshin_characters
       WHERE game_id = $1 AND provenance->>'source' IN ('baseline', 'fixture')
-    `, [STARRAIL_GAME_ID]);
-    const srBaselineTotal = Number(srBaselineDocs.rows[0]?.count ?? 0) + Number(srBaselineChars.rows[0]?.count ?? 0);
+    `,
+      [STARRAIL_GAME_ID],
+    );
+    const srBaselineTotal =
+      Number(srBaselineDocs.rows[0]?.count ?? 0) + Number(srBaselineChars.rows[0]?.count ?? 0);
     starrailReport.qualityGates.productionBaselineCount = srBaselineTotal;
     if (srBaselineTotal > 0) starrailReport.qualityGates.productionBaselineZero = false;
 
@@ -223,9 +257,12 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
       voices: safeReadJsonArray(resolve(srUpstreamDir, "VoiceConfig.json")).length,
       messages: safeReadJsonArray(resolve(srUpstreamDir, "MessageItemConfig.json")).length,
       "train-visitors": safeReadJsonArray(resolve(srUpstreamDir, "TrainVisitorConfig.json")).length,
-      "story-atlas": safeReadJsonArray(resolve(srUpstreamDir, "ChronicleConclusion.json")).length + safeReadJsonArray(resolve(srUpstreamDir, "NounAtlas.json")).length,
+      "story-atlas":
+        safeReadJsonArray(resolve(srUpstreamDir, "ChronicleConclusion.json")).length +
+        safeReadJsonArray(resolve(srUpstreamDir, "NounAtlas.json")).length,
       "item-texts": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfig.json")).length,
-      "lightcone-lore": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfigEquipment.json")).length,
+      "lightcone-lore": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfigEquipment.json"))
+        .length,
       "relic-lore": safeReadJsonArray(resolve(srUpstreamDir, "ItemConfigRelic.json")).length,
       tutorials: safeReadJsonArray(resolve(srUpstreamDir, "TutorialGuideGroup.json")).length,
       guides: safeReadJsonArray(resolve(srUpstreamDir, "GameplayGuideData.json")).length,
@@ -233,7 +270,8 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
 
     for (const kind of starrailOwnedKinds) {
       const catalog = await repository.listTextCatalog(STARRAIL_GAME_ID, { kind, limit: 1 });
-      const totalAcrossGroups = catalog.groups.reduce((sum, g) => sum + g.count, 0) || catalog.total;
+      const totalAcrossGroups =
+        catalog.groups.reduce((sum, g) => sum + g.count, 0) || catalog.total;
       const rawCount = srSourceCounts[kind] ?? totalAcrossGroups;
       const metrics: LayerMetrics = {
         sourceRawRecords: rawCount,
@@ -281,8 +319,12 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
     console.log("  - summary.md");
 
     console.log("\n=== Quality Gate Results ===");
-    console.log(`Genshin Gate Passed: ${genshinReport.qualityGates.passed ? "PASS" : "FAIL"} (Baseline: ${genshinReport.qualityGates.productionBaselineCount})`);
-    console.log(`Star Rail Gate Passed: ${starrailReport.qualityGates.passed ? "PASS" : "FAIL"} (Baseline: ${starrailReport.qualityGates.productionBaselineCount})`);
+    console.log(
+      `Genshin Gate Passed: ${genshinReport.qualityGates.passed ? "PASS" : "FAIL"} (Baseline: ${genshinReport.qualityGates.productionBaselineCount})`,
+    );
+    console.log(
+      `Star Rail Gate Passed: ${starrailReport.qualityGates.passed ? "PASS" : "FAIL"} (Baseline: ${starrailReport.qualityGates.productionBaselineCount})`,
+    );
 
     return { genshin: genshinReport, starrail: starrailReport };
   } finally {
@@ -290,7 +332,10 @@ export async function auditTextCoverage(databaseUrl = process.env.DATABASE_URL ?
   }
 }
 
-function generateSummaryMarkdown(genshin: GameTextCoverageReport, starrail: GameTextCoverageReport): string {
+function generateSummaryMarkdown(
+  genshin: GameTextCoverageReport,
+  starrail: GameTextCoverageReport,
+): string {
   return `# 双游戏文本覆盖率与五层审计报告
 
 > 生成时间: ${new Date().toISOString()}  
@@ -313,7 +358,12 @@ function generateSummaryMarkdown(genshin: GameTextCoverageReport, starrail: Game
 
 | 文本类别 (TextKind) | 原始源表记录 | 提取与入库文档 | 分组数 (Groups) | 分组维度 | 状态 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-${Object.entries(genshin.kinds).map(([k, m]) => `| \`${k}\` | ${m.sourceRawRecords} | **${m.apiTotal}** | ${m.groupsCount} | ${m.groupsCount > 1 ? "按所属主体/类别聚合" : "全部"} | ${m.apiTotal > 0 ? "正常已发布" : "分类管道就绪（待新版本全量激活）"} |`).join("\n")}
+${Object.entries(genshin.kinds)
+  .map(
+    ([k, m]) =>
+      `| \`${k}\` | ${m.sourceRawRecords} | **${m.apiTotal}** | ${m.groupsCount} | ${m.groupsCount > 1 ? "按所属主体/类别聚合" : "全部"} | ${m.apiTotal > 0 ? "正常已发布" : "分类管道就绪（待新版本全量激活）"} |`,
+  )
+  .join("\n")}
 
 ---
 
@@ -321,7 +371,12 @@ ${Object.entries(genshin.kinds).map(([k, m]) => `| \`${k}\` | ${m.sourceRawRecor
 
 | 文本类别 (TextKind) | 原始源表记录 | 提取与入库文档 | 分组数 (Groups) | 分组维度 | 状态 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-${Object.entries(starrail.kinds).map(([k, m]) => `| \`${k}\` | ${m.sourceRawRecords} | **${m.apiTotal}** | ${m.groupsCount} | ${m.groupsCount > 1 ? "按所属主体/章节聚合" : "全部"} | ${m.apiTotal > 0 ? "正常已发布" : "分类管道就绪"} |`).join("\n")}
+${Object.entries(starrail.kinds)
+  .map(
+    ([k, m]) =>
+      `| \`${k}\` | ${m.sourceRawRecords} | **${m.apiTotal}** | ${m.groupsCount} | ${m.groupsCount > 1 ? "按所属主体/章节聚合" : "全部"} | ${m.apiTotal > 0 ? "正常已发布" : "分类管道就绪"} |`,
+  )
+  .join("\n")}
 
 ---
 
@@ -332,7 +387,10 @@ ${Object.entries(starrail.kinds).map(([k, m]) => `| \`${k}\` | ${m.sourceRawReco
 `;
 }
 
-if (process.argv[1]?.endsWith("audit-text-coverage.ts") || process.argv[1]?.endsWith("audit-text-coverage.js")) {
+if (
+  process.argv[1]?.endsWith("audit-text-coverage.ts") ||
+  process.argv[1]?.endsWith("audit-text-coverage.js")
+) {
   auditTextCoverage().catch((err) => {
     console.error("Audit failed:", err);
     process.exit(1);

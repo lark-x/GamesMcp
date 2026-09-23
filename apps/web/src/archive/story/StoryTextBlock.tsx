@@ -75,7 +75,7 @@ function resolveSpeakerName(
     .replace(/<ruby>(.*?)<rt>.*?<\/rt><\/ruby>/gu, "$1")
     // Unresolvable leading macros such as {TEXTJOIN#255} leave a bare separator
     // behind ("•兀鹫弓手"); drop it so the badge reads cleanly.
-    .replace(/^[\s·•:：,，、\-]+/u, "")
+    .replace(/^[\s·•:：,，、-]+/u, "")
     .trim();
   // An unresolvable macro (for example a bare {TEXTJOIN#N} speaker row) must
   // render as no speaker instead of an empty badge.
@@ -100,12 +100,7 @@ function resolveSpeakerName(
   }
 
   // Genshin
-  if (
-    trimmed === "旅行者" ||
-    trimmed === "空" ||
-    trimmed === "荧" ||
-    lower === "traveler"
-  ) {
+  if (trimmed === "旅行者" || trimmed === "空" || trimmed === "荧" || lower === "traveler") {
     if (prefs.nickname && prefs.nickname !== "旅行者") {
       return prefs.nickname;
     }
@@ -143,20 +138,25 @@ export function StoryTextBlock({
       prefs.nickname && prefs.nickname !== defaultNick
         ? `${prefs.nickname}选项`
         : isStarRail
-        ? prefs.gender === "male"
-          ? "穹选项"
-          : "星选项"
-        : prefs.gender === "male"
-        ? "空选项"
-        : "荧选项";
+          ? prefs.gender === "male"
+            ? "穹选项"
+            : "星选项"
+          : prefs.gender === "male"
+            ? "空选项"
+            : "荧选项";
 
     return (
       <div className="story-script-choice">
-        <span className="story-choice-diamond" aria-hidden="true">◆</span>
+        <span className="story-choice-diamond" aria-hidden="true">
+          ◆
+        </span>
         <span className="story-choice-prefix">{prefix}</span>
         <span className="story-choice-text">{formatStoryText(node.body, prefs)}</span>
-        {showNodeId ? (<span className="story-script-node-id" title={`分支节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}</span>) : null}
+        {showNodeId ? (
+          <span className="story-script-node-id" title={`分支节点: #${node.nodeKey}`}>
+            #{shortNodeKey(node.nodeKey)}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -166,8 +166,11 @@ export function StoryTextBlock({
       <div className="story-script-objective">
         <span className="story-objective-badge">任务目标</span>
         <span className="story-objective-text">{formatStoryText(node.body, prefs)}</span>
-        {showNodeId ? (<span className="story-script-node-id" title={`目标节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}</span>) : null}
+        {showNodeId ? (
+          <span className="story-script-node-id" title={`目标节点: #${node.nodeKey}`}>
+            #{shortNodeKey(node.nodeKey)}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -175,10 +178,15 @@ export function StoryTextBlock({
   if (node.type === "system_text") {
     return (
       <div className="story-script-system">
-        <span className="story-system-icon" aria-hidden="true">ⓘ</span>
+        <span className="story-system-icon" aria-hidden="true">
+          ⓘ
+        </span>
         <span className="story-system-text">{formatStoryText(node.body, prefs)}</span>
-        {showNodeId ? (<span className="story-script-node-id" title={`系统节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}</span>) : null}
+        {showNodeId ? (
+          <span className="story-script-node-id" title={`系统节点: #${node.nodeKey}`}>
+            #{shortNodeKey(node.nodeKey)}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -186,12 +194,17 @@ export function StoryTextBlock({
   if (node.type === "narration" || speakerlessTypes.has(node.type)) {
     return (
       <div className="story-script-narration">
-        <span className="story-narration-glyph" aria-hidden="true">❖</span>
+        <span className="story-narration-glyph" aria-hidden="true">
+          ❖
+        </span>
         <div className="story-narration-content">
           <p className="story-narration-text">{formatStoryText(node.body, prefs)}</p>
         </div>
-        {showNodeId ? (<span className="story-script-node-id" title={`旁白节点: #${node.nodeKey}`}>
-          #{shortNodeKey(node.nodeKey)}</span>) : null}
+        {showNodeId ? (
+          <span className="story-script-node-id" title={`旁白节点: #${node.nodeKey}`}>
+            #{shortNodeKey(node.nodeKey)}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -212,8 +225,11 @@ export function StoryTextBlock({
       <div className="story-script-body-col">
         <p className="story-script-text">{formatStoryText(node.body, prefs)}</p>
       </div>
-      {showNodeId ? (<span className="story-script-node-id" title={`对白节点: #${node.nodeKey}`}>
-        #{shortNodeKey(node.nodeKey)}</span>) : null}
+      {showNodeId ? (
+        <span className="story-script-node-id" title={`对白节点: #${node.nodeKey}`}>
+          #{shortNodeKey(node.nodeKey)}
+        </span>
+      ) : null}
     </div>
   );
 }

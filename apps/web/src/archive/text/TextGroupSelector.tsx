@@ -27,7 +27,8 @@ export function TextGroupSelector({
     if (!filterQuery.trim()) return groups;
     const q = filterQuery.trim().toLowerCase();
     return groups.filter(
-      (g) => g.name.toLowerCase().includes(q) || (g.subtitle && g.subtitle.toLowerCase().includes(q)),
+      (g) =>
+        g.name.toLowerCase().includes(q) || (g.subtitle && g.subtitle.toLowerCase().includes(q)),
     );
   }, [groups, filterQuery]);
 
@@ -51,12 +52,8 @@ export function TextGroupSelector({
   return (
     <div className="text-group-selector-container" ref={containerRef}>
       <div className="text-group-selector-header">
-        <span className="text-group-selector-label">
-          {label}
-        </span>
-        <span className="text-group-selector-count">
-          共 {groups.length} 组
-        </span>
+        <span className="text-group-selector-label">{label}</span>
+        <span className="text-group-selector-count">共 {groups.length} 组</span>
       </div>
 
       <button
@@ -66,13 +63,9 @@ export function TextGroupSelector({
         aria-expanded={isOpen}
       >
         <div className="text-group-trigger-left">
-          <span className="text-group-trigger-name">
-            {activeGroup?.name ?? "请选择"}
-          </span>
+          <span className="text-group-trigger-name">{activeGroup?.name ?? "请选择"}</span>
           {activeGroup?.count !== undefined && (
-            <span className="text-group-trigger-badge">
-              {activeGroup.count}
-            </span>
+            <span className="text-group-trigger-badge">{activeGroup.count}</span>
           )}
         </div>
         <span className="text-group-trigger-arrow">▼</span>
@@ -112,10 +105,19 @@ export function TextGroupSelector({
                       setFilterQuery("");
                     }}
                   >
-                    <span style={{ fontWeight: isSelected ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span
+                      style={{
+                        fontWeight: isSelected ? 600 : 400,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {group.name}
                     </span>
-                    <span style={{ fontSize: "11px", color: "var(--archive-muted)", marginLeft: "8px" }}>
+                    <span
+                      style={{ fontSize: "11px", color: "var(--archive-muted)", marginLeft: "8px" }}
+                    >
                       {group.count}
                     </span>
                   </button>

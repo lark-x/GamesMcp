@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DocumentDetail } from "@gip/domain";
-import type { TextCatalogEntry as EntryModel, TextCatalogResponse, TextKind } from "@gip/contracts";
+import type { TextCatalogEntry as EntryModel, TextCatalogResponse } from "@gip/contracts";
 import { apiFetch } from "../../api.js";
 import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
@@ -63,9 +63,6 @@ export function TextBrowser({
   textKind = "books",
   initialBookId,
   initialChapterId,
-  onHome,
-  onOpenStory,
-  onOpenMaterials,
   onRouteChange,
 }: TextBrowserProps) {
   const [catalog, setCatalog] = useState<TextCatalogResponse | null>(null);
@@ -93,6 +90,16 @@ export function TextBrowser({
     setActiveEntry(null);
     setTextDocument(null);
   }, [textKind]);
+
+  // Browser history changes the route props without remounting this reader.
+  // Follow the URL so Back/Forward restores the selected document as well.
+  useEffect(() => {
+    setActiveGroupId(initialBookId ?? null);
+    setActiveEntryId(initialChapterId ?? null);
+    setActiveEntry(null);
+    setOffset(0);
+    setSearchQuery("");
+  }, [initialBookId, initialChapterId]);
 
   // Load catalog list
   const loadCatalog = useCallback(async () => {
@@ -151,10 +158,19 @@ export function TextBrowser({
     void loadCatalog();
   }, [loadCatalog]);
 
+  useEffect(() => {
+    if (!activeEntryId || !catalog || activeEntry?.documentId === activeEntryId) return;
+    const matchingEntry = catalog.entries.find(
+      (entry) => entry.documentId === activeEntryId || entry.stableId === activeEntryId,
+    );
+    if (matchingEntry) setActiveEntry(matchingEntry);
+  }, [activeEntryId, activeEntry, catalog]);
+
   // Load document content
   const loadDocument = useCallback(
     async (entry: EntryModel) => {
       setDocumentLoading(true);
+      setError("");
       try {
         const suffix = selectedRevision
           ? "?revisionId=" + encodeURIComponent(selectedRevision)
@@ -163,20 +179,24 @@ export function TextBrowser({
           `/api/games/${gameId}/documents/${encodeURIComponent(entry.documentId)}${suffix}`,
         );
         setTextDocument(result.document);
-      } catch {
-        // Fallback for voice lines or items that might live in dedicated tables
-        setTextDocument({
-          id: entry.documentId,
-          title: entry.title,
-          type: entry.kind,
-          locale: entry.locale,
-          body: entry.preview ?? "",
-          sourceName: gameName,
-          sourceId: entry.documentId,
-          segments: [],
-          gameVersion: entry.gameVersion ?? null,
-          revision: selectedRevision ?? undefined,
-        });
+      } catch (reason) {
+        if (entry.preview && entry.kind !== "books") {
+          setTextDocument({
+            id: entry.documentId,
+            title: entry.title,
+            type: entry.kind,
+            locale: entry.locale,
+            body: entry.preview,
+            sourceName: gameName,
+            sourceId: entry.documentId,
+            segments: [],
+            gameVersion: entry.gameVersion ?? null,
+            revision: selectedRevision ?? undefined,
+          });
+        } else {
+          setTextDocument(null);
+          setError(reason instanceof Error ? reason.message : "正文加载失败");
+        }
       } finally {
         setDocumentLoading(false);
       }
@@ -253,7 +273,9 @@ export function TextBrowser({
       if (block.kind === "note") {
         return (
           <div className="story-script-narration" key={index}>
-            <span className="story-narration-glyph" aria-hidden="true">❖</span>
+            <span className="story-narration-glyph" aria-hidden="true">
+              ❖
+            </span>
             <div className="story-narration-content">
               <p className="story-narration-text">
                 {formatStoryText(block.text, {
@@ -274,7 +296,9 @@ export function TextBrowser({
       if (isSystem) {
         return (
           <div className="story-script-system" key={index}>
-            <span className="story-system-icon" aria-hidden="true">ⓘ</span>
+            <span className="story-system-icon" aria-hidden="true">
+              ⓘ
+            </span>
             <span className="story-system-text">
               {formatStoryText(block.text, {
                 game: isStarRail ? "starrail" : "genshin",
@@ -351,7 +375,9 @@ export function TextBrowser({
             <>
               <header className="text-reader-header">
                 <span className="story-type-pill">{kindConfig.navLabel}</span>
-                <h2>{textDocument.type === "book" ? `《${textDocument.title}》` : textDocument.title}</h2>
+                <h2>
+                  {textDocument.type === "book" ? `《${textDocument.title}》` : textDocument.title}
+                </h2>
                 <p className="story-reader-meta">
                   {[
                     gameName,
@@ -441,7 +467,10 @@ export function TextBrowser({
                 <InspectorField label="片段数" value={textDocument.segments.length || 1} />
               </InspectorSection>
               <InspectorSection title="版本与来源">
-                <InspectorField label="游戏版本" value={textDocument.gameVersion ?? activeEntry?.gameVersion ?? "—"} />
+                <InspectorField
+                  label="游戏版本"
+                  value={textDocument.gameVersion ?? activeEntry?.gameVersion ?? "—"}
+                />
                 <InspectorField label="语言" value={textDocument.locale || "zh-CN"} />
                 {textDocument.revision && (
                   <InspectorField label="Revision" value={<code>{textDocument.revision}</code>} />

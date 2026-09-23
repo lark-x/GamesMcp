@@ -1013,10 +1013,7 @@ function mechanismDocumentFromRecord(
   const sourceFile = mechanismSourcePath(record, inputHashes);
   const sourceFileHash = inputHashes[sourceFile] ?? rawHashFor(record);
   const rawContentHash = rawHashFor(record);
-  const classification = classifyMechanismDocument(
-    record.mechanismStableId,
-    record.sourceSubtype,
-  );
+  const classification = classifyMechanismDocument(record.mechanismStableId, record.sourceSubtype);
   return makeRecord(
     context,
     {
@@ -1052,11 +1049,11 @@ function mechanismDocumentFromRecord(
     rawContentHash,
     ["MechanismExtractor field whitelist", "TextMap fallback resolution"],
     {
-          canonicalKey: record.mechanismStableId,
-          mechanismStableId: record.mechanismStableId,
-          mechanismCategory: record.category,
-          ...(record.sourceSubtype ? { sourceSubtype: record.sourceSubtype } : {}),
-          textResolution: record.textResolution,
+      canonicalKey: record.mechanismStableId,
+      mechanismStableId: record.mechanismStableId,
+      mechanismCategory: record.category,
+      ...(record.sourceSubtype ? { sourceSubtype: record.sourceSubtype } : {}),
+      textResolution: record.textResolution,
       relatedEntities: record.relatedEntities ?? [],
       // Each record cites only the table that actually owns its text. Writing
       // the full input set here inflates every mechanism row with unrelated

@@ -19,9 +19,7 @@ async function isPortOpen(port: number): Promise<boolean> {
 }
 
 async function detectApiPort(preferredPort: number): Promise<number> {
-  const candidates = [preferredPort, 4100, 4101, 4102].filter(
-    (p, i, arr) => arr.indexOf(p) === i,
-  );
+  const candidates = [preferredPort, 4100, 4101, 4102].filter((p, i, arr) => arr.indexOf(p) === i);
   for (const port of candidates) {
     if (await isPortOpen(port)) return port;
   }
@@ -42,4 +40,3 @@ export default defineConfig(async ({ mode }) => {
     },
   };
 });
-

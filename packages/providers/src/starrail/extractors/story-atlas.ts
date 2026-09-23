@@ -9,15 +9,9 @@ export async function extractStoryAtlasDocuments(input: ExtractorInput): Promise
   const chronicleItem = input.inventory.items.find(
     (i) => i.path === "ExcelOutput/ChronicleConclusion.json",
   );
-  const actItem = input.inventory.items.find(
-    (i) => i.path === "ExcelOutput/MainStoryActView.json",
-  );
-  const missionItem = input.inventory.items.find(
-    (i) => i.path === "ExcelOutput/MainMission.json",
-  );
-  const nounItem = input.inventory.items.find(
-    (i) => i.path === "ExcelOutput/NounAtlas.json",
-  );
+  const actItem = input.inventory.items.find((i) => i.path === "ExcelOutput/MainStoryActView.json");
+  const missionItem = input.inventory.items.find((i) => i.path === "ExcelOutput/MainMission.json");
+  const nounItem = input.inventory.items.find((i) => i.path === "ExcelOutput/NounAtlas.json");
 
   if (!chronicleItem && !nounItem) {
     return result;
@@ -25,11 +19,9 @@ export async function extractStoryAtlasDocuments(input: ExtractorInput): Promise
 
   const resolveHash = (val: unknown): string | null => {
     if (!val) return null;
-    if (typeof val === "number" || typeof val === "string")
-      return input.resolver.resolve(val);
+    if (typeof val === "number" || typeof val === "string") return input.resolver.resolve(val);
     if (typeof val === "object") {
-      const hash =
-        (val as Record<string, unknown>).Hash ?? (val as Record<string, unknown>).hash;
+      const hash = (val as Record<string, unknown>).Hash ?? (val as Record<string, unknown>).hash;
       return hash ? input.resolver.resolve(hash as string | number) : null;
     }
     return null;

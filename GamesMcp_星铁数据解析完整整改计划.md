@@ -708,19 +708,9 @@ type StarRailStoryQuest = {
   subMissions: StarRailSubMission[];
   dialogueNodes: StarRailDialogueNode[];
 
-  completeness:
-    | "complete"
-    | "partial"
-    | "metadata_only"
-    | "unresolved";
+  completeness: "complete" | "partial" | "metadata_only" | "unresolved";
 
-  visibility:
-    | "public"
-    | "hidden"
-    | "test"
-    | "internal"
-    | "unreleased"
-    | "unknown";
+  visibility: "public" | "hidden" | "test" | "internal" | "unreleased" | "unknown";
 
   provenance: Record<string, unknown>;
 };
@@ -845,15 +835,15 @@ StarRailDialogueExtractor
 
 ```ts
 {
-  nodeId
-  nodeType
-  speakerId
-  speakerName
-  body
-  order
-  options
-  sourceFile
-  sourcePath
+  nodeId;
+  nodeType;
+  speakerId;
+  speakerName;
+  body;
+  order;
+  options;
+  sourceFile;
+  sourcePath;
 }
 ```
 
@@ -1668,39 +1658,50 @@ Agent 每完成一个 Phase 必须提交：
 ## Phase X Result
 
 ### Commit
+
 <sha>
 
 ### Source Used
+
 path:
 commit:
 version:
 fileCount:
 
 ### Before
+
 ...
 
 ### After
+
 ...
 
 ### Parsed Counts
+
 ...
 
 ### Unresolved
+
 ...
 
 ### Skipped
+
 ...
 
 ### Real Samples
+
 ...
 
 ### Tests
+
 ...
 
 ### Remaining Issues
+
 ...
 
 ### Gate
+
 PASS / FAIL
 ```
 

@@ -176,9 +176,13 @@ export type QuestDetail = QuestSearchHit & {
   prerequisites: string[];
   topology?: {
     prerequisiteQuestIds: string[];
-    childQuestIds: string[];
+    successorQuestIds: string[];
+    relatedQuestIds: string[];
+    aggregateChildQuestIds: string[];
     parentQuestIds: string[];
     storyOrder?: number;
+    orderSource?: "topology" | "upstream" | "fallback";
+    orderConfidence?: "high" | "medium" | "low";
     aggregateParentQuestId?: string;
     cycle?: boolean;
     cycleNodeIds?: string[];

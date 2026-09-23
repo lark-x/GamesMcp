@@ -127,7 +127,11 @@ async function main() {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     );
-    record("invalid session → 404", invalidSession.status === 404, `status=${invalidSession.status}`);
+    record(
+      "invalid session → 404",
+      invalidSession.status === 404,
+      `status=${invalidSession.status}`,
+    );
   } catch (error) {
     record("invalid session → 404", false, String(error));
   }

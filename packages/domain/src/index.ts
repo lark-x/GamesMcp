@@ -19,8 +19,6 @@ import {
   GenshinWeapon,
   NarrativeMode,
   StoryCatalog,
-  TextCatalogEntry,
-  TextCatalogGroup,
   TextCatalogResponse,
   TextKind,
 } from "@gip/contracts";
@@ -255,6 +253,10 @@ export type QuestRecordPayload = {
     danglingEdges: string[];
     missingTextNodes: string[];
     missingSpeakerNodes: string[];
+    disconnectedComponentCount?: number;
+    rootlessComponentCount?: number;
+    stronglyConnectedComponents?: string[][];
+    unreachableDialogueIds?: string[];
   };
   questRelationEdges?: Array<{
     edgeId?: string;
@@ -264,6 +266,8 @@ export type QuestRecordPayload = {
     relationType: string;
     sourceFile: string;
     sourcePath?: string;
+    rawField?: string;
+    rawIndex?: number;
     sourceHash: string;
     derived: boolean;
     confidence: number;
@@ -273,9 +277,13 @@ export type QuestRecordPayload = {
   }>;
   topology?: {
     prerequisiteQuestIds: string[];
-    childQuestIds: string[];
+    successorQuestIds: string[];
+    relatedQuestIds: string[];
+    aggregateChildQuestIds: string[];
     parentQuestIds: string[];
     storyOrder?: number;
+    orderSource?: "topology" | "upstream" | "fallback";
+    orderConfidence?: "high" | "medium" | "low";
     rawRelationEdges?: QuestRecordPayload["questRelationEdges"];
     derivedRelationEdges?: QuestRecordPayload["questRelationEdges"];
     subQuestIds?: string[];
@@ -287,6 +295,7 @@ export type QuestRecordPayload = {
     danglingEdges?: QuestRecordPayload["questRelationEdges"];
   };
   storyProjection?: {
+    schemaVersion: number;
     regionId?: string;
     regionTitle?: string;
     regionOrder?: number;
@@ -294,12 +303,15 @@ export type QuestRecordPayload = {
     familyTitle: string;
     displayTitle?: string;
     familyOrder?: number;
+    subseriesId?: string;
+    subseriesTitle?: string;
+    subseriesOrder?: number;
     chapterId?: string;
     chapterTitle?: string;
     chapterOrder?: number;
     entryType?: "quest" | "collection" | "aggregate";
     parentQuestId?: string;
-    childQuestIds?: string[];
+    aggregateChildQuestIds?: string[];
   };
   completeness: QuestCompleteness;
   completenessReasons?: string[];
@@ -1015,9 +1027,13 @@ export type QuestDialoguePage = {
   prerequisites: string[];
   topology?: {
     prerequisiteQuestIds: string[];
-    childQuestIds: string[];
+    successorQuestIds: string[];
+    relatedQuestIds: string[];
+    aggregateChildQuestIds: string[];
     parentQuestIds: string[];
     storyOrder?: number;
+    orderSource?: "topology" | "upstream" | "fallback";
+    orderConfidence?: "high" | "medium" | "low";
     aggregateParentQuestId?: string;
     cycle?: boolean;
     cycleNodeIds?: string[];

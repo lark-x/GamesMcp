@@ -21,6 +21,26 @@
         "74165",
         "74078"
       ],
+      "subseries": [
+        {
+          "id": "genshin:narzissenkreuz:ann",
+          "title": {
+            "zh-CN": "水仙的安",
+            "en": "Ann of the Narzissenkreuz"
+          },
+          "questIds": ["74001", "74002", "74003", "74004"],
+          "order": 10
+        },
+        {
+          "id": "genshin:narzissenkreuz:trace",
+          "title": {
+            "zh-CN": "水仙的追迹",
+            "en": "In the Wake of Narcissus"
+          },
+          "questIds": ["74072", "74073", "74074", "74075", "74076", "74077", "74165", "74078"],
+          "order": 20
+        }
+      ],
       "reason": "公开任务系列边界用于校验水仙十字相关主任务的跨章节归并。",
       "evidence": ["https://wiki.biligame.com/ys/水仙的追迹"],
       "reviewedAt": "2026-09-22",

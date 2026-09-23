@@ -14,13 +14,13 @@ GamesMcp MCP
 
 ## Tool 一览
 
-| 类别 | 工具 |
-| --- | --- |
-| 平台 | `list_games` `get_game_capabilities` |
-| 实体 | `get_character` `get_material` `get_equipment`（原神武器 / 星铁光锥）`get_enemy` `resolve_entity` |
-| 检索 | `search`（统一检索全部语料）`search_game_knowledge` |
-| 读取 | `get_quest` `get_document` `get_relationships` `get_entity_texts` `get_game_document` `get_game_document_hierarchy` |
-| Provider | `get_game_provider_status` 及各游戏 provider 工具 |
+| 类别     | 工具                                                                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------- |
+| 平台     | `list_games` `get_game_capabilities`                                                                                |
+| 实体     | `get_character` `get_material` `get_equipment`（原神武器 / 星铁光锥）`get_enemy` `resolve_entity`                   |
+| 检索     | `search`（统一检索全部语料）`search_game_knowledge`                                                                 |
+| 读取     | `get_quest` `get_document` `get_relationships` `get_entity_texts` `get_game_document` `get_game_document_hierarchy` |
+| Provider | `get_game_provider_status` 及各游戏 provider 工具                                                                   |
 
 Response budget：检索类工具只返回小结果 + excerpt；需要完整正文时再调用 `get_*` 读取。
 
@@ -162,10 +162,10 @@ http://127.0.0.1:4200/mcp    → MCP 直连
 
 ## 健康检查
 
-| 端点 | 含义 |
-| --- | --- |
-| `GET /health` | 进程存活（不触库） |
-| `GET /ready` | 数据库可连 + 至少注册一个游戏（否则 503） |
+| 端点          | 含义                                      |
+| ------------- | ----------------------------------------- |
+| `GET /health` | 进程存活（不触库）                        |
+| `GET /ready`  | 数据库可连 + 至少注册一个游戏（否则 503） |
 
 ## 验证命令
 

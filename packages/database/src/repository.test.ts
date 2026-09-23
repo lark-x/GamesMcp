@@ -11,6 +11,7 @@ import {
   SqlKnowledgeRepository,
   stableEntityId,
 } from "./repository.js";
+import { assertConsistentQuestProjection } from "./repository-utils.js";
 
 describe("stable entity identity", () => {
   it("depends on game and source identity, not the display name", () => {
@@ -47,6 +48,53 @@ describe("release candidate snapshots", () => {
     expect(preview.map((item) => item.sourceKey)).toEqual(["book/add", "book/change", "book/keep"]);
     expect(preview.find((item) => item.sourceKey === "book/change")?.contentHash).toBe("2");
     expect(base.map((item) => item.sourceKey)).toEqual(["book/keep", "book/change", "book/delete"]);
+  });
+
+  it("replaces a complete source-key category without retaining stale base rows", () => {
+    const base = [
+      record("quest/keep-old/locale/zh-CN", "1"),
+      record("quest/remove-old/locale/zh-CN", "1"),
+      record("book/preserve", "1"),
+    ];
+    const preview = mergeReleaseCandidateRecords(
+      base,
+      [
+        {
+          records: [record("quest/keep-old/locale/zh-CN", "2")],
+          confirmedDeletionKeys: [],
+        },
+      ],
+      ["quest/"],
+    );
+
+    expect(preview.map((item) => item.sourceKey)).toEqual([
+      "book/preserve",
+      "quest/keep-old/locale/zh-CN",
+    ]);
+    expect(preview.find((item) => item.sourceKey.startsWith("quest/"))?.contentHash).toBe("2");
+    expect(base).toHaveLength(3);
+  });
+
+  it("rejects a candidate that mixes projected and legacy public quests", () => {
+    const publicQuest = (sourceKey: string, schemaVersion?: number): NormalizedRecord => ({
+      ...record(sourceKey, "1"),
+      metadata: {
+        questPayload: {
+          visibility: "public",
+          contentRole: "story",
+          ...(schemaVersion ? { storyProjection: { schemaVersion } } : {}),
+        },
+      },
+    });
+    expect(() =>
+      assertConsistentQuestProjection([
+        publicQuest("quest/new/locale/zh-CN", 2),
+        publicQuest("quest/old/locale/zh-CN"),
+      ]),
+    ).toThrow("The candidate mixes projected and inferred public quest records");
+    expect(() =>
+      assertConsistentQuestProjection([publicQuest("quest/new/locale/zh-CN", 2)]),
+    ).not.toThrow();
   });
 
   it("produces a stable checksum which changes with preview content", () => {

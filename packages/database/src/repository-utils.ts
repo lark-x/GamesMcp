@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createHash } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import type { DocumentSummary, DocumentType, EntitySummary, EntityType } from "@gip/contracts";
+import { DomainError } from "@gip/domain";
 import type {
   ConflictKind,
   DocumentProvenance,
@@ -350,13 +352,112 @@ export function manifestRootHash(records: NormalizedRecord[]): string {
 export function mergeReleaseCandidateRecords(
   base: NormalizedRecord[],
   batches: Array<{ records: NormalizedRecord[]; confirmedDeletionKeys: string[] }>,
+  replaceSourceKeyPrefixes: string[] = [],
 ): NormalizedRecord[] {
-  const merged = new Map(base.map((record) => [record.sourceKey, record]));
+  // A converter category import is a complete snapshot, not a sparse patch.
+  // Drop records owned by a replaced category before applying its batches so
+  // rows intentionally excluded by the new converter cannot leak forward from
+  // the previous revision (for example v1 quest rows without StoryProjection).
+  const retainedBase = replaceSourceKeyPrefixes.length
+    ? base.filter(
+        (record) => !replaceSourceKeyPrefixes.some((prefix) => record.sourceKey.startsWith(prefix)),
+      )
+    : base;
+  const merged = new Map(retainedBase.map((record) => [record.sourceKey, record]));
   for (const batch of batches) {
     for (const sourceKey of batch.confirmedDeletionKeys) merged.delete(sourceKey);
     for (const record of batch.records) merged.set(record.sourceKey, record);
   }
   return [...merged.values()].sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+}
+
+export function assertConsistentQuestProjection(records: NormalizedRecord[]): void {
+  const versions = new Set<number>();
+  const missing: string[] = [];
+  const publicKeysByLocale = new Map<string, Set<string>>();
+  const catalogByLocale = new Map<string, Record<string, unknown>>();
+  const narrativeRole = (role: unknown) =>
+    !["control", "trigger", "reward", "metadata", "unknown"].includes(String(role));
+  for (const record of records) {
+    if (!record.sourceKey.startsWith("quest/")) continue;
+    const metadata = asRecord(record.metadata);
+    const payload = asRecord(metadata.questPayload ?? metadata.quest);
+    const locale = record.locale ?? String(metadata.locale ?? "zh-CN");
+    if (metadata.storyCatalogProjection) {
+      if (catalogByLocale.has(locale))
+        throw new DomainError(
+          "story_catalog_projection_duplicate",
+          `Multiple persisted Story Catalog projections exist for ${locale}`,
+        );
+      catalogByLocale.set(locale, asRecord(metadata.storyCatalogProjection));
+    }
+    if (payload.visibility !== "public") continue;
+    if (!narrativeRole(payload.contentRole)) continue;
+    const publicKeys = publicKeysByLocale.get(locale) ?? new Set<string>();
+    publicKeys.add(record.sourceKey);
+    publicKeysByLocale.set(locale, publicKeys);
+    const projection = asRecord(payload.storyProjection);
+    if (typeof projection.schemaVersion === "number") versions.add(projection.schemaVersion);
+    else missing.push(record.sourceKey);
+  }
+  // Historical revisions without a projection remain readable. A new
+  // projected build must be homogeneous before its immutable manifest is made.
+  if (versions.size > 1 || (versions.size > 0 && missing.length > 0))
+    throw new DomainError(
+      "story_projection_mixed_revision",
+      "The candidate mixes projected and inferred public quest records",
+      {
+        versions: [...versions],
+        missingQuestKeys: missing.slice(0, 50),
+        missingCount: missing.length,
+      },
+    );
+  for (const [locale, catalog] of catalogByLocale) {
+    if (catalog.schemaVersion !== 2 || !Array.isArray(catalog.regions))
+      throw new DomainError(
+        "story_catalog_projection_invalid",
+        `Persisted Story Catalog projection is invalid for ${locale}`,
+      );
+    const placed = new Set<string>();
+    const collectEntries = (items: unknown) => {
+      for (const item of Array.isArray(items) ? items : []) {
+        const entry = asRecord(item);
+        if (!narrativeRole(entry.contentRole)) continue;
+        const key = `quest/${String(entry.questId)}/locale/${locale}`;
+        if (placed.has(key))
+          throw new DomainError(
+            "story_catalog_projection_duplicate_quest",
+            `Quest ${key} appears twice in the persisted catalog`,
+          );
+        placed.add(key);
+      }
+    };
+    const collectContainer = (value: unknown): void => {
+      const container = asRecord(value);
+      collectEntries(container.quests);
+      collectEntries(container.collections);
+      for (const chapter of Array.isArray(container.chapters) ? container.chapters : []) {
+        const value = asRecord(chapter);
+        collectEntries(value.quests);
+        collectEntries(value.collections);
+      }
+      for (const subseries of Array.isArray(container.subseries) ? container.subseries : [])
+        collectContainer(subseries);
+    };
+    for (const region of catalog.regions) {
+      const families = asRecord(region).families;
+      for (const family of Array.isArray(families) ? families : []) collectContainer(family);
+    }
+    const expected = publicKeysByLocale.get(locale) ?? new Set<string>();
+    const absent = [...expected].filter((key) => !placed.has(key));
+    const extra = [...placed].filter((key) => !expected.has(key));
+    if (absent.length || extra.length)
+      throw new DomainError(
+        "story_catalog_projection_coverage",
+        `Persisted Story Catalog projection does not match public quests for ${locale}`,
+        { absent: absent.slice(0, 50), extra: extra.slice(0, 50) },
+      );
+  }
 }
 
 export function deterministicRecordOrder(

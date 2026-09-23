@@ -44,7 +44,7 @@ export async function extractBookDocuments(input: ExtractorInput): Promise<Extra
         // 系列名需是有效文案（上游存在「（1）」这类编号占位系列名）
         const seriesTitle = seriesInfo?.title?.trim();
         const hasMeaningfulSeries =
-          seriesTitle && seriesTitle.length >= 2 && !/^[（(][^\)）]{0,6}[)）]$/.test(seriesTitle);
+          seriesTitle && seriesTitle.length >= 2 && !/^[（(][^)）]{0,6}[)）]$/.test(seriesTitle);
 
         const resolveHash = (val: unknown): string | null => {
           if (!val || typeof val !== "object") return null;

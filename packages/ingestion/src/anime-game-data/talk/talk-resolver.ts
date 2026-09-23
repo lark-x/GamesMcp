@@ -3,6 +3,7 @@ import type { QuestRelationEdge } from "../quest/types.js";
 import type {
   TalkCandidate,
   TalkEvidence,
+  TalkEvidenceClass,
   TalkRelationEvidence,
   TalkSourceRegistry,
 } from "./types.js";
@@ -32,12 +33,28 @@ export type ResolveQuestTalkInput = {
 
 export type ResolvedQuestTalks = {
   candidates: TalkCandidate[];
+  /** Talk identities backed by narrative evidence and therefore expected in the quest body. */
   talkIds: string[];
+  /** Availability-only Talk identities retained for provenance, never treated as missing body text. */
+  auxiliaryTalkIds: string[];
   resolvedTalkIds: string[];
   unresolvedTalkIds: string[];
   ambiguousTalkIds: string[];
+  ambiguityDiagnostics: Array<{
+    talkId: string;
+    sourcePairs: string[][];
+    evidenceKinds: TalkRelationEvidence[];
+    evidenceClasses: TalkEvidenceClass[];
+  }>;
   relationEdges: QuestRelationEdge[];
 };
+
+function evidenceClass(kind: TalkRelationEvidence): TalkEvidenceClass {
+  if (kind === "npc_group_condition" || kind === "npc_group_trigger") return "availability";
+  if (kind === "talk_excel_relation") return "compatibility";
+  if (kind === "asset_id_exact" || kind === "legacy_path_match") return "identity";
+  return "narrative";
+}
 
 function candidateKey(candidate: TalkCandidate): string {
   return `${candidate.talkId}|${candidate.sourceFile}`;
@@ -65,6 +82,7 @@ function relationEvidenceForEdge(edge: QuestRelationEdge): TalkEvidence | undefi
   if (!kind) return undefined;
   return {
     kind,
+    evidenceClass: evidenceClass(kind),
     confidence: edge.confidence,
     relationEdgeId: edge.edgeId,
     sourceFile: edge.sourceFile,
@@ -76,13 +94,18 @@ function relationEvidenceForEdge(edge: QuestRelationEdge): TalkEvidence | undefi
 export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<ResolvedQuestTalks> {
   const relatedQuestIds = new Set([input.mainQuestId, ...(input.relatedQuestIds ?? [])]);
   const relationEdges = [
-    ...(input.relationEdges ?? []),
-    ...input.registry.npcGroupRelations.filter(
-      (edge) => edge.fromQuestId && relatedQuestIds.has(edge.fromQuestId),
-    ),
+    ...new Map(
+      [...(input.relationEdges ?? []), ...input.registry.npcGroupRelations]
+        .filter(
+          (edge) =>
+            (edge.fromQuestId && relatedQuestIds.has(edge.fromQuestId)) ||
+            (edge.fromSubQuestId && relatedQuestIds.has(edge.fromSubQuestId)),
+        )
+        .map((edge) => [edge.edgeId, edge]),
+    ).values(),
   ];
   const refs = new Map<string, TalkEvidence[]>();
-  const subQuestByTalkId = new Map<string, string>();
+  const subQuestsByTalkId = new Map<string, Set<string>>();
   const initDialogsByTalkId = new Map<string, string[]>();
   const addRef = (
     talkId: string | undefined,
@@ -93,6 +116,7 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
     const list = refs.get(talkId) ?? [];
     const evidence: TalkEvidence = {
       kind,
+      evidenceClass: evidenceClass(kind),
       confidence: details?.confidence ?? (kind === "quest_complete_talk" ? 1 : 0.8),
       relationEdgeId: details?.relationEdgeId,
       sourceFile: details?.sourceFile,
@@ -105,9 +129,19 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
   for (const talkId of input.completeTalkIds ?? []) addRef(talkId, "quest_complete_talk");
   for (const edge of relationEdges) {
     if (!edge.talkId || !edge.fromQuestId || !relatedQuestIds.has(edge.fromQuestId)) continue;
-    if (edge.relationType === "complete_talk" && edge.fromQuestId !== input.mainQuestId) {
-      const subQuestId = edge.fromSubQuestId ?? edge.fromQuestId;
-      subQuestByTalkId.set(edge.talkId, subQuestId);
+    if (edge.relationType === "complete_talk") {
+      addRef(edge.talkId, "quest_complete_talk", {
+        confidence: edge.confidence,
+        relationEdgeId: edge.edgeId,
+        sourceFile: edge.sourceFile,
+        details: edge.metadata,
+      });
+      if (edge.fromQuestId !== input.mainQuestId || edge.fromSubQuestId) {
+        const subQuestId = edge.fromSubQuestId ?? edge.fromQuestId;
+        const subquests = subQuestsByTalkId.get(edge.talkId) ?? new Set<string>();
+        subquests.add(subQuestId);
+        subQuestsByTalkId.set(edge.talkId, subquests);
+      }
     }
     const evidence = relationEvidenceForEdge(edge);
     if (evidence) addRef(edge.talkId, evidence.kind, evidence);
@@ -135,15 +169,43 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
       }
     }
   }
-  const talkIds = [...refs.keys()].sort(
+  const allReferencedTalkIds = [...refs.keys()].sort(
     (left, right) => Number(left) - Number(right) || left.localeCompare(right),
   );
+  const talkIds = allReferencedTalkIds.filter((talkId) =>
+    (refs.get(talkId) ?? []).some((item) => item.evidenceClass === "narrative"),
+  );
+  const auxiliaryTalkIds = allReferencedTalkIds.filter((talkId) => !talkIds.includes(talkId));
   const candidates: TalkCandidate[] = [];
   const resolvedTalkIds: string[] = [];
   const ambiguousTalkIds: string[] = [];
-  for (const talkId of talkIds) {
+  const ambiguityDiagnostics: ResolvedQuestTalks["ambiguityDiagnostics"] = [];
+  for (const talkId of allReferencedTalkIds) {
     const evidences = refs.get(talkId) ?? [];
-    let assets = await input.registry.findAssets(talkId);
+    const hasNarrativeEvidence = evidences.some((item) => item.evidenceClass === "narrative");
+    if (!hasNarrativeEvidence) {
+      const availabilityEvidence = [...evidences].sort(
+        (left, right) => right.confidence - left.confidence,
+      )[0];
+      if (availabilityEvidence) {
+        candidates.push({
+          talkId,
+          sourceKind: "npc_group",
+          sourceFile: availabilityEvidence.sourceFile ?? `availability:${talkId}`,
+          confidence: availabilityEvidence.confidence,
+          score: availabilityEvidence.confidence,
+          status: "rejected",
+          evidence: availabilityEvidence.kind,
+          evidences,
+          relationEdgeId: availabilityEvidence.relationEdgeId,
+          resolutionReason: "availability_evidence_only",
+        });
+      }
+      continue;
+    }
+    let assets = (await input.registry.findAssets(talkId)).filter(
+      (asset) => asset.sourceKind !== "npc_group",
+    );
     let assetFallbackEvidence: TalkEvidence | undefined;
     if (assets.length === 0) {
       // Some legacy Talk/Quest files have an opaque or hashed filename and no
@@ -154,7 +216,8 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
       const fallbackAssets = new Map<string, NonNullable<TalkCandidate["asset"]>>();
       const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
       for (const initDialog of initDialogs) {
-        for (const asset of await input.registry.findAssetsByDialogueId(initDialog, "quest")) {
+        for (const asset of await input.registry.findAssetsByDialogueId(initDialog)) {
+          if (asset.sourceKind === "npc_group") continue;
           fallbackAssets.set(asset.relativePath, asset);
         }
       }
@@ -162,6 +225,7 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
       if (assets.length > 0) {
         assetFallbackEvidence = {
           kind: "legacy_path_match",
+          evidenceClass: "identity",
           confidence: 0.9,
           details: {
             initDialogIds: initDialogs,
@@ -175,25 +239,79 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
       const signature = assetSignature(asset);
       if (!bySignature.has(signature)) bySignature.set(signature, asset);
     }
-    if (bySignature.size > 0) resolvedTalkIds.push(talkId);
-    if (bySignature.size > 1) ambiguousTalkIds.push(talkId);
-    for (const asset of bySignature.values()) {
-      const candidateEvidences = assetFallbackEvidence
-        ? [...evidences, assetFallbackEvidence]
-        : evidences;
+    const candidateEvidences = assetFallbackEvidence
+      ? [...evidences, assetFallbackEvidence]
+      : evidences;
+    const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
+    const initDialogMatches = [...bySignature.entries()].filter(([, asset]) =>
+      initDialogs.some((dialogueId) =>
+        asset.dialogueRows.some((row) => row.dialogId === dialogueId),
+      ),
+    );
+    const exactPathMatches = [...bySignature.entries()].filter(([, asset]) => {
+      const fileName = asset.relativePath.split("/").at(-1) ?? "";
+      return fileName.replace(/\.json$/iu, "") === talkId;
+    });
+    const exactInitDialogMatches = initDialogMatches.filter(([signature]) =>
+      exactPathMatches.some(([exactSignature]) => exactSignature === signature),
+    );
+    const selectedSignature =
+      bySignature.size === 1
+        ? [...bySignature.keys()][0]
+        : exactInitDialogMatches.length === 1
+          ? exactInitDialogMatches[0]?.[0]
+          : initDialogMatches.length === 1
+            ? initDialogMatches[0]?.[0]
+            : exactPathMatches.length === 1
+              ? exactPathMatches[0]?.[0]
+              : undefined;
+    const isResolved = hasNarrativeEvidence && Boolean(selectedSignature);
+    if (isResolved) resolvedTalkIds.push(talkId);
+    if (hasNarrativeEvidence && bySignature.size > 1 && !selectedSignature) {
+      ambiguousTalkIds.push(talkId);
+      const files = [...bySignature.values()].map((asset) => asset.relativePath).sort();
+      ambiguityDiagnostics.push({
+        talkId,
+        sourcePairs: files.flatMap((left, index) =>
+          files.slice(index + 1).map((right) => [left, right]),
+        ),
+        evidenceKinds: [...new Set(candidateEvidences.map((item) => item.kind))],
+        evidenceClasses: [...new Set(candidateEvidences.map((item) => item.evidenceClass))],
+      });
+    }
+    for (const [signature, asset] of bySignature.entries()) {
       const bestEvidence = [...candidateEvidences].sort((a, b) => b.confidence - a.confidence)[0];
+      const subQuestIds = [...(subQuestsByTalkId.get(talkId) ?? [])].sort(
+        (left, right) => Number(left) - Number(right) || left.localeCompare(right),
+      );
+      const status: TalkCandidate["status"] = !selectedSignature
+        ? "ambiguous"
+        : selectedSignature === signature
+          ? "resolved"
+          : "rejected";
       const candidate: TalkCandidate = {
         talkId,
-        subQuestId: subQuestByTalkId.get(talkId),
+        subQuestId: subQuestIds[0],
+        subQuestIds,
         sourceKind: asset.sourceKind,
         sourceFile: asset.relativePath,
         confidence: bestEvidence?.confidence ?? 0,
         score: bestEvidence?.confidence ?? 0,
-        status: bySignature.size > 1 ? "ambiguous" : "resolved",
+        status,
         evidence: bestEvidence?.kind ?? "asset_id_exact",
         evidences: candidateEvidences,
         asset,
         relationEdgeId: bestEvidence?.relationEdgeId,
+        resolutionReason:
+          exactInitDialogMatches.length === 1 && bySignature.size > 1
+            ? "talk_excel_init_dialog_exact_path"
+            : initDialogMatches.length === 1 && bySignature.size > 1
+              ? "talk_excel_init_dialog_exact"
+              : exactPathMatches.length === 1 && bySignature.size > 1
+                ? "exact_numeric_asset_path"
+                : bySignature.size === 1
+                  ? "unique_content_signature"
+                  : "multiple_content_signatures",
       };
       candidates.push(candidate);
     }
@@ -208,9 +326,11 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
         left.sourceFile.localeCompare(right.sourceFile),
     ),
     talkIds,
+    auxiliaryTalkIds,
     resolvedTalkIds,
     unresolvedTalkIds,
     ambiguousTalkIds,
+    ambiguityDiagnostics,
     relationEdges,
   };
 }

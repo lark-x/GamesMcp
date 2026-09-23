@@ -223,7 +223,9 @@ function characterStoryFromSummary(summary: DocumentSummary, index: number) {
   const characterName =
     separatorIndex > 0 ? summary.title.slice(0, separatorIndex).trim() : summary.title.trim();
   const storyTitle =
-    separatorIndex > 0 ? summary.title.slice(separatorIndex + separator.length).trim() : summary.title;
+    separatorIndex > 0
+      ? summary.title.slice(separatorIndex + separator.length).trim()
+      : summary.title;
   const characterStableId = parts.characterId
     ? `character/${parts.characterId}`
     : `character/${characterName}`;
@@ -503,7 +505,8 @@ export function registerTextRoutes(
     };
   });
 
-  app.get("/api/games/:gameId/text/voices", async (request) => {    const params = z.object({ gameId: gameIdSchema }).parse(request.params);
+  app.get("/api/games/:gameId/text/voices", async (request) => {
+    const params = z.object({ gameId: gameIdSchema }).parse(request.params);
     const query = voiceQuerySchema.parse(parseQuery(request));
     const revisionId = query.revisionId ?? (await gameDomain.requirePublicRevision(params.gameId));
     const home = repository.getArchiveHome

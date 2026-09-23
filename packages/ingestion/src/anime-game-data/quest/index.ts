@@ -12,6 +12,8 @@ export {
   deriveQuestRelations,
 } from "./quest-relation-deriver.js";
 export { projectStoryCatalog } from "./story-projection.js";
+export { auditPublicStory } from "./public-story-audit.js";
+export type { PublicStoryAudit, PublicStoryAuditRecord } from "./public-story-audit.js";
 export type {
   DialogueResolutionStatus,
   QuestBinContent,
@@ -25,4 +27,5 @@ export type {
   StoryProjectionFamily,
   StoryProjectionQuest,
   StoryProjectionRegion,
+  StoryProjectionSubSeries,
 } from "./types.js";

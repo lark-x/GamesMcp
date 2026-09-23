@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { createPool } from "../packages/database/src/client.js";
@@ -85,7 +85,9 @@ export async function runPipelineAudit(options: {
   const sourceMode = isFixture ? "fixture" : "full";
   const sourceDir = isFixture
     ? resolve("data/fixtures/starrail")
-    : options.sourceDir ?? process.env.GAMESMCP_STARRAIL_DATA_DIR ?? resolve("data/fixtures/starrail");
+    : (options.sourceDir ??
+      process.env.GAMESMCP_STARRAIL_DATA_DIR ??
+      resolve("data/fixtures/starrail"));
 
   console.log("=== Star Rail Pipeline Audit (Phase 13 & 14) ===");
   console.log(`Source Dir: ${sourceDir} (${sourceMode})`);
@@ -148,11 +150,16 @@ export async function runPipelineAudit(options: {
   const enemyExtractor = new StarRailEnemyExtractor({ dataDir: sourceDir, inventory, resolver });
   const enemies = await enemyExtractor.extractEnemies();
 
-  const achExtractor = new StarRailAchievementExtractor({ dataDir: sourceDir, inventory, resolver });
+  const achExtractor = new StarRailAchievementExtractor({
+    dataDir: sourceDir,
+    inventory,
+    resolver,
+  });
   const achievements = await achExtractor.extractAchievements();
 
   // 3. Database Layer
-  const dbUrl = options.databaseUrl ?? process.env.DATABASE_URL ?? "postgres://gip:gip@127.0.0.1:5432/gip";
+  const dbUrl =
+    options.databaseUrl ?? process.env.DATABASE_URL ?? "postgres://gip:gip@127.0.0.1:5432/gip";
   let dbCounts = { documents: 0, segments: 0, subquests: 0, dialogueNodes: 0 };
 
   try {
@@ -181,13 +188,18 @@ export async function runPipelineAudit(options: {
     };
     await pool.end();
   } catch (err) {
-    console.warn("Could not connect to PostgreSQL for live DB count, using cached/estimated count:", (err as Error).message);
+    console.warn(
+      "Could not connect to PostgreSQL for live DB count, using cached/estimated count:",
+      (err as Error).message,
+    );
   }
 
   // 4. Quality Gates
   const sourceGate = inventory.totals.files > 0 ? "PASS" : "FAIL";
-  const storyGate = storyResult.stats.graphCycles === 0 && storyResult.quests.length > 0 ? "PASS" : "FAIL";
-  const characterGate = characters.length > 0 && characters.every((c) => c.name && c.path) ? "PASS" : "FAIL";
+  const storyGate =
+    storyResult.stats.graphCycles === 0 && storyResult.quests.length > 0 ? "PASS" : "FAIL";
+  const characterGate =
+    characters.length > 0 && characters.every((c) => c.name && c.path) ? "PASS" : "FAIL";
   const materialGate = materials.length > 0 && materials.every((m) => m.category) ? "PASS" : "FAIL";
   const crossGameGate = "PASS"; // Strictly isolated in StarRailArchiveAdapter
 

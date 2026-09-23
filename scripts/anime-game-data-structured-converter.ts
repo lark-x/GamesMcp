@@ -368,11 +368,7 @@ function resolveMaterialCategory(
   ) {
     return "character_development";
   }
-  if (
-    desc.includes("武器突破素材") ||
-    desc.includes("武器强化素材") ||
-    desc.includes("精炼材料")
-  ) {
+  if (desc.includes("武器突破素材") || desc.includes("武器强化素材") || desc.includes("精炼材料")) {
     return "weapon_development";
   }
   if (
@@ -398,20 +394,26 @@ function resolveMaterialCategory(
   ) {
     return "quest_item";
   }
-  if (desc.includes("货币") || desc.includes("兑换券") || desc.includes("祈愿") || desc.includes("徽印")) {
+  if (
+    desc.includes("货币") ||
+    desc.includes("兑换券") ||
+    desc.includes("祈愿") ||
+    desc.includes("徽印")
+  ) {
     return "currency";
   }
-  if (desc.includes("消耗品") || desc.includes("素材") || desc.includes("礼包") || desc.includes("宝箱")) {
+  if (
+    desc.includes("消耗品") ||
+    desc.includes("素材") ||
+    desc.includes("礼包") ||
+    desc.includes("宝箱")
+  ) {
     return "consumable";
   }
 
   // Fallback to materialType / itemType enum
   const rawType = String(materialType ?? itemType ?? "").toUpperCase();
-  if (
-    rawType.includes("TALENT") ||
-    rawType.includes("AVATAR") ||
-    rawType.includes("ELEM_GEM")
-  ) {
+  if (rawType.includes("TALENT") || rawType.includes("AVATAR") || rawType.includes("ELEM_GEM")) {
     return "character_development";
   }
   if (rawType.includes("WEAPON")) return "weapon_development";
@@ -640,7 +642,14 @@ export async function convertStructuredAnimeGameData(
   const avatarPromoteMap = new Map<string, string>();
   for (const a of asArray(inputs.avatar.value)) {
     const name = textMapValue(textMap, a.nameTextMapHash);
-    if (!name || name.includes("测试") || name.includes("废弃") || name.includes("【弃用】") || name.startsWith("test_")) continue;
+    if (
+      !name ||
+      name.includes("测试") ||
+      name.includes("废弃") ||
+      name.includes("【弃用】") ||
+      name.startsWith("test_")
+    )
+      continue;
     const promoteId = idText(a.avatarPromoteId);
     if (promoteId) {
       avatarPromoteMap.set(promoteId, name);
@@ -660,7 +669,14 @@ export async function convertStructuredAnimeGameData(
   const depotToAvatar = new Map<string, string>();
   for (const a of asArray(inputs.avatar.value)) {
     const name = textMapValue(textMap, a.nameTextMapHash);
-    if (!name || name.includes("测试") || name.includes("废弃") || name.includes("【弃用】") || name.startsWith("test_")) continue;
+    if (
+      !name ||
+      name.includes("测试") ||
+      name.includes("废弃") ||
+      name.includes("【弃用】") ||
+      name.startsWith("test_")
+    )
+      continue;
     const skillDepotId = idText(a.skillDepotId);
     if (skillDepotId) depotToAvatar.set(skillDepotId, name);
     if (Array.isArray(a.candSkillDepotIds)) {
@@ -683,7 +699,9 @@ export async function convertStructuredAnimeGameData(
     if (!avatarName) continue;
     const skillsList = Array.isArray(d.skills) ? d.skills : [];
     const subSkillsList = Array.isArray(d.subSkills) ? d.subSkills : [];
-    const allSkillIds = [...skillsList, d.energySkill, ...subSkillsList].map(idText).filter(Boolean);
+    const allSkillIds = [...skillsList, d.energySkill, ...subSkillsList]
+      .map(idText)
+      .filter(Boolean);
     for (const sid of allSkillIds) {
       if (!sid) continue;
       const groupId = skillToProudGroup.get(sid);

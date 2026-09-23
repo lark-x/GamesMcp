@@ -295,7 +295,9 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
 
     return rows.map((r) => ({
       key: String((r as unknown as { category: string }).category),
-      label: labels[String((r as unknown as { category: string }).category)] ?? String((r as unknown as { category: string }).category),
+      label:
+        labels[String((r as unknown as { category: string }).category)] ??
+        String((r as unknown as { category: string }).category),
       count: Number((r as unknown as { count?: number })?.count ?? 0),
     }));
   }
@@ -490,10 +492,7 @@ function rowsFromExecuteResult(result: unknown): StructuredRow[] {
   return [];
 }
 
-function valueForColumn(
-  input: StructuredInput,
-  column: string,
-): unknown {
+function valueForColumn(input: StructuredInput, column: string): unknown {
   const record = input as Record<string, unknown>;
   if (column === "game_id") return input.gameId;
   if (column === "revision_id") return input.revisionId;

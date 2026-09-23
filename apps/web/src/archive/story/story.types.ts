@@ -68,4 +68,3 @@ export function loadTravelerPreferences(): TravelerPreferences {
 export function saveTravelerPreferences(prefs: TravelerPreferences): void {
   saveProtagonistPreferences(prefs);
 }
-

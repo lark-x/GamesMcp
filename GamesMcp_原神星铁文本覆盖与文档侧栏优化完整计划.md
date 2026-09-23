@@ -688,19 +688,9 @@ export type TextKindConfig = {
   navLabel: string;
   itemNoun: string;
 
-  groupMode:
-    | "none"
-    | "character"
-    | "contact"
-    | "book"
-    | "series"
-    | "category";
+  groupMode: "none" | "character" | "contact" | "book" | "series" | "category";
 
-  sortMode:
-    | "source_order"
-    | "group_order"
-    | "title"
-    | "custom";
+  sortMode: "source_order" | "group_order" | "title" | "custom";
 
   supportsSearch: boolean;
   supportsPagination: boolean;
@@ -774,11 +764,7 @@ DocumentType: tutorial
 
 ```ts
 {
-  tutorialId,
-  catalogId,
-  category,
-  titleResolution,
-  sourcePath
+  (tutorialId, catalogId, category, titleResolution, sourcePath);
 }
 ```
 
@@ -938,19 +924,14 @@ metadata.sourceTable
 
 ```ts
 {
-  documentId,
-  characterStableId,
-  characterName,
-  voiceKey,
-  title,
-  order
+  (documentId, characterStableId, characterName, voiceKey, title, order);
 }
 ```
 
 禁止前端：
 
 ```ts
-title.split("：")
+title.split("：");
 ```
 
 推断 character。
@@ -971,11 +952,7 @@ API 应返回：
 
 ```ts
 {
-  total,
-  offset,
-  limit,
-  nextOffset,
-  entries
+  (total, offset, limit, nextOffset, entries);
 }
 ```
 
@@ -1113,8 +1090,8 @@ Mission / Story
 metadata.storyBinding = {
   questKey,
   subquestKey,
-  dialogueNodeKey
-}
+  dialogueNodeKey,
+};
 ```
 
 如果 binding 存在：
@@ -1478,13 +1455,13 @@ TextBrowser 不再理解每种后端 response
 统一：
 
 ```ts
-loadTextCatalog(kind, group, query, offset)
+loadTextCatalog(kind, group, query, offset);
 ```
 
 正文依旧：
 
 ```ts
-loadDocument(documentId)
+loadDocument(documentId);
 ```
 
 ---
@@ -1733,14 +1710,7 @@ Canonical Document metadata 最少应包含：
 
 ```ts
 {
-  textKind,
-  groupId,
-  groupName,
-  sourceType,
-  sourceKey,
-  sourcePath,
-  sourceOrder,
-  displayOrder
+  (textKind, groupId, groupName, sourceType, sourceKey, sourcePath, sourceOrder, displayOrder);
 }
 ```
 
@@ -2577,8 +2547,8 @@ StarRail Text Coverage
 
 表格：
 
-| Kind | Source | Converted | DB | API | Public | Unresolved |
-|---|---:|---:|---:|---:|---:|---:|
+| Kind | Source | Converted |  DB | API | Public | Unresolved |
+| ---- | -----: | --------: | --: | --: | -----: | ---------: |
 
 ---
 

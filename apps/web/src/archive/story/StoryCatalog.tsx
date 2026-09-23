@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { ArchiveEmpty, ArchiveLoading } from "../ArchiveStates.js";
-import { getQuestTypeOptions, questTypeLabel, questTypeOptions } from "../../shared.js";
+import { getQuestTypeOptions, questTypeLabel } from "../../shared.js";
 import type { StoryCatalog as ApiStoryCatalog } from "../../api.js";
 import type { StoryCatalogFilters, StoryEntry, StoryTreeNode } from "./story.types.js";
+
+type CatalogFamily = ApiStoryCatalog["regions"][number]["families"][number];
+type CatalogSubSeries = NonNullable<CatalogFamily["subseries"]>[number];
+type CatalogContainer = CatalogFamily | CatalogSubSeries;
+type CatalogQuestEntry = NonNullable<CatalogFamily["quests"]>[number];
 
 /**
  * Pure hierarchy builder:
@@ -57,12 +62,30 @@ export function buildStoryTree(
           order: family.order,
           children: [],
         };
-        const familyEntries = [...(family.quests ?? []), ...(family.collections ?? [])];
-        const allFamilyEntries = [
-          ...familyEntries,
-          ...family.chapters.flatMap((chapter) => chapter.quests),
+        const containerEntries = (container: CatalogContainer): CatalogQuestEntry[] => [
+          ...(container.quests ?? []),
+          ...(container.collections ?? []),
+          ...container.chapters.flatMap((chapter) => [
+            ...chapter.quests,
+            ...(chapter.collections ?? []),
+          ]),
         ];
-        const matchesEntry = (q: (typeof familyEntries)[number], contextTitle?: string) => {
+        const allFamilyEntries = [
+          ...containerEntries(family),
+          ...(family.subseries ?? []).flatMap(containerEntries),
+        ];
+        const normalizedQuestKeys = (id: string): string[] => [
+          id,
+          `quest/${id}`,
+          `mission/${id}`,
+          id.replace(/^(?:quest|mission)\//u, ""),
+        ];
+        const nestedQuestKeys = new Set(
+          allFamilyEntries
+            .filter((entry) => entry.entryType === "collection" || entry.entryType === "aggregate")
+            .flatMap((entry) => (entry.aggregateChildQuestIds ?? []).flatMap(normalizedQuestKeys)),
+        );
+        const matchesEntry = (q: CatalogQuestEntry, contextTitle?: string) => {
           if (!query) return true;
           const title = (q.displayTitle ?? q.title).toLowerCase();
           const localMatch =
@@ -73,17 +96,15 @@ export function buildStoryTree(
             region.name.toLowerCase().includes(query);
           return searchMatches?.has(q.questKey) || localMatch;
         };
-        const questNode = (q: (typeof familyEntries)[number]): StoryTreeNode => ({
+        const questNode = (q: CatalogQuestEntry): StoryTreeNode => ({
           id: `quest:${q.questKey}`,
           type: "quest",
           title: q.displayTitle ?? q.title,
           order: q.order,
           questKey: q.questKey,
         });
-        const collectionNode = (q: (typeof familyEntries)[number]): StoryTreeNode => {
-          const childIds = new Set(
-            (q.childQuestIds ?? []).flatMap((id) => [id, `quest/${id}`, `mission/${id}`]),
-          );
+        const collectionNode = (q: CatalogQuestEntry): StoryTreeNode => {
+          const childIds = new Set((q.aggregateChildQuestIds ?? []).flatMap(normalizedQuestKeys));
           const children = allFamilyEntries
             .filter(
               (candidate) =>
@@ -105,28 +126,31 @@ export function buildStoryTree(
             children,
           };
         };
-        const directEntries = familyEntries
-          .filter((q) => q.entryType !== "collection" && q.entryType !== "aggregate")
-          .filter((q) => matchesEntry(q))
-          .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
-        const collections = familyEntries
-          .filter((q) => q.entryType === "collection" || q.entryType === "aggregate")
-          .filter((q) => matchesEntry(q))
-          .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
-        familyNode.children!.push(
-          ...collections.map(collectionNode),
-          ...directEntries.map(questNode),
-        );
-        for (const chapter of family.chapters) {
-          const filteredQuests = chapter.quests.filter((q) => matchesEntry(q, chapter.name));
-          if (filteredQuests.length === 0) continue;
-
-          familyNode.children!.push({
-            id: `chapter:${region.id}:${family.id}:${chapter.id}`,
-            type: "chapter",
-            title: chapter.name,
-            order: chapter.order,
-            children: filteredQuests
+        const isNested = (q: CatalogQuestEntry): boolean =>
+          normalizedQuestKeys(q.questKey).some((key) => nestedQuestKeys.has(key));
+        const appendContainer = (
+          parent: StoryTreeNode,
+          container: CatalogContainer,
+          scopeId: string,
+          contextTitle: string,
+        ): void => {
+          const direct = container.quests ?? [];
+          const collections = (container.collections ?? [])
+            .filter((entry) => matchesEntry(entry, contextTitle))
+            .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
+          const directEntries = direct
+            .filter((entry) => !isNested(entry) && matchesEntry(entry, contextTitle))
+            .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
+          parent.children!.push(
+            ...collections.map(collectionNode),
+            ...directEntries.map(questNode),
+          );
+          for (const chapter of container.chapters) {
+            const chapterCollections = (chapter.collections ?? [])
+              .filter((entry) => matchesEntry(entry, chapter.name))
+              .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey));
+            const chapterQuests = chapter.quests
+              .filter((entry) => !isNested(entry) && matchesEntry(entry, chapter.name))
               .sort(
                 (a, b) =>
                   a.order - b.order ||
@@ -135,9 +159,36 @@ export function buildStoryTree(
                     "zh-Hans-CN",
                   ) ||
                   a.questKey.localeCompare(b.questKey),
-              )
-              .map(questNode),
-          });
+              );
+            if (chapterCollections.length === 0 && chapterQuests.length === 0) continue;
+            parent.children!.push({
+              id: `chapter:${scopeId}:${chapter.id}`,
+              type: "chapter",
+              title: chapter.name,
+              order: chapter.order,
+              children: [
+                ...chapterCollections.map(collectionNode),
+                ...chapterQuests.map(questNode),
+              ],
+            });
+          }
+        };
+        appendContainer(familyNode, family, `${region.id}:${family.id}`, family.name);
+        for (const subseries of family.subseries ?? []) {
+          const subseriesNode: StoryTreeNode = {
+            id: `subseries:${region.id}:${family.id}:${subseries.id}`,
+            type: "subseries",
+            title: subseries.name,
+            order: subseries.order,
+            children: [],
+          };
+          appendContainer(
+            subseriesNode,
+            subseries,
+            `${region.id}:${family.id}:${subseries.id}`,
+            subseries.name,
+          );
+          if (subseriesNode.children!.length > 0) familyNode.children!.push(subseriesNode);
         }
         if (familyNode.children!.length > 0) regionNode.children!.push(familyNode);
       }

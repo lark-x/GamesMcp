@@ -129,7 +129,9 @@ async function inspectTags() {
       if (mfMatches) mfPairCount += mfMatches.length;
       const fmMatches = text.match(/\{F#[^}]+\}\{M#[^}]+\}/g);
       if (fmMatches) fmPairCount += fmMatches.length;
-      const stripped = text.replace(/\{M#[^}]+\}\{F#[^}]+\}/g, "").replace(/\{F#[^}]+\}\{M#[^}]+\}/g, "");
+      const stripped = text
+        .replace(/\{M#[^}]+\}\{F#[^}]+\}/g, "")
+        .replace(/\{F#[^}]+\}\{M#[^}]+\}/g, "");
       const singleM = stripped.match(/\{M#[^}]+\}/g);
       if (singleM) singleMCount += singleM.length;
       const singleF = stripped.match(/\{F#[^}]+\}/g);

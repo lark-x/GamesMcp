@@ -27,7 +27,7 @@ describe("story catalog projection", () => {
         familyTitle: "愿为一炊之梦",
         contentRole: "aggregate",
         dialogueResolutionStatus: "not_applicable",
-        childQuestIds: ["73019"],
+        aggregateChildQuestIds: ["73019"],
       },
     ]);
 
@@ -35,7 +35,7 @@ describe("story catalog projection", () => {
     expect(family?.chapters).toEqual([]);
     expect(family?.quests?.map((entry) => entry.questId)).toEqual(["73019"]);
     expect(family?.collections?.map((entry) => entry.questId)).toEqual(["73013"]);
-    expect(family?.collections?.[0]?.childQuestIds).toEqual(["73019"]);
+    expect(family?.collections?.[0]?.aggregateChildQuestIds).toEqual(["73019"]);
   });
 
   it("does not merge same-title quests into one entry", () => {
@@ -71,8 +71,8 @@ describe("story catalog projection", () => {
 
     const family = regions[0]?.families[0];
     expect(family?.chapters[0]?.quests).toHaveLength(1);
-    expect(family?.collections).toHaveLength(1);
+    expect(family?.collections).toHaveLength(0);
     expect(family?.chapters[0]?.quests[0]?.questId).toBe("76148");
-    expect(family?.collections?.[0]?.questId).toBe("76152");
+    expect(family?.chapters[0]?.collections?.[0]?.questId).toBe("76152");
   });
 });

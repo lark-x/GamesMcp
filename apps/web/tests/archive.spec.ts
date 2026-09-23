@@ -90,11 +90,11 @@ test.describe("Story Browser (S01 - S07)", () => {
     await page.goto(`/#story/${encodeURIComponent("quest/1000")}`);
     await expect(page.getByRole("heading", { name: "于枯索的冬夜里" })).toBeVisible();
     await expect(page.getByText("风雪没有停止。")).toBeVisible();
-    await expect(page.locator(".story-speaker", { hasText: "三月七" })).toBeVisible();
+    await expect(page.locator(".story-speaker-badge", { hasText: "三月七" })).toBeVisible();
 
     // Inspector checks: participants, prerequisites, successors, citations
     await expect(page.getByText("序章·第三幕")).toBeVisible();
-    await expect(page.getByText("暂无后续任务数据")).toBeVisible();
+    await expect(page.locator(".inspector-field", { hasText: "后续任务" })).toContainText("暂无");
     await expect(page.getByText("暂无地点数据")).toBeVisible();
 
     // Expand citations and click to jump
@@ -150,15 +150,17 @@ test.describe("Story Browser (S01 - S07)", () => {
 
     await page.goto("/#story");
     // Verify tree series headers
-    await expect(page.getByRole("button", { name: /开拓任务/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /同行任务/ })).toBeVisible();
+    await expect(page.locator(".story-tree-series-header", { hasText: "开拓任务" })).toBeVisible();
+    await expect(page.locator(".story-tree-series-header", { hasText: "同行任务" })).toBeVisible();
+    await page.locator(".story-tree-chapter-header", { hasText: "第一章" }).click();
+    await page.locator(".story-tree-series-header", { hasText: "同行任务" }).click();
     await expect(page.getByRole("button", { name: "于枯索的冬夜里" })).toBeVisible();
     await expect(page.getByRole("button", { name: "只是个孩子" })).toBeVisible();
 
     // Toggle collapse
-    await page.getByRole("button", { name: /开拓任务/ }).click();
+    await page.locator(".story-tree-series-header", { hasText: "开拓任务" }).click();
     await expect(page.getByRole("button", { name: "于枯索的冬夜里" })).not.toBeVisible();
-    await page.getByRole("button", { name: /开拓任务/ }).click();
+    await page.locator(".story-tree-series-header", { hasText: "开拓任务" }).click();
     await expect(page.getByRole("button", { name: "于枯索的冬夜里" })).toBeVisible();
 
     // Search query
@@ -436,30 +438,39 @@ test.describe("Material Browser (M01 - M07)", () => {
       const u = new URL(route.request().url());
       if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
       if (u.pathname === `/api/games/${gameId}/codex/materials`) {
+        const query = u.searchParams.get("q") ?? "";
+        const materials = [
+          {
+            stableId: "material/1",
+            name: "梦之珠泪",
+            category: "character_ascension",
+            rarity: 5,
+            description: "传说中凝结晶泪的珠子。",
+            sources: ["模拟宇宙"],
+            usedBy: ["三月七"],
+          },
+          {
+            stableId: "material/2",
+            name: "信用点",
+            category: "currency",
+            rarity: 3,
+            description: "宇宙通用货币。",
+            sources: ["任务奖励"],
+            usedBy: ["全角色"],
+          },
+        ].filter((material) =>
+          query
+            ? [material.name, material.description, ...material.sources, ...material.usedBy]
+                .join(" ")
+                .includes(query)
+            : true,
+        );
         return route.fulfill({
           json: {
             gameId,
             revisionId: null,
-            materials: [
-              {
-                stableId: "material/1",
-                name: "梦之珠泪",
-                category: "character_ascension",
-                rarity: 5,
-                description: "传说中凝结晶泪的珠子。",
-                sources: ["模拟宇宙"],
-                usedBy: ["三月七"],
-              },
-              {
-                stableId: "material/2",
-                name: "信用点",
-                category: "currency",
-                rarity: 3,
-                description: "宇宙通用货币。",
-                sources: ["任务奖励"],
-                usedBy: ["全角色"],
-              },
-            ],
+            materials,
+            total: materials.length,
           },
         });
       }
@@ -509,31 +520,19 @@ test.describe("Material Browser (M01 - M07)", () => {
       if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
       if (u.pathname === `/api/games/${gameId}/codex/materials`) {
         const offset = Number(u.searchParams.get("offset") ?? "0");
-        if (offset === 0) {
-          // 100 items on page 1
-          const items = Array.from({ length: 100 }, (_, i) => ({
-            stableId: `mat/${i + 1}`,
-            name: `材料_${i + 1}`,
-            category: "consumable",
-            rarity: 3,
-            description: `材料描述 ${i + 1}`,
-            sources: [],
-            usedBy: [],
-          }));
-          return route.fulfill({ json: { gameId, materials: items } });
-        } else {
-          // Page 2: item 101 to 105
-          const items = Array.from({ length: 5 }, (_, i) => ({
-            stableId: `mat/${offset + i + 1}`,
-            name: `第101条之后材料_${offset + i + 1}`,
-            category: "consumable",
-            rarity: 4,
-            description: "远超100条的材料",
-            sources: [],
-            usedBy: [],
-          }));
-          return route.fulfill({ json: { gameId, materials: items } });
-        }
+        const limit = Number(u.searchParams.get("limit") ?? "50");
+        const items = Array.from({ length: 105 }, (_, i) => ({
+          stableId: `mat/${i + 1}`,
+          name: i < 100 ? `材料_${i + 1}` : `第101条之后材料_${i + 1}`,
+          category: "consumable",
+          rarity: i < 100 ? 3 : 4,
+          description: `材料描述 ${i + 1}`,
+          sources: [],
+          usedBy: [],
+        }));
+        return route.fulfill({
+          json: { gameId, materials: items.slice(offset, offset + limit), total: items.length },
+        });
       }
       return route.fulfill({ json: {} });
     });
@@ -543,7 +542,9 @@ test.describe("Material Browser (M01 - M07)", () => {
     await expect(page.getByRole("button", { name: /上一页/ })).toBeDisabled();
     await expect(page.getByRole("button", { name: /下一页/ })).toBeEnabled();
 
-    // Navigate to page 2
+    // Navigate through 50-item pages to cross item 100.
+    await page.getByRole("button", { name: /下一页/ }).click();
+    await expect(page.getByText("材料_51", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /下一页/ }).click();
     await expect(page.getByText("第101条之后材料_101")).toBeVisible();
     await expect(page.getByText("材料_1", { exact: true })).not.toBeVisible();
@@ -595,50 +596,52 @@ test.describe("Text Browser (T01 - T06)", () => {
     await page.route("**/api/**", async (route) => {
       const u = new URL(route.request().url());
       if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
-      if (u.pathname === `/api/games/${gameId}/text/books`) {
+      if (u.pathname === `/api/games/${gameId}/text/catalog`) {
+        const q = u.searchParams.get("q") ?? "";
+        const entries = [
+          {
+            documentId: "doc-1",
+            stableId: "volume/1",
+            kind: "books",
+            title: "黑塔研究图鉴 · 第一卷",
+            groupId: "book/heta",
+            groupName: "黑塔研究图鉴",
+            order: 1,
+            locale: "zh-CN",
+          },
+          {
+            documentId: "doc-2",
+            stableId: "volume/2",
+            kind: "books",
+            title: "黑塔研究图鉴 · 第二卷",
+            groupId: "book/heta",
+            groupName: "黑塔研究图鉴",
+            order: 2,
+            locale: "zh-CN",
+          },
+          {
+            documentId: "doc-b1",
+            stableId: "vol/b1",
+            kind: "books",
+            title: "贝洛伯格编年史 · 筑城纪元",
+            groupId: "book/belobog",
+            groupName: "贝洛伯格编年史",
+            order: 3,
+            locale: "zh-CN",
+          },
+        ].filter((entry) => !q || `${entry.title} ${entry.groupName}`.includes(q));
         return route.fulfill({
           json: {
             gameId,
-            books: [
-              {
-                stableId: "book/heta",
-                bookStableId: "book/heta",
-                title: "黑塔研究图鉴",
-                volumes: [
-                  {
-                    stableId: "volume/1",
-                    bookStableId: "book/heta",
-                    documentId: "doc-1",
-                    title: "第一卷",
-                    volume: 1,
-                    segmentCount: 1,
-                  },
-                  {
-                    stableId: "volume/2",
-                    bookStableId: "book/heta",
-                    documentId: "doc-2",
-                    title: "第二卷",
-                    volume: 2,
-                    segmentCount: 1,
-                  },
-                ],
-              },
-              {
-                stableId: "book/belobog",
-                bookStableId: "book/belobog",
-                title: "贝洛伯格编年史",
-                volumes: [
-                  {
-                    stableId: "vol/b1",
-                    bookStableId: "book/belobog",
-                    documentId: "doc-b1",
-                    title: "筑城纪元",
-                    volume: 1,
-                    segmentCount: 1,
-                  },
-                ],
-              },
-            ],
+            revisionId: "r1",
+            locale: "zh-CN",
+            kind: "books",
+            groups: [{ id: "all", name: "全部书籍", count: 3, order: 0 }],
+            entries,
+            total: entries.length,
+            offset: 0,
+            limit: 100,
+            nextOffset: null,
           },
         });
       }
@@ -688,7 +691,7 @@ test.describe("Text Browser (T01 - T06)", () => {
     await expect(page.getByText("1 / 3")).toBeVisible();
 
     // T02: Next chapter - real body assertion for doc-2
-    await page.getByRole("button", { name: /下一章/ }).click();
+    await page.getByRole("button", { name: /下一篇/ }).click();
     await expect(page.getByText("奇物是具有特殊效应的未知遗物，需存入封闭收容仓。")).toBeVisible();
 
     // T05: Browser back
@@ -696,9 +699,13 @@ test.describe("Text Browser (T01 - T06)", () => {
     await expect(page.getByText("黑塔空间站由天才俱乐部成员黑塔主持建立。")).toBeVisible();
 
     // T04: Search books
-    await page.getByPlaceholder("搜索书名、卷名…").fill("贝洛伯格");
-    await expect(page.locator(".text-catalog").getByText("贝洛伯格编年史")).toBeVisible();
-    await expect(page.locator(".text-catalog").getByText("黑塔研究图鉴")).not.toBeVisible();
+    await page.getByPlaceholder("搜索书籍...").fill("贝洛伯格");
+    await expect(
+      page.locator(".text-catalog-pane").getByText("贝洛伯格编年史 · 筑城纪元"),
+    ).toBeVisible();
+    await expect(
+      page.locator(".text-catalog-pane").getByText("黑塔研究图鉴 · 第一卷"),
+    ).not.toBeVisible();
 
     // T03: Deep Link Volume 2 directly
     await page.goto(`/#text/books/book%2Fheta/volume%2F2`);
@@ -710,26 +717,30 @@ test.describe("Text Browser (T01 - T06)", () => {
     await page.route("**/api/**", async (route) => {
       const u = new URL(route.request().url());
       if (u.pathname === "/api/games") return route.fulfill({ json: baseGames() });
-      if (u.pathname === `/api/games/${gameId}/text/books`) {
+      if (u.pathname === `/api/games/${gameId}/text/catalog`) {
         return route.fulfill({
           json: {
             gameId,
-            books: [
+            revisionId: "r1",
+            locale: "zh-CN",
+            kind: "books",
+            groups: [{ id: "all", name: "全部书籍", count: 1, order: 0 }],
+            entries: [
               {
-                stableId: "book/1",
-                bookStableId: "book/1",
+                documentId: "doc-err",
+                stableId: "vol/1",
+                kind: "books",
                 title: "星穹铁道速成指南",
-                volumes: [
-                  {
-                    stableId: "vol/1",
-                    bookStableId: "book/1",
-                    documentId: "doc-err",
-                    title: "第一章",
-                    volume: 1,
-                  },
-                ],
+                groupId: "book/1",
+                groupName: "星穹铁道速成指南",
+                order: 1,
+                locale: "zh-CN",
               },
             ],
+            total: 1,
+            offset: 0,
+            limit: 100,
+            nextOffset: null,
           },
         });
       }

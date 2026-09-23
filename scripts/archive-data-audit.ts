@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 type GenshinQuestAudit = {
   total: number;
@@ -70,7 +70,8 @@ async function readJsonSafe<T>(filePath: string): Promise<T | null> {
 
 function naiveGenshinMaterialCategory(value: unknown): string {
   const normalized = (typeof value === "string" ? value : "").toLowerCase();
-  if (normalized.includes("avatar") || normalized.includes("character")) return "character_development";
+  if (normalized.includes("avatar") || normalized.includes("character"))
+    return "character_development";
   if (normalized.includes("weapon")) return "weapon_development";
   if (normalized.includes("currency")) return "currency";
   if (normalized.includes("food")) return "cooking";
@@ -79,23 +80,30 @@ function naiveGenshinMaterialCategory(value: unknown): string {
   return "other";
 }
 
-async function auditGenshin(): Promise<{ quests: GenshinQuestAudit; materials: GenshinMaterialAudit }> {
+async function auditGenshin(): Promise<{
+  quests: GenshinQuestAudit;
+  materials: GenshinMaterialAudit;
+}> {
   const upstreamDir = "data/upstream/AnimeGameData-current";
-  const mainQuests = (await readJsonSafe<Array<Record<string, unknown>>>(
-    resolve(upstreamDir, "ExcelBinOutput/MainQuestExcelConfigData.json")
-  )) ?? [];
-  const chapters = (await readJsonSafe<Array<Record<string, unknown>>>(
-    resolve(upstreamDir, "ExcelBinOutput/ChapterExcelConfigData.json")
-  )) ?? [];
-  const rawMaterials = (await readJsonSafe<Array<Record<string, unknown>>>(
-    resolve(upstreamDir, "ExcelBinOutput/MaterialExcelConfigData.json")
-  )) ?? [];
-  const textMapMedium = (await readJsonSafe<Record<string, string>>(
-    resolve(upstreamDir, "TextMap/TextMap_MediumCHS.json")
-  )) ?? {};
-  const textMapFull = (await readJsonSafe<Record<string, string>>(
-    resolve(upstreamDir, "TextMap/TextMapCHS.json")
-  )) ?? {};
+  const mainQuests =
+    (await readJsonSafe<Array<Record<string, unknown>>>(
+      resolve(upstreamDir, "ExcelBinOutput/MainQuestExcelConfigData.json"),
+    )) ?? [];
+  const chapters =
+    (await readJsonSafe<Array<Record<string, unknown>>>(
+      resolve(upstreamDir, "ExcelBinOutput/ChapterExcelConfigData.json"),
+    )) ?? [];
+  const rawMaterials =
+    (await readJsonSafe<Array<Record<string, unknown>>>(
+      resolve(upstreamDir, "ExcelBinOutput/MaterialExcelConfigData.json"),
+    )) ?? [];
+  const textMapMedium =
+    (await readJsonSafe<Record<string, string>>(
+      resolve(upstreamDir, "TextMap/TextMap_MediumCHS.json"),
+    )) ?? {};
+  const textMapFull =
+    (await readJsonSafe<Record<string, string>>(resolve(upstreamDir, "TextMap/TextMapCHS.json"))) ??
+    {};
 
   const chapterMap = new Map<number, Record<string, unknown>>();
   for (const c of chapters) {
@@ -103,7 +111,7 @@ async function auditGenshin(): Promise<{ quests: GenshinQuestAudit; materials: G
   }
 
   // Quests audit
-  let qTotal = mainQuests.length;
+  const qTotal = mainQuests.length;
   let qPublic = 0;
   let qWithRegion = 0;
   let qWithReadableTitle = 0;
@@ -142,12 +150,12 @@ async function auditGenshin(): Promise<{ quests: GenshinQuestAudit; materials: G
   qWithAnyReadableBody = Math.max(qWithDialogueNodes, qWithDocumentBody);
 
   // Materials audit
-  let mTotalRaw = rawMaterials.length;
+  const mTotalRaw = rawMaterials.length;
   let mPublic = 0;
   let mOtherCategory = 0;
   let mWithDescription = 0;
-  let mWithSources = 0; // Currently 0 in converter!
-  let mWithUsedBy = 0;  // Currently 0 in converter!
+  const mWithSources = 0; // Currently 0 in converter!
+  const mWithUsedBy = 0; // Currently 0 in converter!
   let mInternalLike = 0;
   const categoryBreakdown: Record<string, number> = {};
 
@@ -207,26 +215,36 @@ async function auditGenshin(): Promise<{ quests: GenshinQuestAudit; materials: G
   };
 }
 
-async function auditStarRail(): Promise<{ missions: StarRailMissionAudit; materials: StarRailMaterialAudit }> {
+async function auditStarRail(): Promise<{
+  missions: StarRailMissionAudit;
+  materials: StarRailMaterialAudit;
+}> {
   const dataDir = process.env.GAMESMCP_STARRAIL_DATA_DIR ?? "data/fixtures/starrail";
   const missionJson =
-    (await readJsonSafe<Array<Record<string, unknown>>>(resolve(dataDir, "Story/Mission/PenaconyMission.json"))) ??
-    (await readJsonSafe<Record<string, Record<string, unknown>>>(resolve(dataDir, "Story/Mission/PenaconyMission.json"))) ??
+    (await readJsonSafe<Array<Record<string, unknown>>>(
+      resolve(dataDir, "Story/Mission/PenaconyMission.json"),
+    )) ??
+    (await readJsonSafe<Record<string, Record<string, unknown>>>(
+      resolve(dataDir, "Story/Mission/PenaconyMission.json"),
+    )) ??
     [];
 
   const missionList = Array.isArray(missionJson) ? missionJson : Object.values(missionJson);
   const itemsJson =
-    (await readJsonSafe<Array<Record<string, unknown>>>(resolve(dataDir, "ExcelOutput/ItemConfig.json"))) ??
-    (await readJsonSafe<Record<string, Record<string, unknown>>>(resolve(dataDir, "ExcelOutput/ItemConfig.json"))) ??
+    (await readJsonSafe<Array<Record<string, unknown>>>(
+      resolve(dataDir, "ExcelOutput/ItemConfig.json"),
+    )) ??
+    (await readJsonSafe<Record<string, Record<string, unknown>>>(
+      resolve(dataDir, "ExcelOutput/ItemConfig.json"),
+    )) ??
     [];
   const itemList = Array.isArray(itemsJson) ? itemsJson : Object.values(itemsJson);
-  const textMap = (await readJsonSafe<Record<string, string>>(resolve(dataDir, "TextMap/TextMapCHS.json"))) ?? {};
+  const textMap =
+    (await readJsonSafe<Record<string, string>>(resolve(dataDir, "TextMap/TextMapCHS.json"))) ?? {};
 
-  let sTotal = missionList.length;
+  const sTotal = missionList.length;
   let sWithWorldId = 0;
   let sWithChapterId = 0;
-  let sWithReadableWorld = 0;
-  let sWithReadableChapter = 0;
   let sWithNarrative = 0;
   let sObjectiveOnly = 0;
 
@@ -241,15 +259,19 @@ async function auditStarRail(): Promise<{ missions: StarRailMissionAudit; materi
     }
   }
 
-  let mTotal = itemList.length;
+  const mTotal = itemList.length;
   let mPublic = 0;
   let mWithDesc = 0;
-  let mWithSources = 0;
-  let mWithUsedBy = 0;
+  const mWithSources = 0;
+  const mWithUsedBy = 0;
 
   for (const item of itemList) {
-    const nameHash = String(item.ItemNameTextMapHash ?? (item.ItemName as { Hash?: unknown })?.Hash ?? "");
-    const descHash = String(item.ItemDescTextMapHash ?? (item.ItemDesc as { Hash?: unknown })?.Hash ?? "");
+    const nameHash = String(
+      item.ItemNameTextMapHash ?? (item.ItemName as { Hash?: unknown })?.Hash ?? "",
+    );
+    const descHash = String(
+      item.ItemDescTextMapHash ?? (item.ItemDesc as { Hash?: unknown })?.Hash ?? "",
+    );
     const name = textMap[nameHash];
     const desc = textMap[descHash];
     if (name && name.trim()) mPublic++;
@@ -366,7 +388,9 @@ async function main() {
   ].join("\n");
 
   await writeFile("reports/archive-data-baseline.md", mdReport, "utf8");
-  console.log("Successfully generated reports/archive-data-baseline.json and reports/archive-data-baseline.md");
+  console.log(
+    "Successfully generated reports/archive-data-baseline.json and reports/archive-data-baseline.md",
+  );
 }
 
 main().catch((err) => {

@@ -2671,7 +2671,9 @@ ruby.story-ruby rt.story-rt {
   border: 1px solid var(--archive-border);
   border-radius: 8px;
   text-align: center;
-  transition: transform 0.15s, border-color 0.15s;
+  transition:
+    transform 0.15s,
+    border-color 0.15s;
 }
 
 .starrail-world-chip:hover {
@@ -2778,7 +2780,9 @@ ruby.story-ruby rt.story-rt {
   border-radius: 6px;
   color: var(--archive-text);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   box-sizing: border-box;
 }
 
@@ -3074,4 +3078,3 @@ ruby.story-ruby rt.story-rt {
   cursor: not-allowed;
   color: var(--archive-muted);
 }
-

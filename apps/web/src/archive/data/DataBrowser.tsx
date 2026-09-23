@@ -45,10 +45,7 @@ function weaponTypeLabel(value: string, isStarRail: boolean): string {
 }
 
 /** 从上游行中按候选键名取第一个非空字符串（兼容 snake/camel 两种键风格）。 */
-function pickField(
-  raw: UnknownRecord | undefined,
-  keys: string[],
-): string | undefined {
+function pickField(raw: UnknownRecord | undefined, keys: string[]): string | undefined {
   if (!raw) return undefined;
   for (const key of keys) {
     const value = raw[key];
@@ -256,7 +253,8 @@ export function DataBrowser({
             requirement,
             reward: a.rewardPrimogems ? `${a.rewardPrimogems} 原石/星琼` : undefined,
             // 上游档案描述常与达成条件相同；相同则只展示达成条件，避免重复。
-            description: rawDescription && rawDescription !== requirement ? rawDescription : undefined,
+            description:
+              rawDescription && rawDescription !== requirement ? rawDescription : undefined,
             raw: a,
           };
         });
@@ -446,7 +444,9 @@ export function DataBrowser({
                       <div className="data-item-subtext">
                         {item.element && <span className="data-tag">{item.element}</span>}
                         {item.weaponType && (
-                          <span className="data-tag">{weaponTypeLabel(item.weaponType, isStarRail)}</span>
+                          <span className="data-tag">
+                            {weaponTypeLabel(item.weaponType, isStarRail)}
+                          </span>
                         )}
                         {item.category && <span className="data-tag">{item.category}</span>}
                         {item.region && <span className="data-tag">{item.region}</span>}
@@ -489,12 +489,16 @@ export function DataBrowser({
                   {activeItem.weaponType && (
                     <div className="data-prop-pill">
                       <span className="data-prop-k">{isStarRail ? "命途倾向" : "武器类型"}</span>
-                      <span className="data-prop-v">{weaponTypeLabel(activeItem.weaponType, isStarRail)}</span>
+                      <span className="data-prop-v">
+                        {weaponTypeLabel(activeItem.weaponType, isStarRail)}
+                      </span>
                     </div>
                   )}
                   {activeItem.region && (
                     <div className="data-prop-pill">
-                      <span className="data-prop-k">{isStarRail ? "所属世界/区域" : "地区/势力"}</span>
+                      <span className="data-prop-k">
+                        {isStarRail ? "所属世界/区域" : "地区/势力"}
+                      </span>
                       <span className="data-prop-v">{activeItem.region}</span>
                     </div>
                   )}

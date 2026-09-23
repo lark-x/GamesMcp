@@ -386,13 +386,9 @@ function indexJoinSource(
  * title source for the Tutorial index: TutorialCatalog covers just a handful of
  * entries. First writer wins so a title stays stable across duplicate ids.
  */
-function indexTutorialTitlesByPushTips(
-  sources: SourceWithMethod[],
-): Map<string, JsonObject> {
+function indexTutorialTitlesByPushTips(sources: SourceWithMethod[]): Map<string, JsonObject> {
   const index = new Map<string, JsonObject>();
-  const source = sources.find(
-    (candidate) => candidate.relativePath === MECHANISM_INPUTS.pushTips,
-  );
+  const source = sources.find((candidate) => candidate.relativePath === MECHANISM_INPUTS.pushTips);
   if (!source) return index;
   for (const { row } of rows(source.value, source.relativePath)) {
     const tutorialId = idText(row.tutorialId);
@@ -690,16 +686,8 @@ async function extractMechanismRecords(ctx: AnimeContext): Promise<MechanismExtr
   }
 
   const joins = {
-    tutorialDetail: indexJoinSource(
-      sources,
-      MECHANISM_INPUTS.tutorialDetail,
-      "id",
-    ),
-    tutorialCatalog: indexJoinSource(
-      sources,
-      MECHANISM_INPUTS.tutorialCatalog,
-      "id",
-    ),
+    tutorialDetail: indexJoinSource(sources, MECHANISM_INPUTS.tutorialDetail, "id"),
+    tutorialCatalog: indexJoinSource(sources, MECHANISM_INPUTS.tutorialCatalog, "id"),
     pushTipsByTutorial: indexTutorialTitlesByPushTips(sources),
   };
   const sourceRows = sources

@@ -1,19 +1,9 @@
 import type { TextKind } from "@gip/contracts";
 
 export type GroupMode =
-  | "none"
-  | "character"
-  | "contact"
-  | "visitor"
-  | "book"
-  | "series"
-  | "category";
+  "none" | "character" | "contact" | "visitor" | "book" | "series" | "category";
 
-export type SortMode =
-  | "source_order"
-  | "group_order"
-  | "title"
-  | "custom";
+export type SortMode = "source_order" | "group_order" | "title" | "custom";
 
 export type TextKindConfig = {
   id: TextKind;

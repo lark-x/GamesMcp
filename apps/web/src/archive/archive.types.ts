@@ -16,7 +16,7 @@ export type ArchiveRoute =
 
 export interface StoryTreeNode {
   id: string;
-  type: "region" | "series" | "chapter" | "collection" | "quest";
+  type: "region" | "series" | "subseries" | "chapter" | "collection" | "quest";
   title: string;
   order?: number;
   questKey?: string;

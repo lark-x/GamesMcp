@@ -20,6 +20,8 @@ export type TalkRelationEvidence =
   | "asset_id_exact"
   | "legacy_path_match";
 
+export type TalkEvidenceClass = "narrative" | "identity" | "availability" | "compatibility";
+
 export type TalkDialogueRow = {
   dialogId: string;
   nextDialogIds: string[];
@@ -54,10 +56,12 @@ export type TalkSourceFile = {
   schemaSignature?: string;
   metadataScanned?: boolean;
   dialogueRowCount?: number;
+  dialogueIds?: string[];
 };
 
 export type TalkEvidence = {
   kind: TalkRelationEvidence;
+  evidenceClass: TalkEvidenceClass;
   confidence: number;
   relationEdgeId?: string;
   sourceFile?: string;
@@ -68,6 +72,7 @@ export type TalkCandidate = {
   talkId: string;
   /** The subquest that supplied COMPLETE_TALK, when the source exposes it. */
   subQuestId?: string;
+  subQuestIds?: string[];
   sourceKind: TalkSourceKind;
   sourceFile: string;
   confidence: number;
@@ -77,12 +82,14 @@ export type TalkCandidate = {
   evidences?: TalkEvidence[];
   asset?: TalkAssetRecord;
   relationEdgeId?: string;
+  resolutionReason?: string;
 };
 
 export type TalkSourceRegistry = {
   files: TalkSourceFile[];
   assets: TalkAssetRecord[];
   assetsByTalkId: Map<string, TalkAssetRecord[]>;
+  assetsByDialogueId?: Map<string, TalkAssetRecord[]>;
   filesByStem: Map<string, TalkSourceFile[]>;
   duplicateTalkIds: Array<{ talkId: string; sourceFiles: string[] }>;
   metadataByTalkId?: Map<string, TalkSourceFile[]>;
@@ -91,6 +98,7 @@ export type TalkSourceRegistry = {
     totalFiles: number;
     parsedFiles: number;
     metadataScannedFiles?: number;
+    metadataCacheHits?: number;
     eagerParsedByKind?: Record<string, number>;
     lazyLoadedByKind?: Record<string, number>;
     parsedByKind: Record<string, number>;
@@ -104,4 +112,6 @@ export type TalkSourceRegistry = {
     dialogueId: string,
     sourceKind?: TalkSourceKind,
   ): Promise<TalkAssetRecord[]>;
+  /** Release parsed dialogue bodies after they have been normalized by the converter. */
+  releaseLoadedAssets(): void;
 };

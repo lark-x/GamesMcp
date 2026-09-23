@@ -1,5 +1,9 @@
 import { loadConfig } from "../packages/config/src/index.ts";
-import { createDatabase, createPool, SqlKnowledgeRepository } from "../packages/database/src/index.ts";
+import {
+  createDatabase,
+  createPool,
+  SqlKnowledgeRepository,
+} from "../packages/database/src/index.ts";
 
 async function main() {
   const config = loadConfig();
@@ -11,7 +15,10 @@ async function main() {
     // instead of only the one hardcoded during the original P0 rebuild.
     const flag = (name: string): string | undefined => {
       const prefix = `--${name}=`;
-      return process.argv.slice(2).find((value) => value.startsWith(prefix))?.slice(prefix.length);
+      return process.argv
+        .slice(2)
+        .find((value) => value.startsWith(prefix))
+        ?.slice(prefix.length);
     };
     const candidateId = flag("candidate") ?? "9114ed40-d185-4863-97b0-707160141586";
     const buildId = flag("build") ?? "03ff75ba-d99a-4b68-9330-8a6a52750d68";
@@ -22,13 +29,17 @@ async function main() {
     if (!candidate) {
       throw new Error(`Candidate ${candidateId} not found`);
     }
-    console.log(`Candidate status: ${candidate.status}, currentBuildId: ${candidate.currentBuildId}`);
+    console.log(
+      `Candidate status: ${candidate.status}, currentBuildId: ${candidate.currentBuildId}`,
+    );
 
     const build = await repository.getReleaseCandidateBuild(buildId);
     if (!build) {
       throw new Error(`Build ${buildId} not found`);
     }
-    console.log(`Build status: indexStatus=${build.indexStatus}, checksum=${build.contentChecksum}, records=${build.normalizedRecords.length}`);
+    console.log(
+      `Build status: indexStatus=${build.indexStatus}, checksum=${build.contentChecksum}, records=${build.normalizedRecords.length}`,
+    );
 
     const readiness = await repository.getReleaseCandidateReadiness(candidateId);
     console.log(`Candidate readiness:`, readiness);
@@ -56,7 +67,9 @@ async function main() {
         releaseNote,
         idempotencyKey: `promote-p0-${Date.now()}`,
       });
-      console.log(`Preparing revision created: ${preparingRevision.id}, status: ${preparingRevision.lifecycleStatus}`);
+      console.log(
+        `Preparing revision created: ${preparingRevision.id}, status: ${preparingRevision.lifecycleStatus}`,
+      );
       preparingRevisionId = preparingRevision.id;
     }
 
@@ -74,7 +87,9 @@ async function main() {
     });
 
     console.log(`[SUCCESS] Revision ${activeRevision.id} is now published and current!`);
-    console.log(`Lifecycle status: ${activeRevision.lifecycleStatus}, isCurrent: ${activeRevision.isCurrent}`);
+    console.log(
+      `Lifecycle status: ${activeRevision.lifecycleStatus}, isCurrent: ${activeRevision.isCurrent}`,
+    );
   } finally {
     await pool.end();
   }

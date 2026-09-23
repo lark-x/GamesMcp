@@ -518,10 +518,11 @@ export type NarrativeMode = z.infer<typeof narrativeModeSchema>;
 export const storyQuestEntrySchema = z.object({
   questKey: z.string(),
   title: z.string(),
+  questType: z.string().optional(),
   displayTitle: z.string().optional(),
   entryType: z.enum(["quest", "collection", "aggregate"]).optional(),
   parentQuestId: z.string().optional(),
-  childQuestIds: z.array(z.string()).optional(),
+  aggregateChildQuestIds: z.array(z.string()).optional(),
   order: z.number().default(0),
   completeness: z.enum(["complete", "partial", "metadata_only"]).default("complete"),
   bodyAvailability: bodyAvailabilitySchema.default("dialogue"),
@@ -572,14 +573,26 @@ export const storyChapterSchema = z.object({
   order: z.number().default(0),
   series: z.string().optional(),
   quests: z.array(storyQuestEntrySchema),
+  collections: z.array(storyQuestEntrySchema).optional(),
 });
 export type StoryChapter = z.infer<typeof storyChapterSchema>;
+
+export const storySubSeriesSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number().default(0),
+  chapters: z.array(storyChapterSchema),
+  quests: z.array(storyQuestEntrySchema).optional(),
+  collections: z.array(storyQuestEntrySchema).optional(),
+});
+export type StorySubSeries = z.infer<typeof storySubSeriesSchema>;
 
 export const storyFamilySchema = z.object({
   id: z.string(),
   name: z.string(),
   order: z.number().default(0),
   provenance: z.enum(["upstream", "derived", "curated", "fallback"]).default("derived"),
+  subseries: z.array(storySubSeriesSchema).optional(),
   chapters: z.array(storyChapterSchema),
   quests: z.array(storyQuestEntrySchema).optional(),
   collections: z.array(storyQuestEntrySchema).optional(),

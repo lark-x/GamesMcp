@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createHash } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { DomainError } from "@gip/domain";
@@ -74,16 +75,12 @@ async function insertJsonbRows(
     .join(".");
   const columnList = columns.map((column) => `"${column.name}"`).join(", ");
   const selectList = columns.map((column) => `x."${column.name}"`).join(", ");
-  const definitions = columns
-    .map((column) => `"${column.name}" ${column.pgType}`)
-    .join(", ");
+  const definitions = columns.map((column) => `"${column.name}" ${column.pgType}`).join(", ");
 
   for (let offset = 0; offset < rows.length; offset += chunkSize) {
     const chunk = rows.slice(offset, offset + chunkSize).map((row) => {
       const source = row as Record<string, unknown>;
-      return Object.fromEntries(
-        columns.map((column) => [column.name, source[column.property]]),
-      );
+      return Object.fromEntries(columns.map((column) => [column.name, source[column.property]]));
     });
     await tx.execute(sql`
       insert into ${sql.raw(quotedTable)} (${sql.raw(columnList)})
@@ -455,23 +452,11 @@ export async function materializeRevision(
       }
       if (mentionRows.length) {
         const rows = mentionRows.splice(0);
-        await insertJsonbRows(
-          tx,
-          "knowledge.entity_mentions",
-          MENTION_BULK_COLUMNS,
-          rows,
-          20_000,
-        );
+        await insertJsonbRows(tx, "knowledge.entity_mentions", MENTION_BULK_COLUMNS, rows, 20_000);
       }
       if (subquestRows.length) {
         const rows = subquestRows.splice(0);
-        await insertJsonbRows(
-          tx,
-          "knowledge.quest_subquests",
-          SUBQUEST_BULK_COLUMNS,
-          rows,
-          20_000,
-        );
+        await insertJsonbRows(tx, "knowledge.quest_subquests", SUBQUEST_BULK_COLUMNS, rows, 20_000);
       }
       if (dialogueNodeRows.length) {
         const rows = dialogueNodeRows.splice(0);

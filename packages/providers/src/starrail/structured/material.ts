@@ -183,17 +183,33 @@ export class StarRailMaterialExtractor {
       // Usages
       const usages: MaterialUsage[] = [];
       if (category === "character_ascension") {
-        usages.push({ type: "character_ascension", targetId: "avatar_general", targetName: "角色等级晋阶突破" });
+        usages.push({
+          type: "character_ascension",
+          targetId: "avatar_general",
+          targetName: "角色等级晋阶突破",
+        });
       } else if (category === "trace") {
-        usages.push({ type: "character_trace", targetId: "trace_general", targetName: "角色行迹技能升级" });
+        usages.push({
+          type: "character_trace",
+          targetId: "trace_general",
+          targetName: "角色行迹技能升级",
+        });
       } else if (category === "lightcone_exp") {
-        usages.push({ type: "lightcone_ascension", targetId: "lightcone_general", targetName: "光锥等级晋阶突破" });
+        usages.push({
+          type: "lightcone_ascension",
+          targetId: "lightcone_general",
+          targetName: "光锥等级晋阶突破",
+        });
       } else if (category === "exp_material") {
         usages.push({ type: "character_exp", targetId: "avatar_exp", targetName: "角色等级提升" });
       } else if (category === "relic_exp") {
         usages.push({ type: "relic_exp", targetId: "relic_exp", targetName: "遗器强化升级" });
       } else if (category === "synthesis") {
-        usages.push({ type: "synthesis", targetId: "synthesis", targetName: "万能合成机合成高阶材料" });
+        usages.push({
+          type: "synthesis",
+          targetId: "synthesis",
+          targetName: "万能合成机合成高阶材料",
+        });
       }
 
       materials.push({
@@ -243,7 +259,9 @@ export class StarRailMaterialExtractor {
         description: "火属性角色的晋阶材料。",
         story: "永远散发着温热气息的奇异晶石。",
         sources: [{ type: "stagnant_shadow", description: "凝滞虚影【燔燎之形】掉落" }],
-        usages: [{ type: "character_ascension", targetId: "fire_avatars", targetName: "火属性角色晋阶" }],
+        usages: [
+          { type: "character_ascension", targetId: "fire_avatars", targetName: "火属性角色晋阶" },
+        ],
         visibility: "public",
         provenance: { source: "baseline" },
       },
@@ -285,9 +303,7 @@ export class StarRailMaterialExtractor {
         description: "虚无角色的珍稀高级行迹升级材料。",
         story: "极致沉沦与幽邃的深黑結晶。",
         sources: [{ type: "calyx", description: "拟造花萼（赤）【虚无之蕾】掉落" }],
-        usages: [
-          { type: "character_trace", targetId: 1302, targetName: "黄泉" },
-        ],
+        usages: [{ type: "character_trace", targetId: 1302, targetName: "黄泉" }],
         visibility: "public",
         provenance: { source: "baseline" },
       },

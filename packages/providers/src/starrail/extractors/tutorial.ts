@@ -26,7 +26,10 @@ async function loadTable(
   if (!item) return [];
   const raw = await readFile(resolve(input.dataDir, relativePath), "utf8");
   const parsed = parseSourceJson<unknown>(raw);
-  if (Array.isArray(parsed)) return parsed.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object");
+  if (Array.isArray(parsed))
+    return parsed.filter(
+      (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object",
+    );
   if (parsed && typeof parsed === "object") {
     return Object.values(parsed as Record<string, unknown>).filter(
       (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object",
@@ -158,4 +161,3 @@ export async function extractTutorialDocuments(input: ExtractorInput): Promise<E
 
   return result;
 }
-

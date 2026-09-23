@@ -108,7 +108,10 @@ async function main() {
       arguments: { game_id: starrail.id, name: "行于流逝的岸" },
     }),
   ) as { equipment?: Record<string, unknown> | { error?: unknown } };
-  record("starrail get_equipment 行于流逝的岸", !("error" in lightCone) && lightCone.equipment != null);
+  record(
+    "starrail get_equipment 行于流逝的岸",
+    !("error" in lightCone) && lightCone.equipment != null,
+  );
 
   const cocolia = textOf(
     await client.callTool({

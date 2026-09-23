@@ -99,7 +99,8 @@ export class StarRailDialogueExtractor {
           nodes.push({
             nodeId,
             nodeType,
-            speakerId: record.SpeakerID !== undefined ? (record.SpeakerID as string | number) : undefined,
+            speakerId:
+              record.SpeakerID !== undefined ? (record.SpeakerID as string | number) : undefined,
             speakerName: speakerName.trim() || undefined,
             body: body.trim(),
             order: orderCounter,

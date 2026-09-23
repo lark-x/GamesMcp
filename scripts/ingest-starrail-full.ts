@@ -1084,12 +1084,20 @@ export async function runStarRailIngestion(options: IngestOptions) {
           topology: structured?.topology
             ? {
                 prerequisiteQuestIds: structured.topology.prerequisiteMissionIds.map(String),
-                childQuestIds: structured.topology.childMissionIds.map(String),
+                successorQuestIds: structured.topology.childMissionIds.map(String),
+                relatedQuestIds: [],
+                aggregateChildQuestIds:
+                  structured.contentRole === "aggregate"
+                    ? structured.topology.childMissionIds.map(String)
+                    : [],
                 parentQuestIds: structured.topology.parentMissionIds.map(String),
                 storyOrder: structured.topology.storyOrder,
+                orderSource: "topology" as const,
+                orderConfidence: "high" as const,
               }
             : undefined,
           storyProjection: {
+            schemaVersion: 2,
             regionId,
             regionTitle: region,
             regionOrder: wld?.order,
@@ -1106,7 +1114,10 @@ export async function runStarRailIngestion(options: IngestOptions) {
                 }
               : {}),
             entryType: structured?.contentRole === "aggregate" ? "collection" : "quest",
-            childQuestIds: structured?.topology?.childMissionIds.map(String) ?? [],
+            aggregateChildQuestIds:
+              structured?.contentRole === "aggregate"
+                ? (structured.topology?.childMissionIds.map(String) ?? [])
+                : [],
           },
           visibility,
           dialogueNodes: hasDialogue ? [{ nodeId: "has_dialogue" }] : [],

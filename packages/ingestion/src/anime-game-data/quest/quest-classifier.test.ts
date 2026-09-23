@@ -1,45 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { classifyDialogueResolution } from "./quest-classifier.js";
+import { classifyQuestContentRole } from "./quest-classifier.js";
 
-describe("quest dialogue classification", () => {
-  it("does not treat multiple resolved Talk IDs as an ambiguous asset", () => {
+describe("quest content classification", () => {
+  it("does not infer an aggregate from progress, reward, and control hints", () => {
     expect(
-      classifyDialogueResolution({
-        contentRole: "story",
-        talkReferenceCount: 3,
-        talkAssetCount: 1,
-        dialogueNodeCount: 3,
-        expectedTalkIds: ["a", "b", "c"],
-        resolvedTalkIds: ["a", "b", "c"],
-        missingTalkIds: [],
-        ambiguousTalkIds: [],
-      }),
-    ).toBe("resolved");
-  });
-
-  it("marks a narrative task with only part of its Talk assets as partial", () => {
-    expect(
-      classifyDialogueResolution({
-        contentRole: "story",
-        talkReferenceCount: 3,
-        talkAssetCount: 1,
-        dialogueNodeCount: 2,
-        expectedTalkIds: ["a", "b", "c"],
-        resolvedTalkIds: ["a", "b"],
-        missingTalkIds: ["c"],
-        ambiguousTalkIds: [],
-      }),
-    ).toBe("partial");
-  });
-
-  it("keeps source-free metadata tasks out of the missing-dialogue bucket", () => {
-    expect(
-      classifyDialogueResolution({
-        contentRole: "metadata",
-        talkReferenceCount: 0,
-        talkAssetCount: 0,
+      classifyQuestContentRole({
+        hasExplicitStoryTalk: false,
+        resolvedTalkCount: 0,
         dialogueNodeCount: 0,
+        hasSiblingQuestRelations: true,
+        hasProgressOrReward: true,
+        aggregateEvidenceClasses: ["content_progress", "reward", "no_explicit_story_talk"],
       }),
-    ).toBe("not_applicable");
+    ).toBe("unknown");
+  });
+
+  it("classifies only an explicit aggregate-child topology as a collection", () => {
+    expect(
+      classifyQuestContentRole({
+        hasExplicitStoryTalk: false,
+        resolvedTalkCount: 0,
+        dialogueNodeCount: 0,
+        aggregateEvidenceClasses: ["aggregate_children"],
+      }),
+    ).toBe("aggregate");
   });
 });

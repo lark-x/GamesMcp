@@ -132,13 +132,17 @@ export function scanTalkAssetMetadata(
 > {
   const text = typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8");
   const value = asObject(JSON.parse(text));
+  const rows = collectDialogueRows(value, relativePath);
   return {
     talkId: assetId(value, relativePath),
     sourceKind,
     relativePath,
     fileHash: createHash("sha256").update(text).digest("hex"),
     schemaSignature: schemaSignature(value),
-    metadata: { topLevelKeys: Object.keys(value).sort() },
+    metadata: {
+      topLevelKeys: Object.keys(value).sort(),
+      dialogueIds: rows.map((row) => row.dialogId),
+    },
   };
 }
 

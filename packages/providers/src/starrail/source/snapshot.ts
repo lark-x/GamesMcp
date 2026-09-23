@@ -41,7 +41,9 @@ function readGitCommit(path: string): string {
 function samePath(left: string, right: string): boolean {
   const normalizeCase = (value: string) =>
     process.platform === "win32"
-      ? normalize(value).replace(/[\\/]+$/u, "").toLowerCase()
+      ? normalize(value)
+          .replace(/[\\/]+$/u, "")
+          .toLowerCase()
       : normalize(value).replace(/\/+$/u, "");
   return normalizeCase(left) === normalizeCase(right);
 }

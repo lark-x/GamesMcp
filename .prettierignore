@@ -9,4 +9,7 @@ data/games/
 data/istaroth/
 data/istaroth-starrail/
 artifacts/**
+reports/
+data/upstream/
+data/imports/
 pnpm-lock.yaml

@@ -7,6 +7,8 @@ export {
 export { parseNpcGroupRelations } from "./npc-group-parser.js";
 export { buildTalkSourceRegistry, loadTalkSourceRegistry } from "./source-registry.js";
 export { resolveQuestTalks } from "./talk-resolver.js";
+export { analyzeDialogueComponents } from "./dialogue-graph.js";
+export type { DialogueComponentAnalysis, DialogueGraphRow } from "./dialogue-graph.js";
 export type {
   TalkAssetRecord,
   TalkCandidate,

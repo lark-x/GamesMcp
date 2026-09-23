@@ -22,7 +22,11 @@ export function classifyQuestContentRole(input: QuestClassificationInput): Quest
   if (input.hasProgressOrReward) aggregateEvidence.add("progress_or_reward");
   if (counts.QUEST_CONTENT_ADD_QUEST_PROGRESS) aggregateEvidence.add("content_progress");
   if (input.bin?.execCounts?.QUEST_EXEC_ADD_QUEST_PROGRESS) aggregateEvidence.add("exec_progress");
-  const hasAggregateSignal = aggregateEvidence.size >= 2;
+  // Progress/reward/control instructions are common in ordinary narrative
+  // quests. A task is a collection only when the source topology explicitly
+  // identifies aggregate children; heuristic signal combinations must not
+  // hide a real task body as an aggregate entry.
+  const hasAggregateSignal = aggregateEvidence.has("aggregate_children");
   if (input.hasExplicitStoryTalk && hasControl) return "story_and_control";
   if (input.hasExplicitStoryTalk || input.resolvedTalkCount > 0 || input.dialogueNodeCount > 0)
     return "story";
@@ -60,12 +64,7 @@ export function classifyDialogueResolution(input: {
     // task.
     if (input.dialogueNodeCount > 0) {
       if (input.missingTextCount && input.missingTextCount > 0) return "dialogue_text_missing";
-      if (
-        (input.danglingEdgeCount && input.danglingEdgeCount > 0) ||
-        input.graphHasNoRoot ||
-        input.cycle
-      )
-        return "graph_incomplete";
+      if (input.danglingEdgeCount && input.danglingEdgeCount > 0) return "graph_incomplete";
       return "resolved";
     }
     return "talk_reference_missing";
@@ -83,12 +82,7 @@ export function classifyDialogueResolution(input: {
   )
     return "partial";
   if (input.missingTextCount && input.missingTextCount > 0) return "dialogue_text_missing";
-  if (
-    (input.danglingEdgeCount && input.danglingEdgeCount > 0) ||
-    input.graphHasNoRoot ||
-    input.cycle
-  )
-    return "graph_incomplete";
+  if (input.danglingEdgeCount && input.danglingEdgeCount > 0) return "graph_incomplete";
   if (input.dialogueNodeCount === 0) return "dialogue_text_missing";
   return "resolved";
 }

@@ -42,9 +42,6 @@ export function StoryBrowser({
   revisionLabel,
   selectedRevision,
   initialQuestKey,
-  onHome,
-  onOpenMaterials,
-  onOpenText,
   onQuestKeyChange,
 }: {
   gameId: string;

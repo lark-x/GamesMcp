@@ -4,7 +4,9 @@ export type QuestRelationType =
   | "quest_state_equal"
   | "quest_state_not_equal"
   | "add_quest_progress"
-  | "main_quest_relation"
+  | "main_quest_relation_a"
+  | "main_quest_relation_b"
+  | "main_quest_relation_unknown"
   | "talk_excel_relation"
   | "npc_group_condition"
   | "npc_group_trigger"
@@ -26,6 +28,8 @@ export type QuestRelationEdge = {
   rawRelationType?: string;
   sourceFile: string;
   sourcePath?: string;
+  rawField?: string;
+  rawIndex?: number;
   sourceHash: string;
   derived: boolean;
   confidence: number;
@@ -83,9 +87,13 @@ export type DialogueResolutionStatus =
 export type QuestTopology = {
   questId: string;
   prerequisiteQuestIds: string[];
-  childQuestIds: string[];
+  successorQuestIds: string[];
+  relatedQuestIds: string[];
+  aggregateChildQuestIds: string[];
   parentQuestIds: string[];
   storyOrder?: number;
+  orderSource?: "topology" | "upstream" | "fallback";
+  orderConfidence?: "high" | "medium" | "low";
   contentRole: QuestContentRole;
   relationEdges: QuestRelationEdge[];
   rawRelationEdges?: QuestRelationEdge[];
@@ -105,6 +113,8 @@ export type StoryProjectionQuest = {
   questId: string;
   title: string;
   order: number;
+  questType?: string;
+  completeness?: "complete" | "partial" | "metadata_only";
   displayTitle?: string;
   entryType?: StoryProjectionEntryType;
   chapterId?: string;
@@ -113,12 +123,15 @@ export type StoryProjectionQuest = {
   familyId?: string;
   familyTitle?: string;
   familyOrder?: number;
+  subseriesId?: string;
+  subseriesTitle?: string;
+  subseriesOrder?: number;
   contentRole: QuestContentRole;
   dialogueResolutionStatus: DialogueResolutionStatus;
   qualityCode?: string;
   bodyAvailability?: string;
   parentQuestId?: string;
-  childQuestIds?: string[];
+  aggregateChildQuestIds?: string[];
 };
 
 export type StoryProjectionChapter = {
@@ -126,12 +139,24 @@ export type StoryProjectionChapter = {
   title: string;
   order: number;
   quests: StoryProjectionQuest[];
+  collections?: StoryProjectionQuest[];
+};
+
+export type StoryProjectionSubSeries = {
+  id: string;
+  title: string;
+  order: number;
+  chapters: StoryProjectionChapter[];
+  quests?: StoryProjectionQuest[];
+  collections?: StoryProjectionQuest[];
 };
 
 export type StoryProjectionFamily = {
   id: string;
   title: string;
   order: number;
+  provenance?: "upstream" | "derived" | "curated" | "fallback";
+  subseries?: StoryProjectionSubSeries[];
   chapters: StoryProjectionChapter[];
   quests?: StoryProjectionQuest[];
   collections?: StoryProjectionQuest[];

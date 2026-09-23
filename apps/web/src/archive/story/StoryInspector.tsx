@@ -71,7 +71,9 @@ export function StoryInspector({
         <InspectorField
           label="后续任务"
           value={
-            quest.topology?.childQuestIds?.length ? quest.topology.childQuestIds.join("、") : "暂无"
+            quest.topology?.successorQuestIds?.length
+              ? quest.topology.successorQuestIds.join("、")
+              : "暂无"
           }
         />
         {quest.topology?.cycle ? (

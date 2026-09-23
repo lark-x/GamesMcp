@@ -114,11 +114,7 @@ export function registerCodexRoutes(
     try {
       const [adapter, character] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
-        gameDomain.getCharacter(
-          params.gameId,
-          decodeStableId(params.stableId),
-          query.revisionId,
-        ),
+        gameDomain.getCharacter(params.gameId, decodeStableId(params.stableId), query.revisionId),
       ]);
       const isGenshin = adapter.gameSlug === "genshin-impact";
       return {
@@ -147,9 +143,7 @@ export function registerCodexRoutes(
     return {
       gameId,
       revisionId: query.revisionId ?? null,
-      weapons: weapons.map((weapon) =>
-        isGenshin ? genshinWeaponSchema.parse(weapon) : weapon,
-      ),
+      weapons: weapons.map((weapon) => (isGenshin ? genshinWeaponSchema.parse(weapon) : weapon)),
     };
   });
 
@@ -159,11 +153,7 @@ export function registerCodexRoutes(
     try {
       const [adapter, weapon] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
-        gameDomain.getWeapon(
-          params.gameId,
-          decodeStableId(params.stableId),
-          query.revisionId,
-        ),
+        gameDomain.getWeapon(params.gameId, decodeStableId(params.stableId), query.revisionId),
       ]);
       const isGenshin = adapter.gameSlug === "genshin-impact";
       return { weapon: isGenshin ? genshinWeaponSchema.parse(weapon) : weapon };
@@ -223,9 +213,7 @@ export function registerCodexRoutes(
     return {
       gameId,
       revisionId: query.revisionId ?? null,
-      enemies: enemies.map((enemy) =>
-        isGenshin ? genshinEnemySchema.parse(enemy) : enemy,
-      ),
+      enemies: enemies.map((enemy) => (isGenshin ? genshinEnemySchema.parse(enemy) : enemy)),
     };
   });
 
@@ -235,11 +223,7 @@ export function registerCodexRoutes(
     try {
       const [adapter, enemy] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
-        gameDomain.getEnemy(
-          params.gameId,
-          decodeStableId(params.stableId),
-          query.revisionId,
-        ),
+        gameDomain.getEnemy(params.gameId, decodeStableId(params.stableId), query.revisionId),
       ]);
       const isGenshin = adapter.gameSlug === "genshin-impact";
       return { enemy: isGenshin ? genshinEnemySchema.parse(enemy) : enemy };
@@ -278,11 +262,7 @@ export function registerCodexRoutes(
     try {
       const [adapter, achievement] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
-        gameDomain.getAchievement(
-          params.gameId,
-          decodeStableId(params.stableId),
-          query.revisionId,
-        ),
+        gameDomain.getAchievement(params.gameId, decodeStableId(params.stableId), query.revisionId),
       ]);
       const isGenshin = adapter.gameSlug === "genshin-impact";
       return {

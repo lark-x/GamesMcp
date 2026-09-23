@@ -1,6 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import { loadConfig } from "../packages/config/src/index.ts";
-import { createDatabase, createPool, SqlKnowledgeRepository } from "../packages/database/src/index.ts";
+import {
+  createDatabase,
+  createPool,
+  SqlKnowledgeRepository,
+} from "../packages/database/src/index.ts";
 
 async function main() {
   console.log("=== Generating Post-Repair Quality Audit Report ===");
@@ -16,20 +20,9 @@ async function main() {
 
     // 1. Audit Story Catalog & Quests
     const catalog = await repository.getStoryCatalog(genshin.id, publishedRev.id);
-    const questAgg = await pool.query(`
-      SELECT 
-        count(*) as total_quests,
-        count(*) filter (where metadata->'questPayload'->>'regionId' is not null) as with_region,
-        count(*) filter (where jsonb_array_length(metadata->'questPayload'->'dialogueNodes') > 0) as with_dialogue,
-        count(*) filter (where jsonb_array_length(metadata->'questPayload'->'subquests') > 0) as with_subquests
-      FROM knowledge.documents
-      WHERE revision_id = $1 AND type in ('archon_quest', 'story_quest', 'world_quest', 'event_quest', 'commission', 'hangout', 'other')
-    `, [publishedRev.id]);
-
-    const qStats = questAgg.rows[0];
-
     // 2. Audit Material Domain
-    const matAgg = await pool.query(`
+    const matAgg = await pool.query(
+      `
       SELECT 
         count(*) as total_materials,
         count(*) filter (where jsonb_array_length(sources) > 0) as with_sources,
@@ -38,7 +31,9 @@ async function main() {
         count(*) filter (where description is not null and description != '') as with_description
       FROM knowledge.genshin_materials
       WHERE revision_id = $1
-    `, [publishedRev.id]);
+    `,
+      [publishedRev.id],
+    );
 
     const mStats = matAgg.rows[0];
     const catRows = await repository.genshin.aggregateMaterialCategories(publishedRev.id);
@@ -117,7 +112,11 @@ async function main() {
       },
     };
 
-    await writeFile("reports/archive-data-post-repair.json", JSON.stringify(report, null, 2), "utf8");
+    await writeFile(
+      "reports/archive-data-post-repair.json",
+      JSON.stringify(report, null, 2),
+      "utf8",
+    );
 
     const markdownReport = `# Archive 数据正确性 P0 修复验证报告 (Post-Repair Audit)
 
@@ -168,7 +167,9 @@ async function main() {
 `;
 
     await writeFile("reports/archive-data-post-repair.md", markdownReport, "utf8");
-    console.log("Post-repair audit reports written to reports/archive-data-post-repair.json and .md");
+    console.log(
+      "Post-repair audit reports written to reports/archive-data-post-repair.json and .md",
+    );
   } finally {
     await pool.end();
   }

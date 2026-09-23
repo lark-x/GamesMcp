@@ -26,11 +26,18 @@ describe("Talk source registry", () => {
       const registry = await buildTalkSourceRegistry(root, {
         parseKinds: ["quest"],
         concurrency: 1,
+        metadataCachePath: join(root, "talk-metadata-cache.json"),
       });
       const assets = await registry.findAssets("7223601");
       expect(assets).toHaveLength(1);
       expect(assets[0]?.relativePath).toContain("abcdef12.json");
       expect(registry.coverage.metadataScannedFiles).toBe(1);
+      const cachedRegistry = await buildTalkSourceRegistry(root, {
+        parseKinds: ["quest"],
+        concurrency: 1,
+        metadataCachePath: join(root, "talk-metadata-cache.json"),
+      });
+      expect(cachedRegistry.coverage.metadataCacheHits).toBe(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

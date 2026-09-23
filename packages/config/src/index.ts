@@ -67,11 +67,7 @@ const environmentSchema = z.object({
     .transform((value) => value === "true" || value === "1"),
   MCP_HOST: z.string().trim().min(1).default("127.0.0.1"),
   MCP_PORT: z.coerce.number().int().min(1).max(65535).default(4200),
-  MCP_PATH: z
-    .string()
-    .trim()
-    .regex(/^\//u, "MCP_PATH must start with /")
-    .default("/mcp"),
+  MCP_PATH: z.string().trim().regex(/^\//u, "MCP_PATH must start with /").default("/mcp"),
   MCP_AUTH_TOKEN: optionalString,
   MCP_SESSION_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
   MCP_MAX_SESSIONS: z.coerce.number().int().positive().default(100),

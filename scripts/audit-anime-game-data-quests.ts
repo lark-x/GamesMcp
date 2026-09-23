@@ -7,6 +7,7 @@ import {
   convertQuestSnapshot,
   DEFAULT_QUEST_UPSTREAM_DIR,
 } from "./anime-game-data-quest-converter.ts";
+import { auditPublicStory } from "../packages/ingestion/src/anime-game-data/quest/index.ts";
 import { runStoragePreflight } from "./check-data-storage.ts";
 
 const execFileAsync = promisify(execFile);
@@ -106,6 +107,7 @@ function taskLocaleReport(
         resolvedTalkIds: string[];
         unresolvedTalkIds: string[];
         ambiguousTalkIds: string[];
+        ambiguityDiagnostics?: unknown[];
         candidates: Array<Record<string, unknown>>;
       }
     | undefined,
@@ -158,6 +160,7 @@ function taskLocaleReport(
           resolvedTalkIds: resolution.resolvedTalkIds,
           unresolvedTalkIds: resolution.unresolvedTalkIds,
           ambiguousTalkIds: resolution.ambiguousTalkIds,
+          ambiguityDiagnostics: resolution.ambiguityDiagnostics,
           candidates: resolution.candidates,
         }
       : undefined,
@@ -212,12 +215,30 @@ function numberFrom(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function auditMetricSummary(summary: ReportObject | undefined, manifest: ReportObject | undefined) {
-  const topology = (summary?.topologyAudit as ReportObject | undefined) ?? {};
+function auditMetricSummary(
+  summary: ReportObject | undefined,
+  manifest: ReportObject | undefined,
+  tasksValue?: unknown,
+) {
   const talk = (summary?.talkAudit as ReportObject | undefined) ?? {};
   const dialogue = (summary?.dialogueAudit as ReportObject | undefined) ?? {};
   const contentRole = (summary?.contentRoleZh as Record<string, unknown> | undefined) ?? {};
   const manifestCounts = (manifest?.counts as ReportObject | undefined) ?? {};
+  const publicNarrative = (summary?.publicNarrative as ReportObject | undefined) ?? {};
+  const allNarrative = (summary?.allNarrative as ReportObject | undefined) ?? {};
+  const baselineNarrativeTasks = Array.isArray(tasksValue)
+    ? tasksValue.flatMap((taskValue) => {
+        const task = taskValue as ReportObject;
+        const locales = task.locales as Record<string, ReportObject> | undefined;
+        const zh = locales?.["zh-CN"];
+        return zh && ["story", "story_and_control"].includes(String(zh.contentRole ?? ""))
+          ? [zh]
+          : [];
+      })
+    : [];
+  const baselinePublicNarrativeTasks = baselineNarrativeTasks.filter(
+    (item) => item.status === "public",
+  );
   return {
     resolvedQuestCount:
       numberFrom(summary?.talkResolvedQuestCount) ??
@@ -235,6 +256,28 @@ function auditMetricSummary(summary: ReportObject | undefined, manifest: ReportO
     talkUnresolvedCount:
       numberFrom(talk.unresolvedTalkIds) ?? numberFrom(summary?.talkProblemQuestCount) ?? null,
     danglingEdgeCount: numberFrom(dialogue.danglingEdges) ?? null,
+    publicNarrativeQuestCount:
+      numberFrom(publicNarrative.questCount) ?? baselinePublicNarrativeTasks.length,
+    publicNarrativeResolvedCount:
+      numberFrom(publicNarrative.resolvedCount) ??
+      baselinePublicNarrativeTasks.filter((item) => item.dialogueResolutionStatus === "resolved")
+        .length,
+    publicNarrativeDialogueNodes:
+      numberFrom(publicNarrative.dialogueNodes) ??
+      baselinePublicNarrativeTasks.reduce(
+        (sum, item) => sum + (numberFrom(item.dialogueNodeCount) ?? 0),
+        0,
+      ),
+    allNarrativeQuestCount: numberFrom(allNarrative.questCount) ?? baselineNarrativeTasks.length,
+    allNarrativeResolvedCount:
+      numberFrom(allNarrative.resolvedCount) ??
+      baselineNarrativeTasks.filter((item) => item.dialogueResolutionStatus === "resolved").length,
+    allNarrativeDialogueNodes:
+      numberFrom(allNarrative.dialogueNodes) ??
+      baselineNarrativeTasks.reduce(
+        (sum, item) => sum + (numberFrom(item.dialogueNodeCount) ?? 0),
+        0,
+      ),
   };
 }
 
@@ -293,9 +336,11 @@ async function main() {
                 resolvedTalkIds: resolved.resolvedTalkIds,
                 unresolvedTalkIds: resolved.unresolvedTalkIds,
                 ambiguousTalkIds: resolved.ambiguousTalkIds,
+                ambiguityDiagnostics: resolved.ambiguityDiagnostics,
                 candidates: resolved.candidates.map((candidate) => ({
                   talkId: candidate.talkId,
                   subQuestId: candidate.subQuestId,
+                  subQuestIds: candidate.subQuestIds,
                   sourceKind: candidate.sourceKind,
                   sourceFile: candidate.sourceFile,
                   confidence: candidate.confidence,
@@ -303,6 +348,7 @@ async function main() {
                   status: candidate.status,
                   evidence: candidate.evidence,
                   evidences: candidate.evidences,
+                  resolutionReason: candidate.resolutionReason,
                 })),
               }
             : undefined,
@@ -353,14 +399,6 @@ async function main() {
     list.push(task);
     familyTasks.set(familyId, list);
   }
-  const familyTitles = tasks.map((task) => ({
-    mainQuestId: task.mainQuestId,
-    family: task.family,
-  }));
-  const chapterTitles = tasks.map((task) => ({
-    mainQuestId: task.mainQuestId,
-    chapter: task.chapter,
-  }));
   const fallbackFamilies = [...familyTasks.keys()].filter((id) =>
     id.startsWith("genshin:standalone:"),
   );
@@ -382,7 +420,10 @@ async function main() {
     .filter((task) => task.contentRole === "aggregate")
     .filter((task) => {
       const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
-      return !Array.isArray(topology?.childQuestIds) || topology.childQuestIds.length === 0;
+      return (
+        !Array.isArray(topology?.aggregateChildQuestIds) ||
+        topology.aggregateChildQuestIds.length === 0
+      );
     })
     .map((task) => task.mainQuestId)
     .sort();
@@ -395,6 +436,34 @@ async function main() {
     })
     .map(([id]) => id)
     .sort();
+  const publicStoryAudit = auditPublicStory(
+    tasks.flatMap((task) => {
+      const zh = task.locales["zh-CN"];
+      if (zh.status !== "public") return [];
+      const projection = zh.storyProjection as ReportObject | undefined;
+      return [
+        {
+          questId: task.mainQuestId,
+          regionId: typeof zh.regionId === "string" ? zh.regionId : undefined,
+          familyId: typeof zh.familyId === "string" ? zh.familyId : undefined,
+          entryType:
+            projection?.entryType === "collection" ||
+            projection?.entryType === "aggregate" ||
+            projection?.entryType === "quest"
+              ? projection.entryType
+              : undefined,
+          aggregateChildQuestIds: stringArray(projection?.aggregateChildQuestIds),
+          contentRole: typeof zh.contentRole === "string" ? zh.contentRole : undefined,
+          dialogueNodeCount: numberFrom(zh.dialogueNodeCount),
+          // A COMPLETE_TALK reference alone is not a body source: old builds
+          // can retain the identity after the corresponding Talk/Dialog asset
+          // has disappeared. Gate only tasks with an actually resolved source.
+          hasNarrativeSource:
+            stringArray(zh.resolvedTalkIds).length > 0 || Boolean(task.codexSourceFile),
+        },
+      ];
+    }),
+  );
 
   const topologyEdges = tasks.flatMap((task) => {
     const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
@@ -436,7 +505,14 @@ async function main() {
         ? [{ mainQuestId, kind: "unresolved", talkIds: resolved.unresolvedTalkIds }]
         : []),
       ...(resolved.ambiguousTalkIds.length
-        ? [{ mainQuestId, kind: "ambiguous", talkIds: resolved.ambiguousTalkIds }]
+        ? [
+            {
+              mainQuestId,
+              kind: "ambiguous",
+              talkIds: resolved.ambiguousTalkIds,
+              diagnostics: resolved.ambiguityDiagnostics,
+            },
+          ]
         : []),
     ],
   );
@@ -452,16 +528,18 @@ async function main() {
       metadataScanned: file.metadataScanned,
       dialogueRowCount: file.dialogueRowCount ?? 0,
     }));
-  const orphanDialogueAssets = inputs.talkRegistry.assets
+  const orphanDialogueAssets = inputs.talkRegistry.files
     .filter(
-      (asset) =>
-        asset.dialogueRows.length > 0 && (!asset.talkId || !referencedTalkIds.has(asset.talkId)),
+      (file) =>
+        file.sourceKind !== "npc_group" &&
+        Boolean(file.embeddedTalkId) &&
+        !referencedTalkIds.has(file.embeddedTalkId!),
     )
-    .map((asset) => ({
-      talkId: asset.talkId,
-      sourceKind: asset.sourceKind,
-      relativePath: asset.relativePath,
-      dialogueRows: asset.dialogueRows.length,
+    .map((file) => ({
+      talkId: file.embeddedTalkId,
+      sourceKind: file.sourceKind,
+      relativePath: file.relativePath,
+      dialogueRows: file.dialogueRowCount ?? 0,
     }));
   const metadataScanFailures = inputs.talkRegistry.files
     .filter((file) => file.metadataScanned && !file.fileHash)
@@ -473,6 +551,7 @@ async function main() {
   const bodyGroups = new Map<string, string[]>();
   const speakerBodyGroups = new Map<string, string[]>();
   const dialogIdTalkGroups = new Map<string, Set<string>>();
+  const exactIdentityGroups = new Map<string, string[]>();
   for (const node of dialogueNodes) {
     const body = node.body.trim();
     if (!body) continue;
@@ -490,6 +569,17 @@ async function main() {
       talkIds.add(talkId);
       dialogIdTalkGroups.set(String(node.nodeId), talkIds);
     }
+    const exactIdentity = [
+      String(node.metadata?.sourceFile ?? ""),
+      talkId ?? "",
+      node.subquestKey ?? "",
+      String(node.nodeId),
+      node.speakerKey ?? "",
+      body,
+    ].join("\u0000");
+    const exactList = exactIdentityGroups.get(exactIdentity) ?? [];
+    exactList.push(nodeKey);
+    exactIdentityGroups.set(exactIdentity, exactList);
   }
   const duplicateGroups = (groups: Map<string, string[]>) =>
     [...groups.entries()]
@@ -525,11 +615,34 @@ async function main() {
       (sum, group) => sum + group.count - 1,
       0,
     ),
+    duplicateExactIdentityNodes: duplicateGroups(exactIdentityGroups).reduce(
+      (sum, group) => sum + group.count - 1,
+      0,
+    ),
     duplicateDialogIdsAcrossTalks: [...dialogIdTalkGroups.entries()]
       .filter(([, talkIds]) => talkIds.size > 1)
       .map(([dialogId, talkIds]) => ({ dialogId, talkIds: [...talkIds].sort() })),
     duplicateBodyGroups: duplicateGroups(bodyGroups).slice(0, 200),
     duplicateSpeakerBodyGroups: duplicateGroups(speakerBodyGroups).slice(0, 200),
+    duplicateExactIdentityGroups: duplicateGroups(exactIdentityGroups).slice(0, 200),
+    disconnectedComponents: zhRecords.reduce(
+      (sum, record) => sum + (record.quest?.dialogueDiagnostics?.disconnectedComponentCount ?? 0),
+      0,
+    ),
+    rootlessComponents: zhRecords.reduce(
+      (sum, record) => sum + (record.quest?.dialogueDiagnostics?.rootlessComponentCount ?? 0),
+      0,
+    ),
+    stronglyConnectedComponents: zhRecords.reduce(
+      (sum, record) =>
+        sum + (record.quest?.dialogueDiagnostics?.stronglyConnectedComponents?.length ?? 0),
+      0,
+    ),
+    unreachableDialogueIds: zhRecords.reduce(
+      (sum, record) =>
+        sum + (record.quest?.dialogueDiagnostics?.unreachableDialogueIds?.length ?? 0),
+      0,
+    ),
   };
 
   const duplicateFamilyTitles = groupedTitles(
@@ -540,6 +653,19 @@ async function main() {
     tasks.map((task) => ({ mainQuestId: task.mainQuestId, chapter: task.chapter })),
     "chapter",
   );
+  const narrativeSummary = (items: ReportObject[]) => ({
+    questCount: items.length,
+    resolvedCount: items.filter((item) => item.dialogueResolutionStatus === "resolved").length,
+    dialogueNodes: items.reduce((sum, item) => sum + (numberFrom(item.dialogueNodeCount) ?? 0), 0),
+    emptyWithSource: items.filter((item) => {
+      const talkIds = stringArray(item.talkIds);
+      return talkIds.length > 0 && (numberFrom(item.dialogueNodeCount) ?? 0) === 0;
+    }).length,
+  });
+  const allNarrativeTasks = zhTasks.filter((item) =>
+    ["story", "story_and_control"].includes(String(item.contentRole ?? "")),
+  );
+  const publicNarrativeTasks = allNarrativeTasks.filter((item) => item.status === "public");
   const summary = {
     mainQuests: inputs.mainQuest.length,
     auditLocaleRecords: result.auditRecords.length,
@@ -597,6 +723,9 @@ async function main() {
       metadataScannedFiles: inputs.talkRegistry.coverage.metadataScannedFiles ?? 0,
     },
     dialogueAudit,
+    publicStoryAudit,
+    allNarrative: narrativeSummary(allNarrativeTasks),
+    publicNarrative: narrativeSummary(publicNarrativeTasks),
   };
 
   const baselinePath = argValue("baseline");
@@ -613,6 +742,7 @@ async function main() {
     ? auditMetricSummary(
         baseline.summary as ReportObject | undefined,
         baseline.conversionManifest as ReportObject | undefined,
+        baseline.tasks,
       )
     : undefined;
   const delta = Object.fromEntries(
@@ -690,6 +820,7 @@ async function main() {
         .map((item) => item.relativePath),
       duplicateFamilyTitles,
       duplicateChapterTitles,
+      publicStoryAudit,
       curatedOverrides: inputs.storyFamilyOverrides.map((override) => ({
         id: override.id,
         questIds: override.questIds,
@@ -770,6 +901,23 @@ async function main() {
     "本报告只读取上游文件并在内存中运行转换，不写入数据库；应在所有规则完成后再执行一次候选导入。",
   ].join("\n");
   await writeFile(`${outputBase}.md`, markdown + "\n", "utf8");
+  if (process.argv.includes("--gate")) {
+    const failures = [
+      ...(result.manifest.failures.length
+        ? [`parser_failures:${result.manifest.failures.length}`]
+        : []),
+      ...(publicStoryAudit.duplicateQuestPlacements.length
+        ? [`duplicate_quest_placements:${publicStoryAudit.duplicateQuestPlacements.length}`]
+        : []),
+      ...(publicStoryAudit.crossRegionFamilies.length
+        ? [`cross_region_families:${publicStoryAudit.crossRegionFamilies.length}`]
+        : []),
+      ...(publicStoryAudit.emptyNarrativeTasks.length
+        ? [`empty_narrative_tasks:${publicStoryAudit.emptyNarrativeTasks.length}`]
+        : []),
+    ];
+    if (failures.length) throw new Error(`Quest audit gate failed: ${failures.join(", ")}`);
+  }
   console.log(
     JSON.stringify(
       { json: `${outputBase}.json`, markdown: `${outputBase}.md`, summary: report.summary },

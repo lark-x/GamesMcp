@@ -51,6 +51,7 @@ function registry(assets: TalkAssetRecord[]): TalkSourceRegistry {
           (!sourceKind || item.sourceKind === sourceKind) &&
           item.dialogueRows.some((row) => row.dialogId === dialogueId),
       ),
+    releaseLoadedAssets: () => undefined,
   };
 }
 
@@ -79,7 +80,7 @@ describe("resolveQuestTalks", () => {
       completeTalkIds: ["200"],
       talkRows: [],
       registry: registry([
-        asset("npc_group", "BinOutput/Talk/NpcGroup/200.json", 0),
+        asset("npc_group", "BinOutput/Talk/NpcGroup/200.json"),
         asset("quest", "BinOutput/Talk/Quest/200.json"),
       ]),
     });
@@ -94,13 +95,48 @@ describe("resolveQuestTalks", () => {
       completeTalkIds: ["200"],
       talkRows: [],
       registry: registry([
-        asset("quest", "BinOutput/Talk/Quest/hashed-alias.json"),
+        asset("quest", "BinOutput/Talk/Quest/hashed-alias.json", 2),
         asset("quest", "BinOutput/Talk/Quest/200.json"),
       ]),
     });
 
     expect(result.ambiguousTalkIds).toEqual([]);
-    expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]?.status).toBe("resolved");
+    expect(result.candidates).toHaveLength(2);
+    expect(
+      result.candidates.find((candidate) => candidate.sourceFile.endsWith("/200.json")),
+    ).toMatchObject({ status: "resolved", resolutionReason: "exact_numeric_asset_path" });
+  });
+
+  it("retains only relation edges scoped to the current main quest", async () => {
+    const result = await resolveQuestTalks({
+      mainQuestId: "100",
+      completeTalkIds: ["200"],
+      talkRows: [],
+      relationEdges: [
+        {
+          edgeId: "current",
+          fromQuestId: "100",
+          talkId: "200",
+          relationType: "complete_talk",
+          sourceFile: "current.json",
+          sourceHash: "fixture",
+          derived: false,
+          confidence: 1,
+        },
+        {
+          edgeId: "unrelated",
+          fromQuestId: "999",
+          talkId: "999",
+          relationType: "complete_talk",
+          sourceFile: "unrelated.json",
+          sourceHash: "fixture",
+          derived: false,
+          confidence: 1,
+        },
+      ],
+      registry: registry([asset("quest", "BinOutput/Talk/Quest/200.json")]),
+    });
+
+    expect(result.relationEdges.map((edge) => edge.edgeId)).toEqual(["current"]);
   });
 });

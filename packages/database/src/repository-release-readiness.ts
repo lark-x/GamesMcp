@@ -43,11 +43,7 @@ export async function getReleaseCandidateBuild(
   const row = rows[0];
   if (!row) return null;
   const normalizedRecords = row.build.manifestId
-    ? await hydrateManifestRecords(
-        ctx.db,
-        row.build.manifestId,
-        row.build.normalizedRecords,
-      )
+    ? await hydrateManifestRecords(ctx.db, row.build.manifestId, row.build.normalizedRecords)
     : row.build.normalizedRecords;
   return {
     ...mapReleaseCandidateBuild(row.build),

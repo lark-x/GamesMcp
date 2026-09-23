@@ -10,7 +10,12 @@ export function App() {
   const [gameId, setGameId] = useState(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get("gameId") || urlParams.get("game") || localStorage.getItem("gip_active_game") || "";
+      return (
+        urlParams.get("gameId") ||
+        urlParams.get("game") ||
+        localStorage.getItem("gip_active_game") ||
+        ""
+      );
     } catch {
       return "";
     }

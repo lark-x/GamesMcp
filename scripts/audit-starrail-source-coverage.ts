@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 
 export type DatasetStatus = "USED" | "PLANNED" | "IGNORED_INTENTIONALLY" | "UNKNOWN";
@@ -372,7 +372,8 @@ const DATASET_CATALOG: Array<{
     domain: "stage",
     extractor: "StarRailStageExtractor",
     status: "USED",
-    reason: "Calyx, Stagnant Shadow, Cavern of Corrosion stage configurations and material drop tables",
+    reason:
+      "Calyx, Stagnant Shadow, Cavern of Corrosion stage configurations and material drop tables",
   },
   {
     pattern: /ExcelOutput\/MazePlane\.json$/i,
@@ -398,7 +399,8 @@ const DATASET_CATALOG: Array<{
 
   // Internal & Engine configs
   {
-    pattern: /ExcelOutput\/(?:Audio|Sound|Camera|Render|Effect|UI|Font|Keymap|Input|Server|Network).*\.json$/i,
+    pattern:
+      /ExcelOutput\/(?:Audio|Sound|Camera|Render|Effect|UI|Font|Keymap|Input|Server|Network).*\.json$/i,
     domain: "client_engine",
     extractor: "none",
     status: "IGNORED_INTENTIONALLY",
@@ -426,7 +428,11 @@ function matchCatalog(relPath: string): {
 
   // General heuristics for ExcelOutput
   if (norm.startsWith("ExcelOutput/")) {
-    if (/(?:Fight|Battle|Buff|Skill|Combo|Damage|Target|Turn|Phase|Action|Stance|AI|Aggro)/i.test(norm)) {
+    if (
+      /(?:Fight|Battle|Buff|Skill|Combo|Damage|Target|Turn|Phase|Action|Stance|AI|Aggro)/i.test(
+        norm,
+      )
+    ) {
       return {
         domain: "combat_engine",
         extractor: "none",
@@ -434,7 +440,11 @@ function matchCatalog(relPath: string): {
         reason: "Combat engine calculations, AI behaviours, and skill state machines",
       };
     }
-    if (/(?:Activity|Event|AetherDivide|Alley|Anniv|ClockPark|Fate|Fes|Hanu|Drink|Maker|ChenLing|Chimera|SwordTraining|TeamTowers|TrainParty|TreasureDungeon|Tarot|Heliobus|Museum|OrigamiBird|FightFest|SpaceZoo|Boxing|Television|Monopoly|MatchThree|TrackPhoto|Planet|Limao|Live|Idle|Grid|Challenge|Raid|Titan|Dice|Chess|Rogue)/i.test(norm)) {
+    if (
+      /(?:Activity|Event|AetherDivide|Alley|Anniv|ClockPark|Fate|Fes|Hanu|Drink|Maker|ChenLing|Chimera|SwordTraining|TeamTowers|TrainParty|TreasureDungeon|Tarot|Heliobus|Museum|OrigamiBird|FightFest|SpaceZoo|Boxing|Television|Monopoly|MatchThree|TrackPhoto|Planet|Limao|Live|Idle|Grid|Challenge|Raid|Titan|Dice|Chess|Rogue)/i.test(
+        norm,
+      )
+    ) {
       return {
         domain: "activity_minigame",
         extractor: "StarRailActivityExtractor",
@@ -442,36 +452,56 @@ function matchCatalog(relPath: string): {
         reason: "Time-limited events, mini-game systems, and seasonal gameplay modes (P1)",
       };
     }
-    if (/(?:Maze|Map|SubMap|SubNav|Teleport|World|Waypoint|Prop|Anchor|Floor|Scene|Group|Level)/i.test(norm)) {
+    if (
+      /(?:Maze|Map|SubMap|SubNav|Teleport|World|Waypoint|Prop|Anchor|Floor|Scene|Group|Level)/i.test(
+        norm,
+      )
+    ) {
       return {
         domain: "world_exploration",
         extractor: "StarRailStageExtractor",
         status: "PLANNED",
-        reason: "World exploration, scene props, interactive triggers, and navigational waypoints (P1)",
+        reason:
+          "World exploration, scene props, interactive triggers, and navigational waypoints (P1)",
       };
     }
-    if (/(?:Mission|SubMission|Talk|Tutorial|Story|Guide|Npc|Dialog|Performance|Cutscene|Video|Plot|Quest)/i.test(norm)) {
+    if (
+      /(?:Mission|SubMission|Talk|Tutorial|Story|Guide|Npc|Dialog|Performance|Cutscene|Video|Plot|Quest)/i.test(
+        norm,
+      )
+    ) {
       return {
         domain: "narrative_auxiliary",
         extractor: "StarRailStoryResolver",
         status: "PLANNED",
-        reason: "Auxiliary narrative triggers, cutscene sequences, NPC talk behaviors, and tutorial lore (P1)",
+        reason:
+          "Auxiliary narrative triggers, cutscene sequences, NPC talk behaviors, and tutorial lore (P1)",
       };
     }
-    if (/(?:Gacha|Draw|Mail|Chat|Friend|Player|Setting|Notice|RedDot|Banner|Share|Audio|Sound|Voice|BGM|UI|Font|Keymap|Input|Server|Network|Device|Tag|Toast|Wheel|Language|Sys|HotUpdate|Encryption|Passport|Shop|Goods|Score|Rank|Message)/i.test(norm)) {
+    if (
+      /(?:Gacha|Draw|Mail|Chat|Friend|Player|Setting|Notice|RedDot|Banner|Share|Audio|Sound|Voice|BGM|UI|Font|Keymap|Input|Server|Network|Device|Tag|Toast|Wheel|Language|Sys|HotUpdate|Encryption|Passport|Shop|Goods|Score|Rank|Message)/i.test(
+        norm,
+      )
+    ) {
       return {
         domain: "system_client",
         extractor: "none",
         status: "IGNORED_INTENTIONALLY",
-        reason: "Client UI, system settings, network protocols, gacha banners, and audio dispatchers",
+        reason:
+          "Client UI, system settings, network protocols, gacha banners, and audio dispatchers",
       };
     }
-    if (/(?:Avatar|Equipment|Relic|Item|Reward|Drop|Compound|Synthesis|Upgrade|Stuff|Exp|Cost|Price|Stat|Growth|Promotion)/i.test(norm)) {
+    if (
+      /(?:Avatar|Equipment|Relic|Item|Reward|Drop|Compound|Synthesis|Upgrade|Stuff|Exp|Cost|Price|Stat|Growth|Promotion)/i.test(
+        norm,
+      )
+    ) {
       return {
         domain: "progression_auxiliary",
         extractor: "StarRailCodexExtractor",
         status: "PLANNED",
-        reason: "Character progression, talent calculation formulas, and auxiliary inventory tables (P1)",
+        reason:
+          "Character progression, talent calculation formulas, and auxiliary inventory tables (P1)",
       };
     }
     return {
@@ -519,7 +549,9 @@ export async function runSourceCoverageAudit(options: {
   const sourceMode = options.fixture ? "fixture" : "full";
   const sourceDir = options.fixture
     ? resolve("data/fixtures/starrail")
-    : options.sourceDir ?? process.env.GAMESMCP_STARRAIL_DATA_DIR ?? resolve("data/fixtures/starrail");
+    : (options.sourceDir ??
+      process.env.GAMESMCP_STARRAIL_DATA_DIR ??
+      resolve("data/fixtures/starrail"));
 
   console.log("=== Star Rail Source Coverage Audit (Phase 1) ===");
   console.log(`Source directory: ${sourceDir} (mode: ${sourceMode})`);
@@ -620,10 +652,10 @@ export async function runSourceCoverageAudit(options: {
     "| Metric | Count | Ratio | Gate Criteria | Status |",
     "| :--- | :--- | :--- | :--- | :--- |",
     `| **Total Datasets** | ${results.length} | 100% | - | - |`,
-    `| **USED (Active)** | ${used} | ${(used / results.length * 100).toFixed(1)}% | In scope for Phase 0-9 | PASS |`,
-    `| **PLANNED (P1 Scope)** | ${planned} | ${(planned / results.length * 100).toFixed(1)}% | Roadmap documented | PASS |`,
-    `| **IGNORED_INTENTIONALLY** | ${ignored} | ${(ignored / results.length * 100).toFixed(1)}% | Engine/Internal assets | PASS |`,
-    `| **UNKNOWN (Unclassified)** | ${unknown} | ${(unknown / results.length * 100).toFixed(1)}% | **MUST BE 0** | ${gatePassed ? "PASS" : "FAIL"} |`,
+    `| **USED (Active)** | ${used} | ${((used / results.length) * 100).toFixed(1)}% | In scope for Phase 0-9 | PASS |`,
+    `| **PLANNED (P1 Scope)** | ${planned} | ${((planned / results.length) * 100).toFixed(1)}% | Roadmap documented | PASS |`,
+    `| **IGNORED_INTENTIONALLY** | ${ignored} | ${((ignored / results.length) * 100).toFixed(1)}% | Engine/Internal assets | PASS |`,
+    `| **UNKNOWN (Unclassified)** | ${unknown} | ${((unknown / results.length) * 100).toFixed(1)}% | **MUST BE 0** | ${gatePassed ? "PASS" : "FAIL"} |`,
     "",
     `**Overall Phase 1 Gate Status: ${gatePassed ? "PASSED" : "FAILED"}**`,
     "",
@@ -631,15 +663,20 @@ export async function runSourceCoverageAudit(options: {
     "",
     "| Path | Domain | Extractor | Status | Row Count | Reason |",
     "| :--- | :--- | :--- | :--- | :--- | :--- |",
-    ...results.slice(0, 50).map(
-      (d) => `| \`${d.path}\` | \`${d.candidateDomain}\` | \`${d.extractor}\` | \`${d.status}\` | ${d.rowCount} | ${d.reason} |`
-    ),
+    ...results
+      .slice(0, 50)
+      .map(
+        (d) =>
+          `| \`${d.path}\` | \`${d.candidateDomain}\` | \`${d.extractor}\` | \`${d.status}\` | ${d.rowCount} | ${d.reason} |`,
+      ),
     "",
     `*(Showing top 50 of ${results.length} audited datasets. Full audit stored in \`artifacts/starrail-source-coverage.json\`)*`,
   ];
 
   writeFileSync("artifacts/starrail-source-coverage.md", mdLines.join("\n"), "utf8");
-  console.log(`Report generated at artifacts/starrail-source-coverage.json and artifacts/starrail-source-coverage.md`);
+  console.log(
+    `Report generated at artifacts/starrail-source-coverage.json and artifacts/starrail-source-coverage.md`,
+  );
   console.log(`Gate result: ${gatePassed ? "PASS" : "FAIL"} (UNKNOWN = ${unknown})`);
 
   return report;

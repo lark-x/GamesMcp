@@ -88,7 +88,12 @@ export async function extractStoryDocuments(input: ExtractorInput): Promise<Extr
       }
       seenIds.add(id);
 
-      const snippet = lines[0] ? ` · ${lines[0].replace(/^[^\s：:]+[：:]/u, "").slice(0, 16).trim()}` : "";
+      const snippet = lines[0]
+        ? ` · ${lines[0]
+            .replace(/^[^\s：:]+[：:]/u, "")
+            .slice(0, 16)
+            .trim()}`
+        : "";
       const title = `剧情片段 ${rawDigits || basename(item.path, ".json")}${snippet}`;
       const fullContent = normalizeStarRailText([`# ${title}`, "", ...lines].join("\n"));
 

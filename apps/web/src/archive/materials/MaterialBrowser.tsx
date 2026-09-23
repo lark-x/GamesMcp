@@ -55,9 +55,6 @@ export function MaterialBrowser({
   revisionLabel,
   selectedRevision,
   initialMaterialId,
-  onHome,
-  onOpenStory,
-  onOpenText,
   onMaterialIdChange,
 }: {
   gameId: string;
@@ -371,10 +368,7 @@ export function MaterialBrowser({
                 )}
               </InspectorSection>
               <InspectorSection title="来源">
-                <InspectorField
-                  label="数据来源"
-                  value={selected.sourceName ?? undefined}
-                />
+                <InspectorField label="数据来源" value={selected.sourceName ?? undefined} />
                 <InspectorField label="Stable ID" value={<code>{selected.stableId}</code>} />
                 <InspectorField
                   label="Revision"

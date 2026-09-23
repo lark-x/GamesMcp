@@ -107,6 +107,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Run Genshin converter and public story audit gate
+        run: >-
+          pnpm data:audit:anime-quests
+          --upstream=data/fixtures/anime-game-data-quests
+          --output=artifacts/genshin-quest-audit-fixture
+          --gate
       # Real-upstream corpus regression (uses memory adapter fallback when no DB is
       # provisioned; the recorded fallbackReason keeps the run honest).
       - run: pnpm eval:search-regression

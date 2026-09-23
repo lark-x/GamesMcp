@@ -588,7 +588,7 @@ export class StarRailStoryResolver {
 
       // World & Chapter Resolution
       let worldId = m.WorldID ? Number(m.WorldID) : undefined;
-      let chapterId = m.ChapterID ? Number(m.ChapterID) : undefined;
+      const chapterId = m.ChapterID ? Number(m.ChapterID) : undefined;
 
       const chapter = chapterId ? this.worldChapterResolver.getChapter(chapterId) : undefined;
       if (chapter && !worldId) worldId = chapter.worldId;

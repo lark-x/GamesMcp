@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { CodexMaterial, GameTerminology } from "@gip/contracts";
 import type { Id, KnowledgeRepository } from "./index.js";
 

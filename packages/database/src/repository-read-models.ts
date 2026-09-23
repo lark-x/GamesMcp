@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type {
   Capability,
@@ -32,7 +33,6 @@ import {
   type StoryCatalogRequest,
   type StoryFamily,
   type StoryRegion,
-  type StoryChapter,
   type StoryQuestEntry,
   type BodyAvailability,
   type NarrativeMode,
@@ -1320,6 +1320,141 @@ export class RepositoryReadModels {
       return !["control", "trigger", "reward", "metadata", "unknown"].includes(String(role));
     });
 
+    const [catalogProjectionRow] = await this.db
+      .select({ metadata: documents.metadata })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.gameId, gameId),
+          eq(documents.revisionId, revision.id),
+          eq(documents.locale, locale),
+          sql`${documents.metadata}->'storyCatalogProjection' IS NOT NULL`,
+        ),
+      )
+      .limit(1);
+    const persistedCatalog = (catalogProjectionRow?.metadata as Record<string, unknown> | undefined)
+      ?.storyCatalogProjection as
+      { schemaVersion?: number; regions?: Array<Record<string, unknown>> } | undefined;
+    if (persistedCatalog) {
+      if (persistedCatalog.schemaVersion !== 2 || !Array.isArray(persistedCatalog.regions))
+        throw new DomainError(
+          "story_projection_schema_mismatch",
+          "The persisted Story Projection has an unsupported schema",
+          undefined,
+          500,
+        );
+      if (
+        visibleDocRows.some(
+          (row) =>
+            questMetadata(row).storyProjection?.schemaVersion !== persistedCatalog.schemaVersion,
+        )
+      )
+        throw new DomainError(
+          "story_projection_mixed_revision",
+          "The active revision mixes projected and inferred story records",
+          undefined,
+          500,
+        );
+      const eligibleRole = (role: unknown) =>
+        !["control", "trigger", "reward", "metadata", "unknown"].includes(String(role));
+      type PersistedEntry = StoryQuestEntry & { questId: string; questType?: string };
+      const entries = (value: unknown): StoryQuestEntry[] =>
+        (Array.isArray(value) ? (value as PersistedEntry[]) : [])
+          .filter((entry) => eligibleRole(entry.contentRole))
+          .filter((entry) => !options?.questType || entry.questType === options.questType)
+          .map((entry) => ({
+            questKey: `quest/${entry.questId}`,
+            title: entry.title,
+            questType: entry.questType,
+            displayTitle: entry.displayTitle,
+            order: entry.order,
+            completeness: entry.completeness ?? "metadata_only",
+            bodyAvailability: entry.bodyAvailability ?? "none",
+            entryType: entry.entryType,
+            aggregateChildQuestIds: entry.aggregateChildQuestIds,
+            parentQuestId: entry.parentQuestId,
+            qualityCode: entry.qualityCode,
+            contentRole: entry.contentRole,
+            dialogueResolutionStatus: entry.dialogueResolutionStatus,
+          }));
+      const chapters = (value: unknown) =>
+        (Array.isArray(value) ? value : [])
+          .map((chapter) => ({
+            id: String(chapter.id),
+            name: String(chapter.title),
+            order: Number(chapter.order ?? 0),
+            quests: entries(chapter.quests),
+            collections: entries(chapter.collections),
+          }))
+          .filter((chapter) => chapter.quests.length || chapter.collections.length);
+      const subseries = (value: unknown) =>
+        (Array.isArray(value) ? value : [])
+          .map((item) => ({
+            id: String(item.id),
+            name: String(item.title),
+            order: Number(item.order ?? 0),
+            quests: entries(item.quests),
+            collections: entries(item.collections),
+            chapters: chapters(item.chapters),
+          }))
+          .filter((item) => item.quests.length || item.collections.length || item.chapters.length);
+      const regions = persistedCatalog.regions
+        .map((region) => {
+          const families = (Array.isArray(region.families) ? region.families : [])
+            .map((family) => ({
+              id: String(family.id),
+              name: String(family.title),
+              order: Number(family.order ?? 0),
+              provenance: (family.provenance ?? "derived") as StoryFamily["provenance"],
+              quests: entries(family.quests),
+              collections: entries(family.collections),
+              chapters: chapters(family.chapters),
+              subseries: subseries(family.subseries),
+            }))
+            .filter(
+              (family) =>
+                family.quests.length ||
+                family.collections.length ||
+                family.chapters.length ||
+                family.subseries.length,
+            );
+          return {
+            id: String(region.id),
+            name: String(region.title),
+            order: Number(region.order ?? 0),
+            families,
+            chapters: families.flatMap((family) => family.chapters),
+          };
+        })
+        .filter((region) => region.families.length);
+      const expected = new Set(visibleDocRows.map((row) => questKeyFromInput(row.sourceKey)));
+      const actual = new Set<string>();
+      const collect = (container: {
+        quests?: StoryQuestEntry[];
+        collections?: StoryQuestEntry[];
+        chapters?: Array<{ quests: StoryQuestEntry[]; collections?: StoryQuestEntry[] }>;
+      }) => {
+        for (const entry of [...(container.quests ?? []), ...(container.collections ?? [])])
+          actual.add(entry.questKey);
+        for (const chapter of container.chapters ?? [])
+          for (const entry of [...chapter.quests, ...(chapter.collections ?? [])])
+            actual.add(entry.questKey);
+      };
+      for (const region of regions)
+        for (const family of region.families) {
+          collect(family);
+          for (const item of family.subseries) collect(item);
+        }
+      if (actual.size !== expected.size || [...expected].some((key) => !actual.has(key)))
+        throw new DomainError(
+          "story_projection_catalog_mismatch",
+          "The persisted Story Catalog does not match the revision's public quests",
+          { expectedCount: expected.size, projectedCount: actual.size },
+          500,
+        );
+      return { gameId, revisionId: revision.id, regions };
+    }
+
     const documentIds = visibleDocRows.map((row) => row.documentId);
     const dialogueCountRows = documentIds.length
       ? await this.db
@@ -1422,34 +1557,55 @@ export class RepositoryReadModels {
     // Projection entry on every public quest record. The read model consumes
     // that projection verbatim; it must not recreate families or chapters
     // from titles, numeric ids, or a generic fallback bucket.
-    if (
-      visibleDocRows.some((row) => {
-        const projection = questMetadata(row).storyProjection;
-        return Boolean(projection && typeof projection === "object");
-      })
-    ) {
+    const projectionPresence = visibleDocRows.map((row) => {
+      const projection = questMetadata(row).storyProjection;
+      return Boolean(projection && typeof projection === "object");
+    });
+    if (projectionPresence.some(Boolean)) {
+      if (!projectionPresence.every(Boolean))
+        throw new DomainError(
+          "story_projection_mixed_revision",
+          "The active revision mixes projected and inferred story records",
+          undefined,
+          500,
+        );
       type ProjectionMeta = {
+        schemaVersion?: number;
         regionId?: string;
         regionTitle?: string;
         regionOrder?: number;
         familyId: string;
         familyTitle: string;
         familyOrder?: number;
+        subseriesId?: string;
+        subseriesTitle?: string;
+        subseriesOrder?: number;
         chapterId?: string;
         chapterTitle?: string;
         chapterOrder?: number;
         entryType?: "quest" | "collection" | "aggregate";
         displayTitle?: string;
         parentQuestId?: string;
-        childQuestIds?: string[];
+        aggregateChildQuestIds?: string[];
       };
       type ChapterBucket = {
         id: string;
         name: string;
         order: number;
         quests: StoryQuestEntry[];
+        collections: StoryQuestEntry[];
       };
-      type FamilyBucket = {
+      type StoryContainerBucket = {
+        quests: StoryQuestEntry[];
+        collections: StoryQuestEntry[];
+        chapters: Map<string, ChapterBucket>;
+      };
+      type SubSeriesBucket = StoryContainerBucket & {
+        id: string;
+        name: string;
+        order: number;
+      };
+      type FamilyBucket = StoryContainerBucket & {
         id: string;
         name: string;
         order: number;
@@ -1457,7 +1613,21 @@ export class RepositoryReadModels {
         quests: StoryQuestEntry[];
         collections: StoryQuestEntry[];
         chapters: Map<string, ChapterBucket>;
+        subseries: Map<string, SubSeriesBucket>;
       };
+      const projectionVersions = new Set(
+        visibleDocRows.map((row) => {
+          const projection = questMetadata(row).storyProjection as ProjectionMeta;
+          return projection.schemaVersion ?? 1;
+        }),
+      );
+      if (projectionVersions.size !== 1)
+        throw new DomainError(
+          "story_projection_schema_mismatch",
+          "The active revision contains multiple Story Projection schema versions",
+          undefined,
+          500,
+        );
       const regionMap = new Map<
         string,
         {
@@ -1486,6 +1656,7 @@ export class RepositoryReadModels {
           quests: [],
           collections: [],
           chapters: new Map<string, ChapterBucket>(),
+          subseries: new Map<string, SubSeriesBucket>(),
         };
         const questKey = meta.questKey ?? questKeyFromInput(row.sourceKey);
         const contentRole = meta.contentRole;
@@ -1517,25 +1688,44 @@ export class RepositoryReadModels {
           completeness,
           bodyAvailability,
           entryType,
-          childQuestIds: projection.childQuestIds ?? meta.topology?.childQuestIds ?? [],
+          aggregateChildQuestIds:
+            projection.aggregateChildQuestIds ?? meta.topology?.aggregateChildQuestIds ?? [],
           parentQuestId: projection.parentQuestId ?? meta.topology?.aggregateParentQuestId,
           qualityCode: meta.qualityCode,
           contentRole,
           dialogueResolutionStatus: meta.dialogueResolutionStatus,
         };
-        if (entryType === "collection" || entryType === "aggregate") {
-          family.collections.push(entry);
-        } else if (projection.chapterId) {
-          const chapter = family.chapters.get(projection.chapterId) ?? {
+        let container: StoryContainerBucket = family;
+        if (projection.subseriesId) {
+          const subseries = family.subseries.get(projection.subseriesId) ?? {
+            id: projection.subseriesId,
+            name: projection.subseriesTitle ?? projection.subseriesId,
+            order: projection.subseriesOrder ?? 0,
+            quests: [],
+            collections: [],
+            chapters: new Map<string, ChapterBucket>(),
+          };
+          family.subseries.set(subseries.id, subseries);
+          container = subseries;
+        }
+        let chapter: ChapterBucket | undefined;
+        if (projection.chapterId) {
+          chapter = container.chapters.get(projection.chapterId) ?? {
             id: projection.chapterId,
             name: projection.chapterTitle ?? projection.chapterId,
             order: projection.chapterOrder ?? Number(meta.chapterOrder ?? entry.order ?? 0),
             quests: [],
+            collections: [],
           };
+          container.chapters.set(chapter.id, chapter);
+        }
+        if (entryType === "collection" || entryType === "aggregate") {
+          if (chapter) chapter.collections.push(entry);
+          else container.collections.push(entry);
+        } else if (chapter) {
           chapter.quests.push(entry);
-          family.chapters.set(chapter.id, chapter);
         } else {
-          family.quests.push(entry);
+          container.quests.push(entry);
         }
         region.families.set(family.id, family);
         regionMap.set(region.id, region);
@@ -1546,26 +1736,6 @@ export class RepositoryReadModels {
           const families = [...region.families.values()]
             .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
             .map((family) => {
-              const chapters = [...family.chapters.values()]
-                .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
-                .map((chapter) => {
-                  const titleCounts = new Map<string, number>();
-                  for (const quest of chapter.quests)
-                    titleCounts.set(quest.title, (titleCounts.get(quest.title) ?? 0) + 1);
-                  return {
-                    ...chapter,
-                    quests: chapter.quests
-                      .sort((a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey))
-                      .map((quest) => ({
-                        ...quest,
-                        displayTitle:
-                          quest.displayTitle ??
-                          (titleCounts.get(quest.title)! > 1
-                            ? `${quest.title}（任务 ${quest.questKey.split("/").pop()}）`
-                            : quest.title),
-                      })),
-                  };
-                });
               const withDisplayTitles = (entries: StoryQuestEntry[]): StoryQuestEntry[] => {
                 const titleCounts = new Map<string, number>();
                 for (const quest of entries)
@@ -1581,8 +1751,27 @@ export class RepositoryReadModels {
                         : quest.title),
                   }));
               };
+              const projectChapters = (chapterMap: Map<string, ChapterBucket>) =>
+                [...chapterMap.values()]
+                  .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
+                  .map((chapter) => ({
+                    ...chapter,
+                    quests: withDisplayTitles(chapter.quests),
+                    collections: withDisplayTitles(chapter.collections),
+                  }));
+              const chapters = projectChapters(family.chapters);
               const direct = withDisplayTitles(family.quests);
               const collections = withDisplayTitles(family.collections);
+              const subseries = [...family.subseries.values()]
+                .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "zh-Hans-CN"))
+                .map((item) => ({
+                  id: item.id,
+                  name: item.name,
+                  order: item.order,
+                  quests: withDisplayTitles(item.quests),
+                  collections: withDisplayTitles(item.collections),
+                  chapters: projectChapters(item.chapters),
+                }));
               return {
                 id: family.id,
                 name: family.name,
@@ -1591,6 +1780,7 @@ export class RepositoryReadModels {
                 quests: direct,
                 collections,
                 chapters,
+                subseries,
               };
             });
           return {

@@ -85,6 +85,30 @@ describe("AnimeGameData quest converter", () => {
     expect(first.records.every((record) => record.quest?.completenessReasons?.length === 0)).toBe(
       true,
     );
+    for (const locale of ["zh-CN", "en"]) {
+      const anchor = first.records.find((record) => record.locale === locale);
+      const persisted = anchor?.metadata.storyCatalogProjection as
+        | {
+            schemaVersion: number;
+            regions: Array<{
+              families: Array<{
+                chapters: Array<{ quests: Array<{ questId: string; questType: string }> }>;
+              }>;
+            }>;
+          }
+        | undefined;
+      expect(persisted?.schemaVersion).toBe(2);
+      expect(
+        persisted?.regions
+          .flatMap((region) => region.families)
+          .flatMap((family) => family.chapters)
+          .flatMap((chapter) => chapter.quests),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ questId: "1001", questType: "archon_quest" }),
+        ]),
+      );
+    }
     expect(first.records[0]?.metadata).toMatchObject({
       titleResolutionMethod: "textmap_direct",
       titleResolutionLocale: first.records[0]?.locale,

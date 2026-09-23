@@ -87,9 +87,15 @@ export async function extractItemLoreDocuments(input: ExtractorInput): Promise<E
             sourcePath: table.path,
             kind: table.label,
             itemType: table.type,
-            groupId: table.type === "Equipment" ? "lightcone" : table.type === "Relic" ? "relic" : "item",
+            groupId:
+              table.type === "Equipment" ? "lightcone" : table.type === "Relic" ? "relic" : "item",
             groupName: table.label,
-            textKind: table.type === "Equipment" ? "lightcone-lore" : table.type === "Relic" ? "relic-lore" : "item-texts",
+            textKind:
+              table.type === "Equipment"
+                ? "lightcone-lore"
+                : table.type === "Relic"
+                  ? "relic-lore"
+                  : "item-texts",
           },
           hierarchy: {
             parentId: "sr_item_lore",

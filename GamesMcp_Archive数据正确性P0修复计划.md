@@ -389,7 +389,7 @@ upstreamSource
 当前存在类似：
 
 ```ts
-gameId.toLowerCase().includes("starrail")
+gameId.toLowerCase().includes("starrail");
 ```
 
 但 `gameId` 是 UUID，因此 StarRail 页面可能继续显示“武器 / 圣遗物”，而不是“光锥 / 遗器”。
@@ -640,7 +640,7 @@ catch → /genshin/*
 禁止：
 
 ```ts
-gameId.includes("starrail")
+gameId.includes("starrail");
 ```
 
 改为正式 Game Metadata。
@@ -701,11 +701,7 @@ type StoryQuestEntry = {
   title: string;
   order: number;
   completeness: "complete" | "partial" | "metadata_only";
-  bodyAvailability:
-    | "dialogue"
-    | "document"
-    | "objective_only"
-    | "none";
+  bodyAvailability: "dialogue" | "document" | "objective_only" | "none";
 };
 ```
 
@@ -960,7 +956,7 @@ other
 建立：
 
 ```ts
-isPublicMaterial(record)
+isPublicMaterial(record);
 ```
 
 至少过滤：
@@ -1008,12 +1004,7 @@ type MaterialSource = {
 
 ```ts
 type MaterialUsage = {
-  type:
-    | "character_ascension"
-    | "character_talent"
-    | "weapon_ascension"
-    | "craft"
-    | "other";
+  type: "character_ascension" | "character_talent" | "weapon_ascension" | "craft" | "other";
 
   targetId?: string;
   targetName: string;
@@ -1317,31 +1308,31 @@ generatedAt
 
 ## Story
 
-| 指标 | 目标 |
-|---|---:|
-| Genshin 主线可读标题 | ≥ 99% |
-| Genshin 主线 Region | ≥ 99% |
-| Genshin 主线正文可读 | ≥ 95%，未达必须有原因 |
-| StarRail MainMission 可读标题 | ≥ 99% |
-| StarRail World resolve | ≥ 99% |
-| StarRail Chapter resolve | ≥ 99% |
-| StarRail 正文可用率 | 给出真实统计并达到约定阈值 |
-| Numeric/Internal ID 直接暴露 | 0 |
-| 错误 Source 标签 | 0 |
+| 指标                          |                       目标 |
+| ----------------------------- | -------------------------: |
+| Genshin 主线可读标题          |                      ≥ 99% |
+| Genshin 主线 Region           |                      ≥ 99% |
+| Genshin 主线正文可读          |      ≥ 95%，未达必须有原因 |
+| StarRail MainMission 可读标题 |                      ≥ 99% |
+| StarRail World resolve        |                      ≥ 99% |
+| StarRail Chapter resolve      |                      ≥ 99% |
+| StarRail 正文可用率           | 给出真实统计并达到约定阈值 |
+| Numeric/Internal ID 直接暴露  |                          0 |
+| 错误 Source 标签              |                          0 |
 
 ## Material
 
-| 指标 | 目标 |
-|---|---:|
-| 错误游戏数据串入 | 0 |
-| 内部 / 测试物品进入 Public | 0 |
-| 明显错误分类 | 0 |
-| `other` 占比 | 给出真实原因，禁止无解释过高 |
-| 描述覆盖率 | 给出真实统计 |
-| Source 覆盖率 | 给出真实统计 |
-| Usage 覆盖率 | 给出真实统计 |
-| 错误 Provenance | 0 |
-| 当前页统计冒充全库统计 | 0 |
+| 指标                       |                         目标 |
+| -------------------------- | ---------------------------: |
+| 错误游戏数据串入           |                            0 |
+| 内部 / 测试物品进入 Public |                            0 |
+| 明显错误分类               |                            0 |
+| `other` 占比               | 给出真实原因，禁止无解释过高 |
+| 描述覆盖率                 |                 给出真实统计 |
+| Source 覆盖率              |                 给出真实统计 |
+| Usage 覆盖率               |                 给出真实统计 |
+| 错误 Provenance            |                            0 |
+| 当前页统计冒充全库统计     |                            0 |
 
 ## Architecture
 
@@ -1426,30 +1417,39 @@ if (codex fails) call /genshin/*
 ## Phase X Result
 
 ### Commit
+
 <sha>
 
 ### Files Changed
+
 ...
 
 ### Data Pipeline Before
+
 ...
 
 ### Data Pipeline After
+
 ...
 
 ### Real Data Samples
+
 ...
 
 ### Metrics
+
 ...
 
 ### Tests
+
 ...
 
 ### Remaining Problems
+
 ...
 
 ### Gate
+
 PASS / FAIL
 ```
 

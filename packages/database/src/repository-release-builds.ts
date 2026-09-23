@@ -14,10 +14,12 @@ import {
   releaseCandidateBuilds,
   releaseCandidates,
   reviewIssues,
+  sources,
 } from "./schema.js";
 import { mapReleaseCandidateBuild } from "./repository-mappers.js";
 import {
   asRecord,
+  assertConsistentQuestProjection,
   canonicalRecordBytes,
   mergeReleaseCandidateRecords,
   recordCanonicalKey,
@@ -80,6 +82,26 @@ export async function buildReleaseCandidate(
   if (candidate.baseRevisionId && !baseRevision)
     throw new DomainError("candidate_base_missing", "Candidate base revision was not found");
   const baseRecords = baseRevision ? await ctx.getRevisionRecords(baseRevision) : [];
+  const sourceRows = await ctx.db
+    .select({ id: sources.id, parserType: sources.parserType })
+    .from(sources)
+    .where(inArray(sources.id, [...new Set(batches.map((batch) => batch.sourceId))]));
+  const parserTypeBySourceId = new Map(sourceRows.map((source) => [source.id, source.parserType]));
+  const questBatches = batches.filter(
+    (batch) => parserTypeBySourceId.get(batch.sourceId) === "anime-game-data:quest",
+  );
+  const questSnapshotIds = [...new Set(questBatches.map((batch) => batch.sourceSnapshotId))];
+  let completeQuestSnapshot = false;
+  if (questBatches.length && questSnapshotIds.length === 1 && questSnapshotIds[0]) {
+    const generation = await ctx.db
+      .select({ id: importBatches.id })
+      .from(importBatches)
+      .where(eq(importBatches.sourceSnapshotId, questSnapshotIds[0]));
+    const selectedIds = new Set(questBatches.map((batch) => batch.id));
+    completeQuestSnapshot =
+      generation.length > 0 && generation.every((batch) => selectedIds.has(batch.id));
+  }
+  const replaceSourceKeyPrefixes = completeQuestSnapshot ? ["quest/"] : [];
   let normalizedRecords = mergeReleaseCandidateRecords(
     baseRecords,
     candidate.importBatchIds.map((batchId) => {
@@ -89,6 +111,7 @@ export async function buildReleaseCandidate(
         confirmedDeletionKeys: batch.confirmedDeletionKeys,
       };
     }),
+    replaceSourceKeyPrefixes,
   );
   const structuredRecords = mergeStructuredImportRecords(
     baseRevision?.structuredRecords ?? undefined,
@@ -140,6 +163,7 @@ export async function buildReleaseCandidate(
         patched.set(patch.canonicalKey, setField(incoming, patch.fieldPath, patch.manualValue));
   }
   normalizedRecords = [...patched.values()];
+  assertConsistentQuestProjection(normalizedRecords);
   const contentChecksum = releaseCandidateChecksum(normalizedRecords, structuredRecords);
   const manifestId = await ctx.createPreviewManifest(
     candidate.gameId,

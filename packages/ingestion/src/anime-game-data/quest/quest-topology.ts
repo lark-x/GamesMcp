@@ -14,6 +14,10 @@ function orderingEdges(edges: QuestRelationEdge[]): QuestRelationEdge[] {
   );
 }
 
+function isRawMainQuestRelation(edge: QuestRelationEdge): boolean {
+  return edge.relationType.startsWith("main_quest_relation_");
+}
+
 function deriveSubQuestEdges(graph: ReturnType<typeof buildRawQuestGraph>): QuestRelationEdge[] {
   const derived: QuestRelationEdge[] = [];
   for (const edge of graph.edges) {
@@ -156,10 +160,39 @@ export function buildQuestTopologies(
           .map((edge) => edge.fromQuestId),
       ),
     ];
-    const children = [
+    const successors = [
       ...new Set(
         derived
-          .filter((edge) => edge.fromQuestId === questId && edge.toQuestId)
+          .filter(
+            (edge) =>
+              edge.fromQuestId === questId &&
+              edge.toQuestId &&
+              ["requires", "starts_after"].includes(edge.relationType),
+          )
+          .map((edge) => edge.toQuestId!),
+      ),
+    ];
+    const relatedQuestIds = [
+      ...new Set(
+        rawRelationEdges
+          .filter((edge) => edge.toQuestId && isRawMainQuestRelation(edge))
+          .map((edge) => {
+            const from = graph.subQuestToMainQuest.get(edge.fromQuestId) ?? edge.fromQuestId;
+            const to = graph.subQuestToMainQuest.get(edge.toQuestId!) ?? edge.toQuestId!;
+            return from === questId ? to : from;
+          })
+          .filter((id) => id !== questId),
+      ),
+    ];
+    const aggregateChildQuestIds = [
+      ...new Set(
+        derived
+          .filter(
+            (edge) =>
+              edge.fromQuestId === questId &&
+              edge.toQuestId &&
+              edge.relationType === "aggregate_of",
+          )
           .map((edge) => edge.toQuestId!),
       ),
     ];
@@ -190,15 +223,23 @@ export function buildQuestTopologies(
       subQuestRelationEdges,
       subQuestUpstreamOrder,
     );
-    const parentQuestIds = [
-      ...new Set([...prerequisites, ...(aggregateParentQuestId ? [aggregateParentQuestId] : [])]),
-    ];
+    const parentQuestIds = [...new Set(prerequisites)];
+    const inCycle = orderResult.cycleNodeIds.includes(questId);
+    const hasOrderingEvidence = derived.some(
+      (edge) =>
+        ["requires", "starts_after"].includes(edge.relationType) &&
+        (edge.fromQuestId === questId || edge.toQuestId === questId),
+    );
     topologies.set(questId, {
       questId,
       prerequisiteQuestIds: prerequisites,
-      childQuestIds: children,
+      successorQuestIds: successors,
+      relatedQuestIds,
+      aggregateChildQuestIds,
       parentQuestIds,
       storyOrder: orderResult.order.indexOf(questId),
+      orderSource: inCycle ? "fallback" : hasOrderingEvidence ? "topology" : "upstream",
+      orderConfidence: inCycle ? "low" : hasOrderingEvidence ? "high" : "medium",
       contentRole:
         contentRoles.get(questId) ??
         classifyQuestContentRole({
@@ -213,8 +254,8 @@ export function buildQuestTopologies(
       subQuestOrder: subQuestOrderResult.order.length ? subQuestOrderResult.order : subQuestOrder,
       subQuestRelationEdges,
       aggregateParentQuestId,
-      cycle: orderResult.cycle && orderResult.cycleNodeIds.includes(questId),
-      cycleNodeIds: orderResult.cycleNodeIds.includes(questId) ? orderResult.cycleNodeIds : [],
+      cycle: orderResult.cycle && inCycle,
+      cycleNodeIds: inCycle ? orderResult.cycleNodeIds : [],
       danglingEdges,
     });
   }

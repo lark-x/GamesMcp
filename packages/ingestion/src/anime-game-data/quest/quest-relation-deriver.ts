@@ -58,11 +58,6 @@ export function deriveQuestRelations(graph: RawQuestGraph): QuestRelationEdge[] 
           }),
         );
       }
-    } else if (edge.relationType === "main_quest_relation") {
-      // The upstream relation table stores the next/related quest on the row
-      // for the current quest. Keep that direction as a soft ordering edge;
-      // it is never used as evidence stronger than an explicit prerequisite.
-      derived.push(asDerived(edge, "starts_after", from, to, { direction: "upstream_row" }));
     } else if (edge.relationType === "aggregate_of" || edge.relationType === "add_quest_progress") {
       // The progress target is the aggregate quest; the source contributes to
       // it.  This edge is structural, not a textual/ordering prerequisite.
@@ -104,10 +99,10 @@ export function connectedQuestComponents(
   for (const edge of edges) {
     if (!edge.toQuestId || !adjacency.has(edge.fromQuestId) || !adjacency.has(edge.toQuestId))
       continue;
-    // Components are used to discover a family, so structural and prerequisite
-    // edges are intentionally treated as undirected here. Ordering still uses
-    // the directed derived graph.
-    if (!["requires", "starts_after", "aggregate_of"].includes(edge.relationType)) continue;
+    // Family discovery only accepts relations whose structural/order meaning
+    // is verified. Raw MainQuest relation fields and generic prerequisites are
+    // deliberately excluded.
+    if (!["starts_after", "aggregate_of"].includes(edge.relationType)) continue;
     if (options.compatible && !options.compatible(edge.fromQuestId, edge.toQuestId)) continue;
     adjacency.get(edge.fromQuestId)!.add(edge.toQuestId);
     adjacency.get(edge.toQuestId)!.add(edge.fromQuestId);
