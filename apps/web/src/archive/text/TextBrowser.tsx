@@ -141,7 +141,12 @@ export function TextBrowser({
         const target = found ?? entries[0];
         if (target) {
           setActiveEntryId(target.documentId);
-          setActiveEntry(target);
+          // Selecting the default group may issue a second catalog request
+          // for the same entry. Do not refetch its body or accidentally retry
+          // a failed request just because that list response has a new object.
+          setActiveEntry((current) =>
+            current?.documentId === target.documentId ? current : target,
+          );
         }
       } else {
         setActiveEntry(null);
