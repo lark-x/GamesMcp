@@ -12,4 +12,5 @@ artifacts/**
 reports/
 data/upstream/
 data/imports/
+sr-story-resolver-*/
 pnpm-lock.yaml

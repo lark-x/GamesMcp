@@ -282,11 +282,14 @@ function auditMetricSummary(
 }
 
 async function main() {
-  const preflight = await runStoragePreflight();
-  if (!preflight.ok) throw new Error(preflight.errors.join("; "));
-
   const upstreamDir = resolve(argValue("upstream") ?? DEFAULT_QUEST_UPSTREAM_DIR);
   const outputBase = resolve(argValue("output") ?? "reports/genshin-quest-audit");
+  // The tiny, checked-in CI fixture does not use the external upstream data
+  // volume. Keep the storage guard for every real-source audit.
+  if (upstreamDir !== resolve("data/fixtures/anime-game-data-quests")) {
+    const preflight = await runStoragePreflight();
+    if (!preflight.ok) throw new Error(preflight.errors.join("; "));
+  }
   const git = await upstreamMetadata(upstreamDir);
   const result = await convertQuestSnapshot({
     upstreamDir,

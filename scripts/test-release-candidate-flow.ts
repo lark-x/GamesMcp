@@ -509,8 +509,12 @@ async function main() {
         idempotencyKey: `candidate-flow-fail-${build4.id}`,
       });
       const failingRevision = failingPreparation;
+      // A manifest-backed revision hydrates its immutable payload instead of
+      // trusting normalized_records. Remove this test revision's manifest
+      // pointer as part of the failure injection so malformed inline data is
+      // actually consumed; published revisions remain untouched.
       await pool.query(
-        "update knowledge.dataset_revisions set normalized_records = '{}'::jsonb where id = $1",
+        "update knowledge.dataset_revisions set manifest_id = null, normalized_records = '{}'::jsonb where id = $1",
         [failingRevision.id],
       );
       await assert.rejects(
