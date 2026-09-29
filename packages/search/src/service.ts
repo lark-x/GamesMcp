@@ -172,10 +172,11 @@ export class SearchService {
     filters?: DialogueSearchFilters,
   ): Promise<SearchCoreDialogueHit[]> {
     const dialogue = await this.repository.listDialogueHits(gameId, revisionId, query, filters);
+    const maxHits = filters?.limit ?? 10;
     return this.mapDialogueHits(query, dialogue)
       .filter((hit) => hit.score > 0)
       .sort((left, right) => right.score - left.score)
-      .slice(0, 10);
+      .slice(0, maxHits);
   }
 
   async searchLore(

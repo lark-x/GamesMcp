@@ -4,6 +4,7 @@ import type { TextCatalogEntry as EntryModel, TextCatalogResponse } from "@gip/c
 import { apiFetch } from "../../api.js";
 import { ArchiveEmpty, ArchiveError, ArchiveLoading } from "../ArchiveStates.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
+import { ArchiveAvatar } from "../ArchiveAvatar.js";
 import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
 import { ArchiveInspector, InspectorField, InspectorSection } from "../ArchiveInspector.js";
 import { isStarRailGame } from "../../shared.js";
@@ -76,6 +77,8 @@ export function TextBrowser({
 
   const [textDocument, setTextDocument] = useState<DocumentDetail | null>(null);
   const [documentLoading, setDocumentLoading] = useState(false);
+  const [readingTheme, setReadingTheme] = useState<"parchment" | "ink" | "midnight">("parchment");
+  const [fontSize, setFontSize] = useState<number>(16);
 
   const isStarRail = isStarRailGame(gameId, gameName);
   const kindConfig = getKindConfig(textKind);
@@ -265,72 +268,144 @@ export function TextBrowser({
     textDocument?.type === "train_visitor" ||
     ["messages", "train-visitors"].includes(textKind);
 
+  function renderParagraphWithDropCap(rawBody: string, isFirstSection: boolean) {
+    const formatted = formatStoryText(rawBody, {
+      game: isStarRail ? "starrail" : "genshin",
+      gender: "female",
+      nickname: isStarRail ? "开拓者" : "旅行者",
+    });
+
+    const paragraphs = formatted.split("\n\n").filter((p) => p.trim());
+    if (paragraphs.length === 0) {
+      paragraphs.push(formatted);
+    }
+
+    return (
+      <>
+        {paragraphs.map((p, idx) => {
+          const trimmed = p.trim();
+          if (isFirstSection && idx === 0 && trimmed.length > 0) {
+            const firstChar = trimmed.charAt(0);
+            const rest = trimmed.slice(1);
+            return (
+              <p key={idx} style={{ marginBottom: "16px" }}>
+                <span className="codex-drop-cap">{firstChar}</span>
+                {rest}
+              </p>
+            );
+          }
+          return (
+            <p key={idx} style={{ marginBottom: "16px" }}>
+              {p}
+            </p>
+          );
+        })}
+      </>
+    );
+  }
+
   function renderChat(body: string) {
     const blocks = parseChatBody(body);
-    return blocks.map((block, index) => {
-      if (block.kind === "heading") {
-        return (
-          <h3 key={index} style={{ margin: "18px 0 8px" }}>
-            {block.text}
-          </h3>
-        );
-      }
-      if (block.kind === "note") {
-        return (
-          <div className="story-script-narration" key={index}>
-            <span className="story-narration-glyph" aria-hidden="true">
-              ❖
-            </span>
-            <div className="story-narration-content">
-              <p className="story-narration-text">
-                {formatStoryText(block.text, {
-                  game: isStarRail ? "starrail" : "genshin",
-                  gender: "female",
-                  nickname: isStarRail ? "开拓者" : "旅行者",
-                })}
-              </p>
+    return (
+      <div className="chat-stream-body">
+        {blocks.map((block, index) => {
+          if (block.kind === "heading") {
+            return (
+              <div key={index} style={{ textAlign: "center", margin: "10px 0 6px" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--archive-muted)",
+                    background: "var(--archive-surface-alt)",
+                    padding: "2px 10px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--archive-border)",
+                  }}
+                >
+                  {block.text}
+                </span>
+              </div>
+            );
+          }
+          if (block.kind === "note") {
+            return (
+              <div className="story-script-narration" key={index} style={{ margin: "4px 0" }}>
+                <span className="story-narration-glyph" aria-hidden="true">
+                  ❖
+                </span>
+                <div className="story-narration-content">
+                  <p className="story-narration-text" style={{ fontSize: "12px" }}>
+                    {formatStoryText(block.text, {
+                      game: isStarRail ? "starrail" : "genshin",
+                      gender: "female",
+                      nickname: isStarRail ? "开拓者" : "旅行者",
+                    })}
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          const isPlayer =
+            block.speaker === "开拓者" ||
+            block.speaker === "旅行者" ||
+            block.speaker === "玩家";
+          const isSystem = block.speaker === "系统提示";
+
+          if (isSystem) {
+            return (
+              <div className="story-script-system" key={index} style={{ margin: "4px auto" }}>
+                <span className="story-system-icon" aria-hidden="true">
+                  ⓘ
+                </span>
+                <span className="story-system-text" style={{ fontSize: "12px" }}>
+                  {formatStoryText(block.text, {
+                    game: isStarRail ? "starrail" : "genshin",
+                    gender: "female",
+                    nickname: isStarRail ? "开拓者" : "旅行者",
+                  })}
+                </span>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={index}
+              className={`chat-row ${isPlayer ? "chat-row-right" : "chat-row-left"}`}
+            >
+              <ArchiveAvatar
+                fallbackText={block.speaker}
+                label={block.speaker}
+                size={32}
+              />
+              <div style={{ maxWidth: "80%" }}>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--archive-muted)",
+                    marginBottom: "3px",
+                    textAlign: isPlayer ? "right" : "left",
+                  }}
+                >
+                  {block.speaker}
+                </div>
+                <div
+                  className={`chat-bubble ${
+                    isPlayer ? "chat-bubble-player" : "chat-bubble-char"
+                  }`}
+                >
+                  {formatStoryText(block.text, {
+                    game: isStarRail ? "starrail" : "genshin",
+                    gender: "female",
+                    nickname: isStarRail ? "开拓者" : "旅行者",
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-        );
-      }
-      const isTrailblazer = block.speaker === "开拓者" || block.speaker === "系统提示";
-      const badgeClass = isTrailblazer
-        ? "story-speaker-badge speaker-trailblazer"
-        : "story-speaker-badge";
-      const isSystem = block.speaker === "系统提示";
-      if (isSystem) {
-        return (
-          <div className="story-script-system" key={index}>
-            <span className="story-system-icon" aria-hidden="true">
-              ⓘ
-            </span>
-            <span className="story-system-text">
-              {formatStoryText(block.text, {
-                game: isStarRail ? "starrail" : "genshin",
-                gender: "female",
-                nickname: isStarRail ? "开拓者" : "旅行者",
-              })}
-            </span>
-          </div>
-        );
-      }
-      return (
-        <div className="story-script-row" key={index}>
-          <div className="story-script-speaker-col">
-            <span className={badgeClass}>{block.speaker}</span>
-          </div>
-          <div className="story-script-body-col">
-            <p className="story-script-text">
-              {formatStoryText(block.text, {
-                game: isStarRail ? "starrail" : "genshin",
-                gender: "female",
-                nickname: isStarRail ? "开拓者" : "旅行者",
-              })}
-            </p>
-          </div>
-        </div>
-      );
-    });
+          );
+        })}
+      </div>
+    );
   }
 
   return (
@@ -358,7 +433,71 @@ export function TextBrowser({
         />
       }
       main={
-        <article className="text-reader" aria-busy={documentLoading}>
+        <div className="codex-reader-frame" aria-busy={documentLoading}>
+          {/* Top Reading Controls Toolbar */}
+          <div className="codex-controls-bar">
+            <div className="codex-theme-selector" role="radiogroup" aria-label="阅读主题选择">
+              <button
+                type="button"
+                className={`codex-theme-btn opt-parchment ${
+                  readingTheme === "parchment" ? "is-active" : ""
+                }`}
+                onClick={() => setReadingTheme("parchment")}
+                title="复古羊皮纸主题"
+              >
+                📜 羊皮纸
+              </button>
+              <button
+                type="button"
+                className={`codex-theme-btn opt-ink ${readingTheme === "ink" ? "is-active" : ""}`}
+                onClick={() => setReadingTheme("ink")}
+                title="墨韵白昼主题"
+              >
+                ⚪ 墨韵
+              </button>
+              <button
+                type="button"
+                className={`codex-theme-btn opt-midnight ${
+                  readingTheme === "midnight" ? "is-active" : ""
+                }`}
+                onClick={() => setReadingTheme("midnight")}
+                title="深邃夜读主题"
+              >
+                🌙 夜读
+              </button>
+            </div>
+
+            <div className="codex-font-controls">
+              <span style={{ fontSize: "11.5px", color: "var(--archive-muted)" }}>字号:</span>
+              <button
+                type="button"
+                className="codex-font-btn"
+                onClick={() => setFontSize((s) => Math.max(13, s - 1))}
+                title="缩小字号"
+              >
+                A-
+              </button>
+              <span
+                style={{
+                  fontSize: "12px",
+                  fontFamily: "monospace",
+                  minWidth: "32px",
+                  textAlign: "center",
+                }}
+              >
+                {fontSize}px
+              </span>
+              <button
+                type="button"
+                className="codex-font-btn"
+                onClick={() => setFontSize((s) => Math.min(22, s + 1))}
+                title="放大字号"
+              >
+                A+
+              </button>
+            </div>
+          </div>
+
           {error ? (
             <ArchiveError
               message="资料加载失败"
@@ -369,90 +508,112 @@ export function TextBrowser({
               }}
             />
           ) : null}
+
           {documentLoading ? <ArchiveLoading label="正文加载中" /> : null}
+
           {!textDocument && !documentLoading && !loading && !error && entries.length === 0 ? (
             <ArchiveEmpty
               title={`暂无已收录的${kindConfig.itemNoun}文本`}
               detail="当前版本的上游快照尚未包含此类文献。"
             />
           ) : null}
+
           {textDocument && !documentLoading ? (
-            <>
-              <header className="text-reader-header">
-                <span className="story-type-pill">{kindConfig.navLabel}</span>
-                <h2>
-                  {textDocument.type === "book" ? `《${textDocument.title}》` : textDocument.title}
-                </h2>
-                <p className="story-reader-meta">
-                  {[
-                    gameName,
-                    activeEntry?.groupName ? `所属: ${activeEntry.groupName}` : null,
-                    textDocument.gameVersion ? `v${textDocument.gameVersion}` : null,
-                    textDocument.revision ? `Revision ${textDocument.revision}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </header>
-              <div className="text-prose">
-                {isChatDocument ? (
-                  textDocument.body ? (
-                    renderChat(textDocument.body)
-                  ) : (
-                    <p className="muted">本篇暂无内容</p>
-                  )
-                ) : textDocument.segments.length ? (
-                  textDocument.segments.map((segment) => (
-                    <div key={segment.id} className="text-segment">
-                      {segment.headingPath?.length &&
-                      segment.headingPath.join(" / ") !== textDocument.title ? (
-                        <h3>{segment.headingPath.join(" / ")}</h3>
-                      ) : null}
-                      <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
-                        {formatStoryText(segment.body, {
-                          game: isStarRail ? "starrail" : "genshin",
-                          gender: "female",
-                          nickname: isStarRail ? "开拓者" : "旅行者",
-                        })}
-                      </p>
-                    </div>
-                  ))
-                ) : textDocument.body ? (
-                  <div className="text-segment">
-                    <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
-                      {formatStoryText(textDocument.body, {
-                        game: isStarRail ? "starrail" : "genshin",
-                        gender: "female",
-                        nickname: isStarRail ? "开拓者" : "旅行者",
-                      })}
-                    </p>
+            isChatDocument ? (
+              <div className="chat-messenger-card">
+                <div className="chat-messenger-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span className="story-type-pill">{kindConfig.navLabel}</span>
+                    <strong style={{ fontSize: "14px" }}>{textDocument.title}</strong>
                   </div>
+                  <span style={{ fontSize: "11px", color: "var(--archive-muted)" }}>
+                    {activeEntry?.groupName ?? gameName}
+                  </span>
+                </div>
+                {textDocument.body ? (
+                  renderChat(textDocument.body)
                 ) : (
-                  <p className="muted">本篇暂无内容</p>
+                  <p className="muted" style={{ padding: "20px" }}>
+                    本篇暂无内容
+                  </p>
                 )}
               </div>
-              <footer className="story-reader-footer text-chapter-nav">
-                <button
-                  type="button"
-                  disabled={!prevEntry}
-                  onClick={() => prevEntry && selectEntry(prevEntry, "push")}
-                >
-                  ← 上一篇
-                </button>
-                <span role="status">
-                  {activeIndex >= 0 ? `${activeIndex + 1} / ${entries.length}` : "—"}
-                </span>
-                <button
-                  type="button"
-                  disabled={!nextEntry}
-                  onClick={() => nextEntry && selectEntry(nextEntry, "push")}
-                >
-                  下一篇 →
-                </button>
-              </footer>
-            </>
+            ) : (
+              <article className={`codex-canvas theme-${readingTheme}`}>
+                <header className="codex-header">
+                  <span
+                    className="story-type-pill"
+                    style={{ margin: "0 auto 6px", display: "inline-block" }}
+                  >
+                    {kindConfig.navLabel}
+                  </span>
+                  <h1>
+                    {textDocument.type === "book" ? `《${textDocument.title}》` : textDocument.title}
+                  </h1>
+                  <p className="codex-header-meta">
+                    {[
+                      gameName,
+                      activeEntry?.groupName ? `所属: ${activeEntry.groupName}` : null,
+                      textDocument.gameVersion ? `v${textDocument.gameVersion}` : null,
+                      textDocument.revision ? `Revision ${textDocument.revision}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </header>
+
+                <div className="codex-prose-body" style={{ fontSize: `${fontSize}px` }}>
+                  {textDocument.segments.length ? (
+                    textDocument.segments.map((segment, segIdx) => (
+                      <div key={segment.id} style={{ marginBottom: "20px" }}>
+                        {segment.headingPath?.length &&
+                        segment.headingPath.join(" / ") !== textDocument.title ? (
+                          <h3
+                            style={{
+                              margin: "0 0 10px",
+                              fontSize: "1.15em",
+                              borderLeft: "3px solid var(--badge-5star)",
+                              paddingLeft: "8px",
+                            }}
+                          >
+                            {segment.headingPath.join(" / ")}
+                          </h3>
+                        ) : null}
+                        {renderParagraphWithDropCap(segment.body, segIdx === 0)}
+                      </div>
+                    ))
+                  ) : textDocument.body ? (
+                    renderParagraphWithDropCap(textDocument.body, true)
+                  ) : (
+                    <p className="muted">本篇暂无内容</p>
+                  )}
+                </div>
+
+                <footer className="codex-footer-nav">
+                  <button
+                    type="button"
+                    className="codex-nav-btn"
+                    disabled={!prevEntry}
+                    onClick={() => prevEntry && selectEntry(prevEntry, "push")}
+                  >
+                    ← 上一篇
+                  </button>
+                  <span role="status" style={{ opacity: 0.85 }}>
+                    {activeIndex >= 0 ? `${activeIndex + 1} / ${entries.length}` : "—"}
+                  </span>
+                  <button
+                    type="button"
+                    className="codex-nav-btn"
+                    disabled={!nextEntry}
+                    onClick={() => nextEntry && selectEntry(nextEntry, "push")}
+                  >
+                    下一篇 →
+                  </button>
+                </footer>
+              </article>
+            )
           ) : null}
-        </article>
+        </div>
       }
       inspector={
         <ArchiveInspector title={`${kindConfig.itemNoun}信息`}>

@@ -10,19 +10,32 @@ export function ArchiveLayout({
   main,
   inspector,
   wide = false,
+  noCatalog = false,
 }: {
-  globalNav: ReactNode;
+  globalNav?: ReactNode;
   catalog?: ReactNode;
   main: ReactNode;
   inspector?: ReactNode;
   /** Material layout stacks list+detail in main; give it extra room. */
   wide?: boolean;
+  noCatalog?: boolean;
 }) {
+  const frameClasses = [
+    "archive-frame",
+    wide ? "archive-frame-wide" : "",
+    !globalNav ? "archive-frame-no-globalnav" : "",
+    noCatalog || !catalog ? "archive-frame-no-catalog" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className={wide ? "archive-frame archive-frame-wide" : "archive-frame"}>
-      <nav className="archive-globalnav" aria-label="全局主导航">
-        {globalNav}
-      </nav>
+    <div className={frameClasses}>
+      {globalNav ? (
+        <nav className="archive-globalnav" aria-label="全局主导航">
+          {globalNav}
+        </nav>
+      ) : null}
       {catalog ? (
         <aside className="archive-catalog" aria-label="目录">
           {catalog}

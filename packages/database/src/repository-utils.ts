@@ -318,7 +318,7 @@ export function canonicalRecordBytes(record: NormalizedRecord): string {
   return stableStringify(record);
 }
 
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
   return JSON.stringify(canonicalize(value));
 }
 
@@ -413,7 +413,7 @@ export function assertConsistentQuestProjection(records: NormalizedRecord[]): vo
       },
     );
   for (const [locale, catalog] of catalogByLocale) {
-    if (catalog.schemaVersion !== 2 || !Array.isArray(catalog.regions))
+    if (![2, 3].includes(Number(catalog.schemaVersion)) || !Array.isArray(catalog.regions))
       throw new DomainError(
         "story_catalog_projection_invalid",
         `Persisted Story Catalog projection is invalid for ${locale}`,
@@ -444,8 +444,10 @@ export function assertConsistentQuestProjection(records: NormalizedRecord[]): vo
       for (const subseries of Array.isArray(container.subseries) ? container.subseries : [])
         collectContainer(subseries);
     };
-    for (const region of catalog.regions) {
-      const families = asRecord(region).families;
+    for (const regionValue of catalog.regions) {
+      const region = asRecord(regionValue);
+      collectContainer(region);
+      const families = region.families;
       for (const family of Array.isArray(families) ? families : []) collectContainer(family);
     }
     const expected = publicKeysByLocale.get(locale) ?? new Set<string>();

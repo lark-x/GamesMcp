@@ -9,6 +9,18 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - "${DATA_DIR:?DATA_DIR must point to a persistent external data directory}/postgres:/var/lib/postgresql/data"
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "work_mem=32MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gip -d gip"]
@@ -146,7 +158,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:4200:4200"
+      - "4200:4200"
     volumes:
       - "${DATA_DIR:?DATA_DIR must point to a persistent external data directory}:/app/data"
     restart: unless-stopped
@@ -171,7 +183,7 @@ services:
       - api
       - mcp
     ports:
-      - "127.0.0.1:4173:80"
+      - "4173:80"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1/"]

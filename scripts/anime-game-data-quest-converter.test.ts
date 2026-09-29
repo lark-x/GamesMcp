@@ -3,9 +3,14 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  chapterStoryOrder,
   classifyQuestVisibility,
   convertQuestSnapshot,
   questType,
+  regionIdFromPerformCfg,
+  resolveArchonStoryFamily,
+  resolveDialogSpeakerName,
+  resolvePersonalLineStoryFamily,
 } from "./anime-game-data-quest-converter.js";
 
 const fixture = resolve("data/fixtures/anime-game-data-quests");
@@ -61,7 +66,7 @@ describe("AnimeGameData quest converter", () => {
     expect(first.records).toEqual(second.records);
     expect(first.manifest.failures).toEqual([]);
     expect(first.manifest.schemaVersion).toBe(3);
-    expect(first.manifest.converterVersion).toBe("anime-game-data-quests-v2");
+    expect(first.manifest.converterVersion).toBe("anime-game-data-quests-v3");
     expect(first.manifest.counts).toMatchObject({
       mainQuests: 1,
       documents: { "zh-CN": 1, en: 1 },
@@ -97,7 +102,7 @@ describe("AnimeGameData quest converter", () => {
             }>;
           }
         | undefined;
-      expect(persisted?.schemaVersion).toBe(2);
+      expect(persisted?.schemaVersion).toBe(3);
       expect(
         persisted?.regions
           .flatMap((region) => region.families)
@@ -146,6 +151,71 @@ describe("AnimeGameData quest converter", () => {
       titleResolutionLocale: "zh-CN",
     });
     expect(chapterDerived.records[0]?.title).toBe("序章");
+  });
+
+  it("uses MainQuest.chapterId as exact chapter membership and the canonical group title", async () => {
+    const result = await withFixtureVariant(async (root) => {
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/MainQuestExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, series: undefined })),
+      );
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/ChapterExcelConfigData.json", (rows) =>
+        rows.map((row) => ({
+          ...row,
+          groupId: 777,
+          cityId: 4,
+          chapterImageTitleTextMapHash: 10001,
+          PACJEJCGPLN: [],
+        })),
+      );
+    });
+
+    const quest = result.records.find((record) => record.locale === "zh-CN")?.quest;
+    expect(quest?.storyProjection).toMatchObject({
+      familyId: "genshin:chapter-group:777",
+      familyTitle: "捕风的异乡人",
+      taskRegionId: "sumeru",
+      taskRegionSource: "chapter_city",
+    });
+  });
+
+  it("keeps unresolved region evidence explicit instead of guessing from a task title", async () => {
+    const result = await withFixtureVariant(async (root) => {
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/ChapterExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, cityId: 999 })),
+      );
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/MainQuestExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, type: "WQ", title: "蒙德的任务" })),
+      );
+    });
+
+    const quest = result.records.find((record) => record.locale === "zh-CN")?.quest;
+    expect(quest?.storyProjection).toMatchObject({
+      taskRegionId: "other",
+      taskRegionSource: "unresolved",
+      taskRegionReason: "chapter_city_unmapped_and_no_unique_talk_perform_cfg_region",
+      taskRegionConflicts: ["unmapped_chapter_city_id:999"],
+    });
+    expect(
+      quest?.storyProjection?.taskRegionEvidence?.some((item) => item.endsWith("cityId=999")),
+    ).toBe(true);
+  });
+
+  it("does not create a synthetic family when neither series nor chapter group is reliable", async () => {
+    const result = await withFixtureVariant(async (root) => {
+      await updateJson<JsonRow[]>(root, "ExcelBinOutput/MainQuestExcelConfigData.json", (rows) =>
+        rows.map((row) => ({ ...row, series: undefined })),
+      );
+    });
+
+    const quest = result.records.find((record) => record.locale === "zh-CN")?.quest;
+    const projection = result.records.find((record) => record.locale === "zh-CN")?.metadata
+      .storyCatalogProjection as
+      { regions: Array<{ families: unknown[]; quests: Array<{ questId: string }> }> } | undefined;
+    expect(quest?.storyProjection?.familyId).toBeUndefined();
+    expect(projection?.regions[0]?.families).toEqual([]);
+    expect(projection?.regions[0]?.quests).toEqual(
+      expect.arrayContaining([expect.objectContaining({ questId: "1001" })]),
+    );
   });
 
   it("falls back to NPC names when dialogue speaker hashes are unresolved", async () => {
@@ -331,6 +401,333 @@ describe("AnimeGameData quest converter", () => {
     expect(classifyQuestVisibility({}, "测试任务$HIDDEN")).toBe("hidden_show_type");
     expect(classifyQuestVisibility({}, "Quest 12345")).toBe("unresolved_title");
     expect(classifyQuestVisibility({}, "真实任务")).toBe("public");
+    expect(classifyQuestVisibility({ id: 5003 }, "真实任务")).toBe("test_or_placeholder");
+    expect(classifyQuestVisibility({}, "开发任务(test)")).toBe("test_or_placeholder");
+    expect(classifyQuestVisibility({}, "开发任务（test）")).toBe("test_or_placeholder");
+    expect(classifyQuestVisibility({}, "隐藏任务(hide)")).toBe("test_or_placeholder");
+    expect(classifyQuestVisibility({}, "Hidden Tears")).toBe("public");
+    expect(classifyQuestVisibility({}, "Test of Courage")).toBe("public");
+    expect(classifyQuestVisibility({}, "Tell Me, Mirror Mirror")).toBe("public");
+    expect(classifyQuestVisibility({}, "Gliding Test Quest")).toBe("public");
+    expect(classifyQuestVisibility({}, "Timaeus' Alchemy Tutorial")).toBe("public");
+    expect(classifyQuestVisibility({}, "In Search of a Hidden Heart")).toBe("public");
+  });
+
+  it("extracts canonical regions from performCfg paths with version and event prefixes", () => {
+    expect(regionIdFromPerformCfg("QuestDialogue/WQ/Fontaine_4006/Q400601")).toBe("fontaine");
+    expect(regionIdFromPerformCfg("QuestDialogue/WQ/4.4HdjV4_40142/Q4014202")).toBe("liyue");
+    expect(regionIdFromPerformCfg("QuestDialogue/EQ/V5.8YLYZ_40199/Q4019901")).toBe("natlan");
+    expect(regionIdFromPerformCfg("QuestDialogue/EQ/V6.0ActivityNodKraiTour_40207/Q4020702")).toBe(
+      "nod_krai",
+    );
+    expect(regionIdFromPerformCfg("QuestDialogue/WQ/Fishblaster_70535/Q7053502")).toBe("mondstadt");
+    expect(regionIdFromPerformCfg("QuestDialogue/WQ/FishingJoy_70046/Q7004601")).toBe("fontaine");
+    expect(regionIdFromPerformCfg("QuestDialogue/EQ/V5.7AutoChess_40204/Q4020401")).toBe("natlan");
+    expect(regionIdFromPerformCfg("QuestDialogue/EQ/V6.5TradeShow_40239/Q4023903")).toBe(
+      "nod_krai",
+    );
+    expect(regionIdFromPerformCfg("QuestDialogue/WQ/V4.5CatCafe_70539/Q7053901")).toBe("mondstadt");
+    expect(regionIdFromPerformCfg(undefined)).toBeUndefined();
+    expect(regionIdFromPerformCfg("invalid/path")).toBeUndefined();
+  });
+
+  it("resolves inner monologue to player_identity and prop objects to intentionally_nameless", () => {
+    const mockInputs = {
+      npcById: new Map([
+        [
+          "13394",
+          {
+            id: 13394,
+            scriptDataPath: "Data/ScriptData/PropObject/SP_013",
+            luaDataPath: "Actor/Npc/TempNPC",
+          },
+        ],
+        [
+          "99999",
+          {
+            id: 99999,
+            scriptDataPath: "Data/ScriptData/PropObject/SP_014",
+            luaDataPath: "Actor/Npc/TempNPC",
+          },
+        ],
+        [
+          "88888",
+          {
+            id: 88888,
+            nameTextMapHash: 8888801,
+          },
+        ],
+      ]),
+    } as unknown as Parameters<typeof resolveDialogSpeakerName>[0];
+
+    const textMapZh = {
+      100: "（吊水箱的绳子被人做过手脚...）",
+      101: "门似乎被锁住了，无法打开。",
+      8888801: "普通NPC",
+    };
+    const textMapEn = {
+      100: "(The rope holding the water tank was tampered with...)",
+      101: "The door seems to be locked.",
+      8888801: "Normal NPC",
+    };
+
+    // Case 1: Monologue inner thought on prop NPC -> player_identity
+    const monologueZh = resolveDialogSpeakerName(
+      mockInputs,
+      {
+        talkRole: { type: "TALK_ROLE_NPC", id: "13394" },
+        talkContentTextMapHash: 100,
+      },
+      textMapZh,
+      "zh-CN",
+    );
+    expect(monologueZh).toEqual({ value: "旅行者", method: "player_identity" });
+
+    const monologueEn = resolveDialogSpeakerName(
+      mockInputs,
+      {
+        talkRole: { type: "TALK_ROLE_NPC", id: "13394" },
+        talkContentTextMapHash: 100,
+      },
+      textMapEn,
+      "en",
+    );
+    expect(monologueEn).toEqual({ value: "Traveler", method: "player_identity" });
+
+    // Case 2: Inanimate prop object without inner thought -> intentionally_nameless
+    const propObject = resolveDialogSpeakerName(
+      mockInputs,
+      {
+        talkRole: { type: "TALK_ROLE_NPC", id: "99999" },
+        talkContentTextMapHash: 101,
+      },
+      textMapZh,
+      "zh-CN",
+    );
+    expect(propObject).toEqual({ value: undefined, method: "intentionally_nameless" });
+
+    // Case 3: Normal NPC with TextMap name -> npc_fallback
+    const normalNpc = resolveDialogSpeakerName(
+      mockInputs,
+      {
+        talkRole: { type: "TALK_ROLE_NPC", id: "88888" },
+        talkContentTextMapHash: 101,
+      },
+      textMapZh,
+      "zh-CN",
+    );
+    expect(normalNpc).toEqual({ value: "普通NPC", method: "npc_fallback" });
+
+    // Case 4: Black screen and placeholder roles -> intentionally_nameless
+    const blackScreen = resolveDialogSpeakerName(
+      mockInputs,
+      {
+        talkRole: { type: "TALK_ROLE_BLACK_SCREEN" },
+        talkContentTextMapHash: 101,
+      },
+      textMapZh,
+      "zh-CN",
+    );
+    expect(blackScreen).toEqual({ value: undefined, method: "intentionally_nameless" });
+
+    const placeholder = resolveDialogSpeakerName(
+      mockInputs,
+      {
+        talkRole: { type: "TALK_ROLE_NPC", id: "{QuestNpcID}" },
+        talkContentTextMapHash: 101,
+      },
+      textMapZh,
+      "zh-CN",
+    );
+    expect(placeholder).toEqual({ value: undefined, method: "intentionally_nameless" });
+  });
+
+  it("determines correct chronological ordering in chapterStoryOrder", () => {
+    // Act ordering: Act 1 < Act 2 < Act 3 < Act 4
+    const act1 = chapterStoryOrder("第一幕");
+    const act2 = chapterStoryOrder("第二幕");
+    const act3 = chapterStoryOrder("第三幕");
+    const act4 = chapterStoryOrder("第四幕");
+    expect(act1).toBe(100);
+    expect(act2).toBe(200);
+    expect(act3).toBe(300);
+    expect(act4).toBe(400);
+    expect(act1! < act2! && act2! < act3! && act3! < act4!).toBe(true);
+
+    // Prologue, interlude, epilogue
+    const prologue = chapterStoryOrder("序曲");
+    const prologueChapter = chapterStoryOrder("序章");
+    const interlude = chapterStoryOrder("幕间");
+    const interludeChapter = chapterStoryOrder("间章");
+    const epilogue = chapterStoryOrder("尾声");
+    expect(prologue).toBe(50);
+    expect(prologueChapter).toBe(50);
+    expect(interlude).toBe(550);
+    expect(interludeChapter).toBe(550);
+    expect(epilogue).toBe(9000);
+    expect(prologue! < act1!).toBe(true);
+    expect(act4! < interlude!).toBe(true);
+    expect(interlude! < epilogue!).toBe(true);
+
+    // English acts
+    expect(chapterStoryOrder("Act I")).toBe(100);
+    expect(chapterStoryOrder("Act II")).toBe(200);
+    expect(chapterStoryOrder("Act IV")).toBe(400);
+
+    // Compound Act + Chapter: Act priority ensures acts within a chapter don't collapse to chapter number
+    expect(chapterStoryOrder("第四章 第一幕")).toBe(100);
+    expect(chapterStoryOrder("第四章 第二幕")).toBe(200);
+
+    // Chapters without acts
+    expect(chapterStoryOrder("第一章")).toBe(100);
+    expect(chapterStoryOrder("第四章")).toBe(400);
+
+    // Fallback/empty
+    expect(chapterStoryOrder(undefined)).toBeUndefined();
+    expect(chapterStoryOrder("")).toBeUndefined();
+    expect(chapterStoryOrder("散篇任务")).toBeUndefined();
+  });
+
+  it("resolves and unifies Archon Quest families across batches and chapters", () => {
+    // Mondstadt Prologue
+    const mondstadtZh = resolveArchonStoryFamily("1001", "序章 第一幕", "zh-CN");
+    expect(mondstadtZh).toEqual({
+      id: "genshin:aq:prologue",
+      title: "魔神任务 · 序章「巨龙与自由之歌」",
+      provenance: "derived",
+      catalogRegionId: "mondstadt",
+      familyOrder: 100,
+    });
+    const mondstadtEn = resolveArchonStoryFamily("1001", "Prologue: Act I", "en");
+    expect(mondstadtEn?.title).toBe("Archon Quest · Prologue: Song of the Dragon and Freedom");
+
+    // Liyue Chapter I
+    const liyue = resolveArchonStoryFamily("1101", "第一章", "zh-CN");
+    expect(liyue).toEqual({
+      id: "genshin:aq:chapter-1",
+      title: "魔神任务 · 第一章「辞行久远之躯」",
+      provenance: "derived",
+      catalogRegionId: "liyue",
+      familyOrder: 100,
+    });
+
+    // Fontaine Chapter IV: 1400, 1401 and 1405 converge into same family
+    const fontaine1400 = resolveArchonStoryFamily("1400", "第四章", "zh-CN");
+    const fontaine1401 = resolveArchonStoryFamily("1401", "第四章 第一幕", "zh-CN");
+    const fontaine1405 = resolveArchonStoryFamily("1405", "第四章 第五幕", "zh-CN");
+    expect(fontaine1401).toEqual({
+      id: "genshin:aq:chapter-4",
+      title: "魔神任务 · 第四章「罪人舞步旋」",
+      provenance: "derived",
+      catalogRegionId: "fontaine",
+      familyOrder: 100,
+    });
+    expect(fontaine1400?.id).toBe(fontaine1401?.id);
+    expect(fontaine1405?.id).toBe(fontaine1401?.id);
+    expect(fontaine1405?.title).toBe(fontaine1401?.title);
+
+    // Nod-Krai / Welkin Moon: 1600 and 1611 converge into same family
+    const nodKrai1600 = resolveArchonStoryFamily("1600", "空月之歌 第一幕", "zh-CN");
+    const nodKrai1611 = resolveArchonStoryFamily("1611", "空月之歌", "zh-CN");
+    const nodKraiChapter6 = resolveArchonStoryFamily("1600", "第六章 第一幕", "zh-CN");
+    expect(nodKrai1600).toEqual({
+      id: "genshin:aq:nod-krai",
+      title: "魔神任务 · 空月之歌",
+      provenance: "derived",
+      catalogRegionId: "nod_krai",
+      familyOrder: 100,
+    });
+    expect(nodKrai1611?.id).toBe(nodKrai1600?.id);
+    expect(nodKrai1611?.title).toBe(nodKrai1600?.title);
+    expect(nodKraiChapter6?.id).toBe(nodKrai1600?.id);
+
+    // Interludes
+    const interludeLiyue = resolveArchonStoryFamily("1205", "间章 第一幕", "zh-CN", 2);
+    expect(interludeLiyue).toEqual({
+      id: "genshin:aq:interlude:liyue",
+      title: "魔神任务 · 间章",
+      provenance: "derived",
+      catalogRegionId: "liyue",
+      familyOrder: 150,
+    });
+    const interludeSumeru = resolveArchonStoryFamily("1307", "间章", "zh-CN", 4);
+    expect(interludeSumeru?.id).toBe("genshin:aq:interlude:sumeru");
+    expect(interludeSumeru?.catalogRegionId).toBe("sumeru");
+
+    // Strictly preserve non-AQ chapters: returns undefined
+    const worldQuest = resolveArchonStoryFamily("99999", "森林书", "zh-CN");
+    expect(worldQuest).toBeUndefined();
+  });
+
+  it("resolves personal line story family with character and chapter prefix", () => {
+    const mockInputs = {
+      textMaps: {
+        "zh-CN": {
+          1001: "艾梅莉埃",
+          1002: "香氛瓶之章 第一幕",
+        },
+        en: {
+          1001: "Emilie",
+          1002: "Pomum de Ambra Chapter: Act I",
+        },
+      },
+    } as unknown as Parameters<typeof resolvePersonalLineStoryFamily>[0];
+
+    const personalLineZh = resolvePersonalLineStoryFamily(
+      mockInputs,
+      {
+        LINLPCFFGFC: "CHAPTER_STYLE_TYPE_PERSONALLINE",
+        chapterImageTitleTextMapHash: 1001,
+        chapterNumTextMapHash: 1002,
+        cityId: 5,
+      },
+      "2050",
+      "第一幕 花与血的告别",
+      "zh-CN",
+    );
+    expect(personalLineZh).toEqual({
+      id: "genshin:personal-line:emilie",
+      title: "艾梅莉埃 · 香氛瓶之章",
+      provenance: "derived",
+      catalogRegionId: "fontaine",
+      familyOrder: 200,
+      chapterOrder: 100,
+    });
+
+    const personalLineEn = resolvePersonalLineStoryFamily(
+      mockInputs,
+      {
+        LINLPCFFGFC: "CHAPTER_STYLE_TYPE_PERSONALLINE",
+        chapterImageTitleTextMapHash: 1001,
+        chapterNumTextMapHash: 1002,
+        cityId: 5,
+      },
+      "2050",
+      "Act I",
+      "en",
+    );
+    expect(personalLineEn).toEqual({
+      id: "genshin:personal-line:emilie",
+      title: "Emilie: Pomum de Ambra Chapter",
+      provenance: "derived",
+      catalogRegionId: "fontaine",
+      familyOrder: 200,
+      chapterOrder: 100,
+    });
+
+    // Non-personal line style returns undefined
+    const nonPersonal = resolvePersonalLineStoryFamily(
+      mockInputs,
+      {
+        LINLPCFFGFC: "CHAPTER_STYLE_TYPE_WORLD",
+        chapterImageTitleTextMapHash: 1001,
+        chapterNumTextMapHash: 1002,
+      },
+      "2050",
+      "世界任务",
+      "zh-CN",
+    );
+    expect(nonPersonal).toBeUndefined();
   });
 });
 

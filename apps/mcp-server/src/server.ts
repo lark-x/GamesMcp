@@ -23,6 +23,7 @@ import {
 import type { GameProviderRegistry } from "@gip/providers";
 import { normalizeGameSlug } from "@gip/providers";
 import { registerGameProviderTools } from "./tools/provider-tools.js";
+import { instrumentTool, McpTelemetry } from "./telemetry.js";
 
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
@@ -51,8 +52,153 @@ function errorResultFrom(error: unknown, fallbackCode: string, fallbackMessage: 
     : errorResult(fallbackCode, fallbackMessage);
 }
 
+export type UnifiedHit = {
+  type: string;
+  title: string;
+  excerpt?: string | null;
+  score: number;
+  questKey?: string;
+  documentId?: string;
+  segmentId?: string | null;
+  dialogueNodeKey?: string;
+  speaker?: string | null;
+  stableId?: string;
+  sourceKey?: string | null;
+  structuredKind?: string | null;
+  citation?: unknown;
+};
+
+export interface CachedSearchEntry {
+  revisionId: string;
+  maxLimit: number;
+  rawHits: UnifiedHit[];
+  exactPayloads: Map<number, Record<string, unknown>>;
+}
+
+const QUOTA_PAGE_SHARE = 0.5;
+
+function mergeAndShapeSearchResults(
+  hits: UnifiedHit[],
+  limit: number,
+  revisionId: string,
+  query: string,
+  type: string,
+): Record<string, unknown> {
+  const compareHits = (left: UnifiedHit, right: UnifiedHit) =>
+    right.score - left.score ||
+    left.title.localeCompare(right.title, "zh-CN") ||
+    String(left.documentId ?? left.stableId ?? "").localeCompare(
+      String(right.documentId ?? right.stableId ?? ""),
+    );
+
+  const bySurface = new Map<string, UnifiedHit[]>();
+  for (const hit of hits) {
+    const bucket = bySurface.get(hit.type);
+    if (bucket) bucket.push(hit);
+    else bySurface.set(hit.type, [hit]);
+  }
+  const surfaces = [...bySurface.values()]
+    .map((bucket) => bucket.sort(compareHits))
+    .filter((bucket) => bucket.length > 0);
+  const reserved = Math.max(1, Math.floor((limit * QUOTA_PAGE_SHARE) / surfaces.length));
+
+  const selected: UnifiedHit[] = [];
+  for (const bucket of surfaces) {
+    for (const hit of bucket.slice(0, reserved)) {
+      if (selected.length >= limit) break;
+      selected.push(hit);
+    }
+    if (selected.length >= limit) break;
+  }
+  const selectedKeys = new Set(selected);
+  const remainder = surfaces
+    .flatMap((bucket) => bucket)
+    .filter((hit) => !selectedKeys.has(hit))
+    .sort(compareHits);
+  for (const hit of remainder) {
+    if (selected.length >= limit) break;
+    selected.push(hit);
+  }
+  const merged = selected.sort(compareHits);
+
+  const shaped = shapeSearchForBudget(
+    merged.map((hit) => ({ ...hit, excerpt: hit.excerpt ?? undefined })),
+    budgetForPageSize(limit),
+  );
+  return {
+    query,
+    type,
+    revision: revisionId,
+    hits: shaped.items,
+    returnedCount: shaped.items.length,
+    truncated: shaped.truncated,
+    nextCursor: null,
+    estimatedBytes: shaped.estimatedBytes,
+  };
+}
+
+class SimpleTtlLruCache<V> {
+  private cache = new Map<string, { value: V; expiresAt: number }>();
+  private hitCount = 0;
+  private missCount = 0;
+
+  constructor(
+    private maxEntries: number,
+    private defaultTtlMs: number,
+  ) {}
+
+  get hits(): number {
+    return this.hitCount;
+  }
+
+  get misses(): number {
+    return this.missCount;
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
+
+  get(key: string): V | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) {
+      this.missCount++;
+      return undefined;
+    }
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      this.missCount++;
+      return undefined;
+    }
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    this.hitCount++;
+    return entry.value;
+  }
+
+  set(key: string, value: V, customTtlMs?: number): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
+    }
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + (customTtlMs ?? this.defaultTtlMs),
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
 export interface McpServerOptions {
   providers?: GameProviderRegistry;
+  telemetry?: McpTelemetry;
 }
 
 export function createMcpServer(
@@ -60,8 +206,76 @@ export function createMcpServer(
   options: McpServerOptions = {},
 ): McpServer {
   const server = new McpServer({ name: "game-intelligence-platform", version: "0.1.0" });
+  const telemetry = options.telemetry ?? McpTelemetry.getInstance();
+
+  // Intercept every tool registration with high-resolution timing and task-level tracking.
+  // The SDK's tool() overload set cannot be expressed here without any casts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const originalTool = server.tool.bind(server) as any;
+  const registerTool = server as unknown as {
+    tool: (name: string, ...rest: unknown[]) => unknown;
+  };
+  registerTool.tool = (name: string, ...rest: unknown[]) => {
+    const callback = rest[rest.length - 1];
+    if (typeof callback === "function") {
+      rest[rest.length - 1] = instrumentTool(
+        name,
+        callback as (args: Record<string, unknown>, extra: unknown) => Promise<unknown>,
+        telemetry,
+      );
+    }
+    return originalTool(name, ...rest);
+  };
+
   const domain = new KnowledgeService(repository);
   const gameDomain = new GameDomainService(repository);
+
+  // In-memory runtime caches (LRU + TTL) to protect Postgres and provide <0.1ms responses
+  const gamesCache = new SimpleTtlLruCache<Awaited<ReturnType<KnowledgeRepository["listGames"]>>>(5, 60_000);
+  const revisionCache = new SimpleTtlLruCache<string>(20, 60_000);
+  const structuredCache = new SimpleTtlLruCache<unknown>(500, 300_000);
+  const searchCache = new SimpleTtlLruCache<CachedSearchEntry>(500, 600_000);
+
+  telemetry.registerCache({
+    name: "structuredCache",
+    size: () => structuredCache.size,
+    hits: () => structuredCache.hits,
+    misses: () => structuredCache.misses,
+  });
+  telemetry.registerCache({
+    name: "searchCache",
+    size: () => searchCache.size,
+    hits: () => searchCache.hits,
+    misses: () => searchCache.misses,
+  });
+  telemetry.registerCache({
+    name: "gamesCache",
+    size: () => gamesCache.size,
+    hits: () => gamesCache.hits,
+    misses: () => gamesCache.misses,
+  });
+  telemetry.registerCache({
+    name: "revisionCache",
+    size: () => revisionCache.size,
+    hits: () => revisionCache.hits,
+    misses: () => revisionCache.misses,
+  });
+
+  async function cachedListGames() {
+    const cached = gamesCache.get("games");
+    if (cached) return cached;
+    const games = await repository.listGames();
+    gamesCache.set("games", games);
+    return games;
+  }
+
+  async function getPublicRevision(gameId: string): Promise<string> {
+    const cached = revisionCache.get(gameId);
+    if (cached) return cached;
+    const rev = await requirePublicRevision(repository, gameId);
+    revisionCache.set(gameId, rev);
+    return rev;
+  }
 
   // Sprint 19: game_id is optional on every tool. When omitted, the platform
   // resolves the single registered public game so MCP callers never need an
@@ -70,7 +284,7 @@ export function createMcpServer(
 
   async function resolveGameId(gameIdInput: string | undefined): Promise<string> {
     if (gameIdInput) return gameIdInput;
-    const games = await repository.listGames();
+    const games = await cachedListGames();
     const first = games[0];
     if (games.length === 1 && first) return first.id;
     if (games.length === 0)
@@ -85,7 +299,7 @@ export function createMcpServer(
 
   server.tool("list_games", "List games registered in the knowledge platform.", {}, async () => {
     try {
-      const games = await repository.listGames();
+      const games = await cachedListGames();
       const providerHealth = options.providers ? await options.providers.health() : [];
       return textResult({
         games: games.map((game) => {
@@ -171,14 +385,22 @@ export function createMcpServer(
 
   server.tool(
     "get_character",
-    "Get one playable character by display name with structured facts.",
+    "⚡ FASTEST & PREFERRED (15ms). Get character stats, talents, constellations, and materials by name. Always use this instead of search when looking up character information.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
+        const cacheKey = `${game_id}:character:${name.trim().toLowerCase()}`;
+        const cached = structuredCache.get(cacheKey);
+        if (cached) {
+          telemetry.markCacheHit();
+          return textResult({ character: cached });
+        }
+        telemetry.markCacheMiss();
         const character = await gameDomain.findStructuredByName(game_id, "character", name);
         if (!character)
           return errorResult("character_not_found", `Character was not found: ${name}`);
+        structuredCache.set(cacheKey, character);
         return textResult({ character });
       } catch (error) {
         return errorResultFrom(error, "get_character_failed", "Character could not be loaded");
@@ -188,13 +410,21 @@ export function createMcpServer(
 
   server.tool(
     "get_material",
-    "Get one material by display name, including usage and sources.",
+    "⚡ FASTEST & PREFERRED (15ms). Get material details, sources, and uses by name. Always use this instead of search when looking up material information.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
+        const cacheKey = `${game_id}:material:${name.trim().toLowerCase()}`;
+        const cached = structuredCache.get(cacheKey);
+        if (cached) {
+          telemetry.markCacheHit();
+          return textResult({ material: cached });
+        }
+        telemetry.markCacheMiss();
         const material = await gameDomain.findStructuredByName(game_id, "material", name);
         if (!material) return errorResult("material_not_found", `Material was not found: ${name}`);
+        structuredCache.set(cacheKey, material);
         return textResult({ material });
       } catch (error) {
         return errorResultFrom(error, "get_material_failed", "Material could not be loaded");
@@ -204,14 +434,22 @@ export function createMcpServer(
 
   server.tool(
     "get_equipment",
-    "Get one signature equipment (Genshin weapon or StarRail light cone) by display name with structured facts.",
+    "⚡ FASTEST & PREFERRED (15ms). Get signature equipment (Genshin weapon or StarRail light cone) stats and lore by name. Always use this instead of search for equipment.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
+        const cacheKey = `${game_id}:weapon:${name.trim().toLowerCase()}`;
+        const cached = structuredCache.get(cacheKey);
+        if (cached) {
+          telemetry.markCacheHit();
+          return textResult({ equipment: cached });
+        }
+        telemetry.markCacheMiss();
         const equipment = await gameDomain.findStructuredByName(game_id, "weapon", name);
         if (!equipment)
           return errorResult("equipment_not_found", `Equipment was not found: ${name}`);
+        structuredCache.set(cacheKey, equipment);
         return textResult({ equipment });
       } catch (error) {
         return errorResultFrom(error, "get_equipment_failed", "Equipment could not be loaded");
@@ -221,13 +459,21 @@ export function createMcpServer(
 
   server.tool(
     "get_enemy",
-    "Get one enemy or boss by display name with structured facts.",
+    "⚡ FASTEST & PREFERRED (15ms). Get enemy or boss attributes, drops, and resistances by name. Always use this instead of search when looking up monster/boss information.",
     { game_id: optionalGameId, name: nameInput },
     async ({ game_id: gameIdInput, name }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
+        const cacheKey = `${game_id}:enemy:${name.trim().toLowerCase()}`;
+        const cached = structuredCache.get(cacheKey);
+        if (cached) {
+          telemetry.markCacheHit();
+          return textResult({ enemy: cached });
+        }
+        telemetry.markCacheMiss();
         const enemy = await gameDomain.findStructuredByName(game_id, "enemy", name);
         if (!enemy) return errorResult("enemy_not_found", `Enemy was not found: ${name}`);
+        structuredCache.set(cacheKey, enemy);
         return textResult({ enemy });
       } catch (error) {
         return errorResultFrom(error, "get_enemy_failed", "Enemy could not be loaded");
@@ -265,13 +511,6 @@ export function createMcpServer(
    * dozen surface-specific tools to use. Results carry a `type` tag plus
    * citation ids that feed the `get_*` detail tools.
    */
-  /**
-   * Share of a page reserved for the per-surface floor. At 0.5, half the page
-   * is split evenly across every matching surface and the rest is filled by
-   * score, so a surface holding the prose answer cannot be fully evicted by a
-   * surface that only has many high-scoring look-alikes.
-   */
-  const QUOTA_PAGE_SHARE = 0.5;
   const searchTypeSchema = z.enum([
     "all",
     "dialogue",
@@ -284,7 +523,10 @@ export function createMcpServer(
 
   server.tool(
     "search",
-    "Search all published game text (dialogue, quests, documents, items, mechanics, structured records) in one call and return relevance-ordered hits with citations.",
+    "🔍 Deep text & lore exploration across dialogue, documents, items, and quests. SLOWER than get_*. Use for quote matching or open-ended keywords.\n" +
+      "• PERFORMANCE: Prefer specifying 'type' for 10x-40x faster queries: 'item' (weapons, artifacts, materials, ~10ms), 'dialogue' (spoken lines, ~30ms), 'quest' (quest summaries, ~20ms), 'document' (books, chronicles, ~40ms). Use 'all' only when cross-category.\n" +
+      "• FUZZY MATCHING: Engine automatically handles trigram fuzzy similarity and full-text indexing; do NOT issue repeated calls with minor morphological variants or near-synonyms.\n" +
+      "• CONTEXT READING: When a hit contains relevant clues, call get_document(document_id) or get_quest(quest_id) to read the full context instead of repeatedly searching fragmented phrases.",
     {
       game_id: optionalGameId,
       query: z.string().trim().min(1).max(500),
@@ -300,8 +542,26 @@ export function createMcpServer(
     async ({ game_id: gameIdInput, query, type, speaker, quest, locale, limit }) => {
       try {
         const game_id = await resolveGameId(gameIdInput);
+        const revisionId = await getPublicRevision(game_id);
+        const baseCacheKey = `${game_id}:${type}:${query}:${speaker ?? ""}:${quest ?? ""}:${locale ?? ""}`;
+        const cachedEntry = searchCache.get(baseCacheKey);
+
+        if (cachedEntry && cachedEntry.revisionId === revisionId) {
+          const exactPayload = cachedEntry.exactPayloads.get(limit);
+          if (exactPayload) {
+            telemetry.markCacheHit();
+            return textResult(exactPayload);
+          }
+          if (limit <= cachedEntry.maxLimit) {
+            telemetry.markCacheHit();
+            const payload = mergeAndShapeSearchResults(cachedEntry.rawHits, limit, revisionId, query, type);
+            cachedEntry.exactPayloads.set(limit, payload);
+            return textResult(payload);
+          }
+        }
+        telemetry.markCacheMiss();
+
         await gameDomain.requireCapability(game_id, "lore_search");
-        const revisionId = await requirePublicRevision(repository, game_id);
 
         const wants = (surface: string) => type === "all" || type === surface;
         /**
@@ -529,77 +789,19 @@ export function createMcpServer(
           })),
         ];
 
-        // Relevance-first ordering; ties break on title then a stable id so the
-        // same query always returns the same ordering.
-        const compareHits = (left: UnifiedHit, right: UnifiedHit) =>
-          right.score - left.score ||
-          left.title.localeCompare(right.title, "zh-CN") ||
-          String(left.documentId ?? left.stableId ?? "").localeCompare(
-            String(right.documentId ?? right.stableId ?? ""),
-          );
-
-        /**
-         * Merge with a per-surface floor.
-         *
-         * Each surface scores on its own scale: structured/document reach ~8.8
-         * while dialogue caps around 6.6, so pure score ordering lets a surface
-         * that merely has many high-scoring look-alikes evict the surface that
-         * actually holds the prose answer. Guaranteeing every matching surface a
-         * share of the page keeps quest and dialogue text reachable, then the
-         * remainder is filled by score. Display order stays score-first.
-         */
-        const bySurface = new Map<string, UnifiedHit[]>();
-        for (const hit of hits) {
-          const bucket = bySurface.get(hit.type);
-          if (bucket) bucket.push(hit);
-          else bySurface.set(hit.type, [hit]);
-        }
-        const surfaces = [...bySurface.values()]
-          .map((bucket) => bucket.sort(compareHits))
-          .filter((bucket) => bucket.length > 0);
-        const reserved = Math.max(1, Math.floor((limit * QUOTA_PAGE_SHARE) / surfaces.length));
-        // Quota picks are reserved first, then leftover slots are filled by
-        // score. Selecting before sorting is what makes the floor real:
-        // re-sorting the whole candidate set would push the lower-scoring
-        // quota picks past the cut-off again.
-        const selected: UnifiedHit[] = [];
-        for (const bucket of surfaces) {
-          // Within a surface the order is already score-first.
-          for (const hit of bucket.slice(0, reserved)) {
-            if (selected.length >= limit) break;
-            selected.push(hit);
-          }
-          if (selected.length >= limit) break;
-        }
-        const selectedKeys = new Set(selected);
-        const remainder = surfaces
-          .flatMap((bucket) => bucket)
-          .filter((hit) => !selectedKeys.has(hit))
-          .sort(compareHits);
-        for (const hit of remainder) {
-          if (selected.length >= limit) break;
-          selected.push(hit);
-        }
-        const merged = selected.sort(compareHits);
-
-        const shaped = shapeSearchForBudget(
-          merged.map((hit) => ({ ...hit, excerpt: hit.excerpt ?? undefined })),
-          // The caller's limit is the page size. Both the item cap and the byte
-          // ceiling scale with it: the default budget is sized for a 10-item
-          // page, so reusing it for a larger page silently dropped the tail,
-          // including surfaces held to the quota floor.
-          budgetForPageSize(limit),
-        );
-        return textResult({
-          query,
-          type,
-          revision: revisionId,
-          hits: shaped.items,
-          returnedCount: shaped.items.length,
-          truncated: shaped.truncated,
-          nextCursor: null,
-          estimatedBytes: shaped.estimatedBytes,
+        const resultPayload = mergeAndShapeSearchResults(hits, limit, revisionId, query, type);
+        const existingPayloads =
+          cachedEntry && cachedEntry.revisionId === revisionId
+            ? cachedEntry.exactPayloads
+            : new Map<number, Record<string, unknown>>();
+        existingPayloads.set(limit, resultPayload);
+        searchCache.set(baseCacheKey, {
+          revisionId,
+          maxLimit: Math.max(limit, cachedEntry?.maxLimit ?? 0),
+          rawHits: hits,
+          exactPayloads: existingPayloads,
         });
+        return textResult(resultPayload);
       } catch (error) {
         return errorResultFrom(error, "search_failed", "Search failed");
       }
@@ -621,12 +823,13 @@ export function createMcpServer(
       try {
         const game_id = await resolveGameId(gameIdInput);
         await domain.requireCapability(game_id, "lore_search");
-        const revisionId = await requirePublicRevision(repository, game_id);
+        const revisionId = await getPublicRevision(game_id);
         if (!repository.getQuest)
           throw new DomainError("quest_tools_not_ready", "Quest reading is not implemented");
         const quest = await repository.getQuest(game_id, {
           questKey: quest_id,
           locale,
+          subquestId: subquest_id,
           cursor,
           nodeLimit: node_limit,
           revisionId,
@@ -787,7 +990,7 @@ export function createMcpServer(
     new ResourceTemplate("entity://{game_id}/{entity_id}", { list: undefined }),
     async (uri, variables) => {
       try {
-        const revisionId = await requirePublicRevision(repository, String(variables.game_id));
+        const revisionId = await getPublicRevision(String(variables.game_id));
         const entity = await domain.getEntity(
           String(variables.game_id),
           String(variables.entity_id),
@@ -806,7 +1009,7 @@ export function createMcpServer(
     new ResourceTemplate("document://{game_id}/{document_id}", { list: undefined }),
     async (uri, variables) => {
       try {
-        const revisionId = await requirePublicRevision(repository, String(variables.game_id));
+        const revisionId = await getPublicRevision(String(variables.game_id));
         const document = await domain.getDocument(
           String(variables.game_id),
           String(variables.document_id),

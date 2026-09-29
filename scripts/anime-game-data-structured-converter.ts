@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -147,6 +148,8 @@ type LoadedInputs = {
   [Key in keyof typeof inputPaths]: SourceFile<
     Key extends "textMap" | "textMapFull" ? TextMap : unknown
   >;
+} & {
+  materialCodex?: SourceFile<unknown>;
 };
 
 function sha256(value: string): string {
@@ -279,7 +282,19 @@ async function loadInputs(upstreamDir: string): Promise<LoadedInputs> {
       async ([key, path]) => [key, await readJson<unknown>(upstreamDir, path)] as const,
     ),
   );
-  return Object.fromEntries(entries) as LoadedInputs;
+  const result = Object.fromEntries(entries) as LoadedInputs;
+  const codexPath = resolve(upstreamDir, "ExcelBinOutput/MaterialCodexExcelConfigData.json");
+  if (existsSync(codexPath)) {
+    try {
+      result.materialCodex = await readJson<unknown>(
+        upstreamDir,
+        "ExcelBinOutput/MaterialCodexExcelConfigData.json",
+      );
+    } catch {
+      // MaterialCodex is optional enrichment; absence must not fail the pass.
+    }
+  }
+  return result;
 }
 
 function baseRecord(
@@ -348,83 +363,205 @@ function rarity(value: unknown): number | null {
   return null;
 }
 
-function resolveMaterialCategory(
-  materialType: unknown,
-  itemType: unknown,
-  typeDesc?: string | null,
-): GenshinMaterial["category"] {
-  const desc = typeDesc?.trim() ?? "";
-  if (desc.includes("区域特产")) return "local_specialty";
-  if (
-    desc.includes("角色培养素材") ||
-    desc.includes("角色天赋素材") ||
-    desc.includes("角色突破素材") ||
-    desc.includes("角色与武器培养素材") ||
-    desc.includes("角色经验素材") ||
-    desc.includes("命之座") ||
-    desc.includes("角色解锁") ||
-    desc.includes("角色成长") ||
-    desc.includes("好感成长")
-  ) {
-    return "character_development";
+export type MaterialClassification = {
+  category: GenshinMaterial["category"];
+  categoryLabel: string;
+  subcategory?: string;
+  subcategoryLabel?: string;
+};
+
+export function resolveMaterialClassification(
+  row: JsonObject,
+  textMap: TextMap,
+  specialtyRegionByMatId?: Map<number | string, { region: string; label: string }>,
+): MaterialClassification {
+  const id = Number(row.id ?? 0);
+  const name = textMapValue(textMap, row.nameTextMapHash) ?? "";
+  const typeDesc = textMapValue(textMap, row.typeDescTextMapHash) ?? "";
+  const desc = textMapValue(textMap, row.descTextMapHash) ?? "";
+  const matType = String(row.materialType ?? "");
+
+  // 1. GCG (七圣召唤)
+  if (matType === "MATERIAL_GCG_CARD_FACE") {
+    return { category: "gcg", categoryLabel: "七圣召唤", subcategory: "card_face", subcategoryLabel: "影幻牌面" };
   }
-  if (desc.includes("武器突破素材") || desc.includes("武器强化素材") || desc.includes("精炼材料")) {
-    return "weapon_development";
+  if (matType === "MATERIAL_GCG_CARD") {
+    const isChar = typeDesc.includes("角色牌") || name.includes("牌");
+    return {
+      category: "gcg",
+      categoryLabel: "七圣召唤",
+      subcategory: isChar ? "card_char" : "card_action",
+      subcategoryLabel: isChar ? "角色牌" : "行动牌",
+    };
   }
-  if (
-    desc.includes("食物") ||
-    desc.includes("食谱") ||
-    desc.includes("食材") ||
-    desc.includes("药剂") ||
-    desc.includes("鱼饵")
-  ) {
-    return "cooking";
+  if (matType === "MATERIAL_GCG_CARD_BACK") {
+    return { category: "gcg", categoryLabel: "七圣召唤", subcategory: "card_back", subcategoryLabel: "牌背" };
   }
-  if (desc.includes("矿石") || desc.includes("锻造")) {
-    return "forging";
+  if (matType === "MATERIAL_GCG_FIELD") {
+    return { category: "gcg", categoryLabel: "七圣召唤", subcategory: "field", subcategoryLabel: "牌桌" };
   }
-  if (desc.includes("摆设") || desc.includes("家具")) {
-    return "furnishing";
-  }
-  if (
-    desc.includes("任务") ||
-    desc.includes("道具") ||
-    desc.includes("凭证") ||
-    desc.includes("贵重")
-  ) {
-    return "quest_item";
-  }
-  if (
-    desc.includes("货币") ||
-    desc.includes("兑换券") ||
-    desc.includes("祈愿") ||
-    desc.includes("徽印")
-  ) {
-    return "currency";
-  }
-  if (
-    desc.includes("消耗品") ||
-    desc.includes("素材") ||
-    desc.includes("礼包") ||
-    desc.includes("宝箱")
-  ) {
-    return "consumable";
+  if (matType === "MATERIAL_GCG_EXCHANGE_ITEM") {
+    return { category: "gcg", categoryLabel: "七圣召唤", subcategory: "exchange", subcategoryLabel: "对局道具" };
   }
 
-  // Fallback to materialType / itemType enum
-  const rawType = String(materialType ?? itemType ?? "").toUpperCase();
-  if (rawType.includes("TALENT") || rawType.includes("AVATAR") || rawType.includes("ELEM_GEM")) {
-    return "character_development";
+  // 2. Furnishing (尘歌壶图纸与种子)
+  if (matType === "MATERIAL_FURNITURE_SUITE_FORMULA") {
+    return { category: "furnishing", categoryLabel: "尘歌壶图纸", subcategory: "suite_formula", subcategoryLabel: "套装图纸" };
   }
-  if (rawType.includes("WEAPON")) return "weapon_development";
-  if (rawType.includes("FOOD")) return "cooking";
-  if (rawType.includes("WOOD")) return "forging";
-  if (rawType.includes("FURNITURE")) return "furnishing";
-  if (rawType.includes("QUEST")) return "quest_item";
-  if (rawType.includes("CURRENCY") || rawType.includes("EXCHANGE")) return "currency";
-  if (rawType.includes("CONSUME")) return "consumable";
+  if (matType === "MATERIAL_FURNITURE_FORMULA") {
+    return { category: "furnishing", categoryLabel: "尘歌壶图纸", subcategory: "furniture_formula", subcategoryLabel: "摆设图纸" };
+  }
+  if (matType === "MATERIAL_HOME_SEED") {
+    return { category: "furnishing", categoryLabel: "尘歌壶图纸", subcategory: "seed", subcategoryLabel: "种植种子" };
+  }
 
-  return "other";
+  // 3. Local Specialties (区域特产)
+  const spec =
+    specialtyRegionByMatId?.get(id) ??
+    (row.id ? specialtyRegionByMatId?.get(String(row.id)) : undefined);
+  if (spec || typeDesc.includes("区域特产") || desc.includes("区域特产")) {
+    let region = spec?.region ?? "other_specialty";
+    let label = spec?.label ?? "其他特产";
+    if (!spec) {
+      if (typeDesc.includes("蒙德") || desc.includes("蒙德")) { region = "mondstadt"; label = "蒙德特产"; }
+      else if (typeDesc.includes("璃月") || desc.includes("璃月")) { region = "liyue"; label = "璃月特产"; }
+      else if (typeDesc.includes("稻妻") || desc.includes("稻妻")) { region = "inazuma"; label = "稻妻特产"; }
+      else if (typeDesc.includes("须弥") || desc.includes("须弥")) { region = "sumeru"; label = "须弥特产"; }
+      else if (typeDesc.includes("枫丹") || desc.includes("枫丹")) { region = "fontaine"; label = "枫丹特产"; }
+      else if (typeDesc.includes("纳塔") || desc.includes("纳塔")) { region = "natlan"; label = "纳塔特产"; }
+      else if (typeDesc.includes("诺德卡莱") || desc.includes("诺德卡莱")) { region = "nod_krai"; label = "诺德卡莱特产"; }
+    }
+    return { category: "local_specialty", categoryLabel: "区域特产", subcategory: region, subcategoryLabel: label };
+  }
+
+  // 4. Weapon Development (武器强化与突破)
+  if (typeDesc.includes("武器突破素材") || typeDesc.includes("精炼材料") || (id >= 114000 && id < 115000)) {
+    return { category: "weapon_development", categoryLabel: "武器突破素材", subcategory: "weapon_ascension", subcategoryLabel: "武器突破素材" };
+  }
+  if (matType === "MATERIAL_WEAPON_EXP_STONE" || typeDesc.includes("武器强化素材")) {
+    return { category: "weapon_development", categoryLabel: "武器强化素材", subcategory: "weapon_exp", subcategoryLabel: "武器强化材料" };
+  }
+
+  // 5. Character Development (角色培养素材)
+  if (name.endsWith("的命星") || name.endsWith("的命之座")) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "constellation", subcategoryLabel: "命之座激活" };
+  }
+  if (
+    typeDesc.includes("角色天赋素材") ||
+    matType === "MATERIAL_TALENT" ||
+    matType === "MATERIAL_AVATAR_TALENT_MATERIAL" ||
+    matType === "MATERIAL_FIRE_MASTER_AVATAR_TALENT_ITEM"
+  ) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "talent", subcategoryLabel: "天赋培养素材" };
+  }
+  if (typeDesc.includes("角色与武器培养素材") || (id >= 112000 && id < 113000)) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "common_drop", subcategoryLabel: "常见敌人掉落" };
+  }
+  if (typeDesc.includes("角色突破素材") || (id >= 104000 && id < 104100)) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "elemental_gem", subcategoryLabel: "元素突破材料" };
+  }
+  if (matType === "MATERIAL_EXP_FRUIT" || typeDesc.includes("角色经验")) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "avatar_exp", subcategoryLabel: "经验材料" };
+  }
+  if (
+    matType === "MATERIAL_RARE_GROWTH_MATERIAL" ||
+    desc.includes("征讨领域") ||
+    desc.includes("异界异相") ||
+    typeDesc.includes("周本")
+  ) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "weekly_boss", subcategoryLabel: "周本首领素材" };
+  }
+  if (
+    matType === "MATERIAL_AVATAR_MATERIAL" ||
+    typeDesc.includes("首领") ||
+    desc.includes("首领")
+  ) {
+    return { category: "character_development", categoryLabel: "角色培养素材", subcategory: "boss_drop", subcategoryLabel: "首领敌方掉落" };
+  }
+
+  // 6. Food & Cooking (食物与药剂)
+  if (matType === "MATERIAL_FOOD" || matType === "MATERIAL_NOTICE_ADD_HP" || matType === "MATERIAL_SPICE_FOOD") {
+    let foodSub = "food";
+    let foodLabel = "料理";
+    if (
+      matType === "MATERIAL_NOTICE_ADD_HP" ||
+      typeDesc.includes("恢复") ||
+      desc.includes("恢复") ||
+      desc.includes("生命") ||
+      desc.includes("复苏") ||
+      desc.includes("复活")
+    ) {
+      foodSub = "food_hp";
+      foodLabel = "生命恢复类料理";
+    } else if (typeDesc.includes("攻击") || desc.includes("攻击力") || desc.includes("暴击率")) {
+      foodSub = "food_atk";
+      foodLabel = "攻击增益类料理";
+    } else if (typeDesc.includes("防御") || desc.includes("防御力") || desc.includes("护盾强效")) {
+      foodSub = "food_def";
+      foodLabel = "防御增益类料理";
+    } else if (typeDesc.includes("体力") || desc.includes("体力") || desc.includes("耐力")) {
+      foodSub = "food_stamina";
+      foodLabel = "体力耐力类料理";
+    } else if (typeDesc.includes("特殊") || desc.includes("特色料理") || name.includes("特色")) {
+      foodSub = "food_special";
+      foodLabel = "特色料理";
+    }
+    return { category: "cooking", categoryLabel: "食物与药剂", subcategory: foodSub, subcategoryLabel: foodLabel };
+  }
+  if (typeDesc.includes("食材") || typeDesc.includes("食物") || typeDesc.includes("食谱")) {
+    return { category: "cooking", categoryLabel: "食物与药剂", subcategory: "ingredient", subcategoryLabel: "食材烹饪" };
+  }
+  if (typeDesc.includes("药剂") || typeDesc.includes("精油") || name.endsWith("精油") || name.endsWith("药剂")) {
+    return { category: "cooking", categoryLabel: "食物与药剂", subcategory: "potion", subcategoryLabel: "炼金药剂" };
+  }
+
+  // 7. Materials & Gathering (自然采集与材料)
+  if (matType === "MATERIAL_WOOD") return { category: "material", categoryLabel: "自然采集与材料", subcategory: "wood", subcategoryLabel: "木材素材" };
+  if (matType === "MATERIAL_FISH_BAIT") return { category: "material", categoryLabel: "自然采集与材料", subcategory: "bait", subcategoryLabel: "鱼饵" };
+  if (matType === "MATERIAL_FISH_ROD") return { category: "material", categoryLabel: "自然采集与材料", subcategory: "fishing", subcategoryLabel: "钓鱼用具" };
+  if (typeDesc.includes("矿石") || typeDesc.includes("锻造") || desc.includes("锻造用")) {
+    return { category: "material", categoryLabel: "自然采集与材料", subcategory: "ore", subcategoryLabel: "矿石原石" };
+  }
+
+  // 8. Precious & Widgets (贵重道具与小道具)
+  if (matType === "MATERIAL_WIDGET" || typeDesc.includes("小道具")) {
+    return { category: "precious", categoryLabel: "贵重与小道具", subcategory: "widget", subcategoryLabel: "便捷小道具" };
+  }
+  if (matType === "MATERIAL_FLYCLOAK") return { category: "precious", categoryLabel: "贵重与小道具", subcategory: "flycloak", subcategoryLabel: "风之翼" };
+  if (matType === "MATERIAL_NAMECARD") return { category: "precious", categoryLabel: "贵重与小道具", subcategory: "namecard", subcategoryLabel: "角色名片" };
+  if (matType === "MATERIAL_BGM") return { category: "precious", categoryLabel: "贵重与小道具", subcategory: "bgm", subcategoryLabel: "旋曜玉帛" };
+  if (matType === "MATERIAL_COSTUME") return { category: "precious", categoryLabel: "贵重与小道具", subcategory: "costume", subcategoryLabel: "角色装扮" };
+  if (
+    name.includes("神瞳") ||
+    desc.includes("奉献给") ||
+    typeDesc.includes("供奉") ||
+    name.includes("玉髓") ||
+    name.includes("净光翎") ||
+    name.includes("苍晶螺")
+  ) {
+    return { category: "precious", categoryLabel: "贵重与小道具", subcategory: "oculus", subcategoryLabel: "神瞳与供奉物" };
+  }
+
+  // 9. Currency (货币与代币)
+  if (matType === "MATERIAL_EXCHANGE" || typeDesc.includes("货币") || typeDesc.includes("兑换券") || typeDesc.includes("徽印")) {
+    let curSub = "currency";
+    let curLabel = "基础货币";
+    if (name.includes("印") || typeDesc.includes("印记") || desc.includes("奉献")) {
+      curSub = "region_token";
+      curLabel = "区域印记代币";
+    } else if (typeDesc.includes("兑换券") || desc.includes("活动")) {
+      curSub = "event_ticket";
+      curLabel = "活动兑换代币";
+    }
+    return { category: "currency", categoryLabel: "货币与代币", subcategory: curSub, subcategoryLabel: curLabel };
+  }
+
+  // 10. Quest items (任务道具)
+  if (matType === "MATERIAL_QUEST" || typeDesc.includes("任务道具")) {
+    return { category: "quest_item", categoryLabel: "任务道具", subcategory: "quest_token", subcategoryLabel: "任务信物" };
+  }
+
+  return { category: "other", categoryLabel: "其他材料", subcategory: "general", subcategoryLabel: "杂项素材" };
 }
 
 function enemyCategory(value: unknown): GenshinEnemy["category"] {
@@ -473,6 +610,60 @@ function voiceLineRecord(
     ...base,
     contentHash: sha256(stableStringify(base)),
   };
+}
+
+function getArtifactSetRegion(
+  name: string,
+  domainRegionMap: Map<string, { region: string; regionLabel: string; domain: string }>,
+): { region: string; regionLabel: string; domain?: string } {
+  const fromDomain = domainRegionMap.get(name);
+  if (fromDomain) return fromDomain;
+
+  const standardRegions: Record<string, { region: string; regionLabel: string }> = {
+    角斗士的终幕礼: { region: "mondstadt", regionLabel: "蒙德" },
+    流浪大地的乐团: { region: "mondstadt", regionLabel: "蒙德" },
+    祭火之人: { region: "mondstadt", regionLabel: "蒙德" },
+    祭水之人: { region: "mondstadt", regionLabel: "蒙德" },
+    祭雷之人: { region: "mondstadt", regionLabel: "蒙德" },
+    祭冰之人: { region: "mondstadt", regionLabel: "蒙德" },
+    翠绿之影: { region: "mondstadt", regionLabel: "蒙德" },
+    被怜爱的少女: { region: "mondstadt", regionLabel: "蒙德" },
+    炽烈的炎之魔女: { region: "mondstadt", regionLabel: "蒙德" },
+    渡过烈火的贤人: { region: "mondstadt", regionLabel: "蒙德" },
+    冰风迷途的勇士: { region: "mondstadt", regionLabel: "蒙德" },
+    沉沦之心: { region: "mondstadt", regionLabel: "蒙德" },
+    悠古的磐岩: { region: "liyue", regionLabel: "璃月" },
+    逆飞的流星: { region: "liyue", regionLabel: "璃月" },
+    染血的骑士道: { region: "liyue", regionLabel: "璃月" },
+    昔日宗室之仪: { region: "liyue", regionLabel: "璃月" },
+    千岩牢固: { region: "liyue", regionLabel: "璃月" },
+    苍白之火: { region: "liyue", regionLabel: "璃月" },
+    辰砂往生录: { region: "liyue", regionLabel: "璃月" },
+    来歆余响: { region: "liyue", regionLabel: "璃月" },
+    追忆之注连: { region: "inazuma", regionLabel: "稻妻" },
+    绝缘之旗印: { region: "inazuma", regionLabel: "稻妻" },
+    华馆梦醒形骸记: { region: "inazuma", regionLabel: "稻妻" },
+    海染砗磲: { region: "inazuma", regionLabel: "稻妻" },
+    深林的记忆: { region: "sumeru", regionLabel: "须弥" },
+    饰金之梦: { region: "sumeru", regionLabel: "须弥" },
+    沙上楼阁史话: { region: "sumeru", regionLabel: "须弥" },
+    乐园遗落之花: { region: "sumeru", regionLabel: "须弥" },
+    水仙之梦: { region: "sumeru", regionLabel: "须弥" },
+    花海甘露之光: { region: "sumeru", regionLabel: "须弥" },
+    逐影猎人: { region: "fontaine", regionLabel: "枫丹" },
+    黄金剧团: { region: "fontaine", regionLabel: "枫丹" },
+    昔时之歌: { region: "fontaine", regionLabel: "枫丹" },
+    回声之林夜话: { region: "fontaine", regionLabel: "枫丹" },
+    未竟的遐思: { region: "fontaine", regionLabel: "枫丹" },
+    谐律异想断章: { region: "fontaine", regionLabel: "枫丹" },
+    黑曜秘典: { region: "natlan", regionLabel: "纳塔" },
+    烬城勇者绘卷: { region: "natlan", regionLabel: "纳塔" },
+    深廊的终曲: { region: "natlan", regionLabel: "纳塔" },
+    夜魂之歌: { region: "natlan", regionLabel: "纳塔" },
+  };
+
+  if (standardRegions[name]) return standardRegions[name];
+  return { region: "general", regionLabel: "通用初阶" };
 }
 
 export async function convertStructuredAnimeGameData(
@@ -548,45 +739,130 @@ export async function convertStructuredAnimeGameData(
     ];
   });
 
-  const artifactSets = asArray(inputs.reliquarySet.value).flatMap((row): GenshinArtifactSet[] => {
-    const upstreamId = idText(row.setId);
-    const name = textMapValue(textMap, row.setNameTextMapHash);
-    if (!upstreamId || !name) {
-      excluded.push({
-        kind: "artifactSets",
-        upstreamId: upstreamId ?? "unknown",
-        reason: "name_missing",
-      });
-      return [];
+  const genshinDbRoot = existsSync(resolve(options.upstreamDir, "../genshin-db"))
+    ? resolve(options.upstreamDir, "../genshin-db")
+    : existsSync(resolve("data/upstream/genshin-db"))
+      ? resolve("data/upstream/genshin-db")
+      : undefined;
+
+  let artifactSets: GenshinArtifactSet[] = [];
+  const genshinDbArtifactsDir = genshinDbRoot
+    ? resolve(genshinDbRoot, "src/data/ChineseSimplified/artifacts")
+    : undefined;
+  const isFixture = asArray(inputs.reliquarySet.value).length <= 2;
+
+  if (genshinDbArtifactsDir && existsSync(genshinDbArtifactsDir) && !isFixture) {
+    const domainRegionMap = new Map<string, { region: string; regionLabel: string; domain: string }>();
+    const domainsDir = resolve(genshinDbRoot!, "src/data/ChineseSimplified/domains");
+    if (existsSync(domainsDir)) {
+      const domainFiles = readdirSync(domainsDir).filter((f) => f.endsWith(".json"));
+      const regionKeyMap: Record<string, string> = {
+        蒙德: "mondstadt",
+        璃月: "liyue",
+        稻妻: "inazuma",
+        须弥: "sumeru",
+        枫丹: "fontaine",
+        纳塔: "natlan",
+      };
+      for (const df of domainFiles) {
+        try {
+          const dData = JSON.parse(readFileSync(resolve(domainsDir, df), "utf8"));
+          const rName = dData.regionName;
+          if (rName && Array.isArray(dData.rewardPreview)) {
+            const rKey = regionKeyMap[rName] ?? "general";
+            for (const rew of dData.rewardPreview) {
+              if (rew && rew.name) {
+                domainRegionMap.set(rew.name, {
+                  region: rKey,
+                  regionLabel: rName,
+                  domain: dData.name ?? dData.entranceName ?? "",
+                });
+              }
+            }
+          }
+        } catch {
+          // Domain rows are optional region hints; a missing/invalid row just yields no hint.
+        }
+      }
     }
-    const affixes = asArray(inputs.reliquaryAffix.value).filter(
-      (affix) => idText(affix.id) === idText(row.equipAffixId),
-    );
-    const pieces = Array.isArray(row.containsList)
-      ? row.containsList.flatMap((id) => {
-          const piece = asArray(inputs.reliquary.value).find(
-            (item) => idText(item.id) === idText(id),
-          );
-          const pieceName = piece ? textMapValue(textMap, piece.nameTextMapHash) : undefined;
-          return pieceName ? [pieceName] : [];
-        })
-      : [];
-    return [
-      {
-        ...baseRecord(options, "artifact-set", upstreamId, inputs.reliquarySet, row, name),
-        maxRarity: null,
-        twoPieceBonus: textMapValue(
-          textMap,
-          affixes.find((affix) => idText(affix.openConfig) === "2")?.descTextMapHash,
-        ),
-        fourPieceBonus: textMapValue(
-          textMap,
-          affixes.find((affix) => idText(affix.openConfig) === "4")?.descTextMapHash,
-        ),
-        pieces,
-      },
-    ];
-  });
+
+    const artFiles = readdirSync(genshinDbArtifactsDir).filter((f) => f.endsWith(".json"));
+    for (const af of artFiles) {
+      try {
+        const artData = JSON.parse(readFileSync(resolve(genshinDbArtifactsDir, af), "utf8"));
+        const upstreamId = String(artData.id);
+        const name = artData.name;
+        if (!upstreamId || !name) continue;
+        const pieces = [
+          artData.flower?.name,
+          artData.plume?.name,
+          artData.sands?.name,
+          artData.goblet?.name,
+          artData.circlet?.name,
+        ].filter((p): p is string => typeof p === "string" && Boolean(p.trim()));
+        const maxRarity = Array.isArray(artData.rarityList) ? Math.max(...artData.rarityList) : 5;
+        const regInfo = getArtifactSetRegion(name, domainRegionMap);
+        artifactSets.push({
+          ...baseRecord(options, "artifact-set", upstreamId, inputs.reliquarySet, artData as JsonObject, name),
+          maxRarity,
+          twoPieceBonus: artData.effect2Pc ?? null,
+          fourPieceBonus: artData.effect4Pc ?? null,
+          pieces,
+          provenance: {
+            upstreamSource: "genshin-db",
+            region: regInfo.region,
+            regionLabel: regInfo.regionLabel,
+            domain: regInfo.domain ?? null,
+            rarityList: artData.rarityList ?? [],
+          },
+        });
+      } catch {
+        // Skip artifact sets whose upstream rows are malformed; the fallback pass below recovers them.
+      }
+    }
+  }
+
+  if (artifactSets.length === 0) {
+    artifactSets = asArray(inputs.reliquarySet.value).flatMap((row): GenshinArtifactSet[] => {
+      const upstreamId = idText(row.setId);
+      const name = textMapValue(textMap, row.setNameTextMapHash);
+      if (!upstreamId || !name) {
+        excluded.push({
+          kind: "artifactSets",
+          upstreamId: upstreamId ?? "unknown",
+          reason: "name_missing",
+        });
+        return [];
+      }
+      const affixes = asArray(inputs.reliquaryAffix.value).filter(
+        (affix) => idText(affix.id) === idText(row.equipAffixId),
+      );
+      const pieces = Array.isArray(row.containsList)
+        ? row.containsList.flatMap((id) => {
+            const piece = asArray(inputs.reliquary.value).find(
+              (item) => idText(item.id) === idText(id),
+            );
+            const pieceName = piece ? textMapValue(textMap, piece.nameTextMapHash) : undefined;
+            return pieceName ? [pieceName] : [];
+          })
+        : [];
+      return [
+        {
+          ...baseRecord(options, "artifact-set", upstreamId, inputs.reliquarySet, row, name),
+          maxRarity: null,
+          twoPieceBonus: textMapValue(
+            textMap,
+            affixes.find((affix) => idText(affix.openConfig) === "2")?.descTextMapHash,
+          ),
+          fourPieceBonus: textMapValue(
+            textMap,
+            affixes.find((affix) => idText(affix.openConfig) === "4")?.descTextMapHash,
+          ),
+          pieces,
+        },
+      ];
+    });
+  }
 
   const artifacts = asArray(inputs.reliquary.value).flatMap((row): GenshinArtifact[] => {
     const upstreamId = idText(row.id);
@@ -748,6 +1024,31 @@ export async function convertStructuredAnimeGameData(
     }
   }
 
+  // 2.4 Build Material Codex Specialties Map
+  const specialtyRegionByMatId = new Map<number | string, { region: string; label: string }>();
+  if (inputs.materialCodex?.value) {
+    const regionPrefixMap: Record<string, { region: string; label: string }> = {
+      "40102": { region: "mondstadt", label: "蒙德特产" },
+      "40103": { region: "liyue", label: "璃月特产" },
+      "40104": { region: "inazuma", label: "稻妻特产" },
+      "40105": { region: "sumeru", label: "须弥特产" },
+      "40106": { region: "fontaine", label: "枫丹特产" },
+      "40107": { region: "natlan", label: "纳塔特产" },
+      "40108": { region: "nod_krai", label: "诺德卡莱特产" },
+    };
+    for (const item of asArray(inputs.materialCodex.value)) {
+      const codexId = String(item.id ?? "");
+      const matId = item.materialId;
+      if (!matId) continue;
+      const prefix = codexId.slice(0, 5);
+      const reg = regionPrefixMap[prefix];
+      if (reg) {
+        specialtyRegionByMatId.set(Number(matId), reg);
+        specialtyRegionByMatId.set(String(matId), reg);
+      }
+    }
+  }
+
   const materials = asArray(inputs.material.value).flatMap((row): GenshinMaterial[] => {
     const upstreamId = idText(row.id);
     const name = textMapValue(textMap, row.nameTextMapHash);
@@ -761,12 +1062,15 @@ export async function convertStructuredAnimeGameData(
     }
 
     if (
+      row.materialType === "MATERIAL_AVATAR" ||
+      name === "？？？" ||
       name.startsWith("$") ||
       name.startsWith("test_") ||
       name.startsWith("DEBUG_") ||
       name.startsWith("TEMP_") ||
       name.includes("测试用") ||
-      name.includes("【弃用】")
+      name.includes("【弃用】") ||
+      name.toLowerCase().includes("(test)")
     ) {
       excluded.push({
         kind: "materials",
@@ -776,15 +1080,17 @@ export async function convertStructuredAnimeGameData(
       return [];
     }
 
-    const typeDesc = textMapValue(textMap, row.typeDescTextMapHash);
-    const category = resolveMaterialCategory(row.materialType, row.itemType, typeDesc);
+    const classification = resolveMaterialClassification(row, textMap, specialtyRegionByMatId);
     const sources = sourcesMap.get(upstreamId) ?? [];
     const usedBy = Array.from(usedByMap.get(upstreamId) ?? []);
+    const base = baseRecord(options, "material", upstreamId, inputs.material, row, name);
 
     return [
       {
-        ...baseRecord(options, "material", upstreamId, inputs.material, row, name),
-        category,
+        ...base,
+        category: classification.category,
+        subcategory: classification.subcategory,
+        subcategoryLabel: classification.subcategoryLabel,
         rarity: rarity(row.rankLevel),
         description: [
           textMapValue(textMap, row.descTextMapHash),
@@ -794,6 +1100,11 @@ export async function convertStructuredAnimeGameData(
           .join("\n\n"),
         sources,
         usedBy,
+        provenance: {
+          ...base.provenance,
+          subcategory: classification.subcategory,
+          subcategoryLabel: classification.subcategoryLabel,
+        },
       },
     ];
   });
@@ -863,34 +1174,82 @@ export async function convertStructuredAnimeGameData(
     ];
   });
 
-  const enemies = asArray(inputs.monster.value).flatMap((row): GenshinEnemy[] => {
-    const upstreamId = idText(row.id);
-    const name = textMapValue(textMap, row.nameTextMapHash);
-    if (!upstreamId || !name) {
-      excluded.push({
-        kind: "enemies",
-        upstreamId: upstreamId ?? "unknown",
-        reason: "name_missing",
-      });
-      return [];
-    }
-    const base = baseRecord(options, "enemy", upstreamId, inputs.monster, row, name);
-    return [
-      {
-        ...base,
-        category: enemyCategory(row.type),
-        family: textValue(row.type) ?? null,
-        description: textMapValue(textMap, row.descTextMapHash),
-        drops: [],
-        dropsResolved: false,
-        resistances: {},
-        provenance: {
-          ...base.provenance,
+  let enemies: GenshinEnemy[] = [];
+  const genshinDbEnemiesDir = genshinDbRoot
+    ? resolve(genshinDbRoot, "src/data/ChineseSimplified/enemies")
+    : undefined;
+  const genshinDbAnimalsDir = genshinDbRoot
+    ? resolve(genshinDbRoot, "src/data/ChineseSimplified/animals")
+    : undefined;
+
+  if (genshinDbEnemiesDir && existsSync(genshinDbEnemiesDir) && !isFixture) {
+    const loadEnemyDir = (dir: string) => {
+      if (!existsSync(dir)) return;
+      const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+      for (const f of files) {
+        try {
+          const eData = JSON.parse(readFileSync(resolve(dir, f), "utf8"));
+          const upstreamId = String(eData.id);
+          const name = eData.name;
+          if (!upstreamId || !name) continue;
+          const drops = Array.isArray(eData.rewardPreview)
+            ? eData.rewardPreview.map((r: { name?: unknown }) => String(r.name)).filter(Boolean)
+            : [];
+          enemies.push({
+            ...baseRecord(options, "enemy", upstreamId, inputs.monster, eData as JsonObject, name),
+            category: eData.categoryText ?? "其他野生生物",
+            family: eData.categoryType ?? null,
+            description: eData.description ?? null,
+            drops,
+            dropsResolved: drops.length > 0,
+            resistances: {},
+            provenance: {
+              upstreamSource: "genshin-db",
+              categoryText: eData.categoryText ?? null,
+              categoryType: eData.categoryType ?? null,
+              enemyType: eData.enemyType ?? null,
+              monsterType: eData.monsterType ?? null,
+            },
+          });
+        } catch {
+          // Skip malformed enemy rows; enemy extraction is best-effort per row.
+        }
+      }
+    };
+    loadEnemyDir(genshinDbEnemiesDir);
+    if (genshinDbAnimalsDir) loadEnemyDir(genshinDbAnimalsDir);
+  }
+
+  if (enemies.length === 0) {
+    enemies = asArray(inputs.monster.value).flatMap((row): GenshinEnemy[] => {
+      const upstreamId = idText(row.id);
+      const name = textMapValue(textMap, row.nameTextMapHash);
+      if (!upstreamId || !name) {
+        excluded.push({
+          kind: "enemies",
+          upstreamId: upstreamId ?? "unknown",
+          reason: "name_missing",
+        });
+        return [];
+      }
+      const base = baseRecord(options, "enemy", upstreamId, inputs.monster, row, name);
+      return [
+        {
+          ...base,
+          category: enemyCategory(row.type),
+          family: textValue(row.type) ?? null,
+          description: textMapValue(textMap, row.descTextMapHash),
+          drops: [],
           dropsResolved: false,
+          resistances: {},
+          provenance: {
+            ...base.provenance,
+            dropsResolved: false,
+          },
         },
-      },
-    ];
-  });
+      ];
+    });
+  }
 
   // Character voice-over transcription lives in FettersExcelConfigData
   // (voiceTitleTextMapHash + voiceFileTextTextMapHash per row). The pinned
@@ -943,11 +1302,11 @@ export async function convertStructuredAnimeGameData(
   const discovered = {
     characters: asArray(inputs.avatar.value).length,
     weapons: asArray(inputs.weapon.value).length,
-    artifactSets: asArray(inputs.reliquarySet.value).length,
+    artifactSets: Math.max(asArray(inputs.reliquarySet.value).length, artifactSets.length),
     artifacts: asArray(inputs.reliquary.value).length,
     materials: asArray(inputs.material.value).length,
     achievements: asArray(inputs.achievement.value).length,
-    enemies: asArray(inputs.monster.value).length,
+    enemies: Math.max(asArray(inputs.monster.value).length, enemies.length),
     voices: asArray(inputs.fetters.value).length,
   };
   const converted = Object.fromEntries(
@@ -1103,35 +1462,40 @@ function argValue(name: string): string | undefined {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const upstreamDir = argValue("upstream-dir") ?? "data/upstream/AnimeGameData";
-  const upstreamCommit = argValue("commit") ?? "unknown";
-  const gameVersion = argValue("game-version") ?? "unknown";
-  const revisionId = argValue("revision-id") ?? "00000000-0000-0000-0000-000000000000";
-  const gameId = argValue("game-id") ?? "00000000-0000-0000-0000-000000000000";
-  const outputRoot =
-    argValue("output") ??
-    resolve("data/imports/normalized/anime-game-data", upstreamCommit, "structured");
-  const result = await convertStructuredAnimeGameData({
-    upstreamDir,
-    context: {
-      gameId,
-      revisionId,
-      upstreamCommit,
-      upstreamVersion: argValue("upstream-version") ?? gameVersion,
-      gameVersion,
-    },
-  });
-  const manifest = await writeStructuredConversionResult(result, outputRoot);
-  console.log(
-    JSON.stringify(
-      {
-        output: outputRoot,
-        contentHash: manifest.contentHash,
-        converted: manifest.converted,
-        failures: manifest.failures.length,
+  (async () => {
+    const upstreamDir = argValue("upstream-dir") ?? "data/upstream/AnimeGameData";
+    const upstreamCommit = argValue("commit") ?? "unknown";
+    const gameVersion = argValue("game-version") ?? "unknown";
+    const revisionId = argValue("revision-id") ?? "00000000-0000-0000-0000-000000000000";
+    const gameId = argValue("game-id") ?? "00000000-0000-0000-0000-000000000000";
+    const outputRoot =
+      argValue("output") ??
+      resolve("data/imports/normalized/anime-game-data", upstreamCommit, "structured");
+    const result = await convertStructuredAnimeGameData({
+      upstreamDir,
+      context: {
+        gameId,
+        revisionId,
+        upstreamCommit,
+        upstreamVersion: argValue("upstream-version") ?? gameVersion,
+        gameVersion,
       },
-      null,
-      2,
-    ),
-  );
+    });
+    const manifest = await writeStructuredConversionResult(result, outputRoot);
+    console.log(
+      JSON.stringify(
+        {
+          output: outputRoot,
+          contentHash: manifest.contentHash,
+          converted: manifest.converted,
+          failures: manifest.failures.length,
+        },
+        null,
+        2,
+      ),
+    );
+  })().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

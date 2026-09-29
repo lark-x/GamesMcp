@@ -4,13 +4,11 @@ import { api, apiFetch } from "../../api.js";
 import { mapQuestDetail, mergeQuestPages } from "../../codex/mappers.js";
 import {
   completenessLabel,
-  getQuestTypeOptions,
   isStarRailGame,
   questTypeLabel,
 } from "../../shared.js";
 import { ArchiveEmpty, ArchiveError } from "../ArchiveStates.js";
 import { ArchiveLayout } from "../ArchiveLayout.js";
-import { ArchiveGlobalNav, type GlobalNavSection } from "../ArchiveGlobalNav.js";
 import { StoryCatalog, buildStoryTree, flattenStoryTreeQuests } from "./StoryCatalog.js";
 import { StoryInspector } from "./StoryInspector.js";
 import { StoryTextBlock } from "./StoryTextBlock.js";
@@ -39,7 +37,6 @@ export function StoryBrowser({
   gameId,
   gameSlug,
   gameName,
-  revisionLabel,
   selectedRevision,
   initialQuestKey,
   onQuestKeyChange,
@@ -58,8 +55,9 @@ export function StoryBrowser({
   const isStarRail = isStarRailGame(gameSlug || gameId, gameName);
   const [filters, setFilters] = useState<StoryCatalogFilters>({
     query: "",
-    type: "",
+    type: isStarRail ? "trailblaze_mission" : "archon_quest",
     locale: "zh-CN",
+    region: "",
   });
   const [entries, setEntries] = useState<StoryEntry[]>([]);
   const [catalog, setCatalog] = useState<ApiStoryCatalog | null>(null);
@@ -82,14 +80,13 @@ export function StoryBrowser({
     setTravelerPrefs(loadProtagonistPreferences(isStarRail));
   }, [isStarRail, gameId]);
 
-  // A type value from the other game's vocabulary must not survive a game
-  // switch.  Otherwise the API receives a legacy/foreign type and the reader
-  // can show a stale tree or an unrelated compatibility result.
+  // When switching game, default to the main quest type for that game
   useEffect(() => {
-    const supportedTypes = new Set(getQuestTypeOptions(isStarRail).map(([value]) => value));
-    setFilters((current) =>
-      supportedTypes.has(current.type) ? current : { ...current, type: "" },
-    );
+    setFilters((current) => ({
+      ...current,
+      type: isStarRail ? "trailblaze_mission" : "archon_quest",
+      region: "",
+    }));
   }, [isStarRail, gameId]);
 
   // A quest key is scoped to a game. Clear the old detail when the selector
@@ -116,10 +113,6 @@ export function StoryBrowser({
       return next;
     });
   }
-
-  const handleFiltersChange = useCallback((next: Partial<StoryCatalogFilters>) => {
-    setFilters((current) => ({ ...current, ...next }));
-  }, []);
 
   const loadCatalog = useCallback(
     async (nextFilters: StoryCatalogFilters) => {
@@ -234,9 +227,16 @@ export function StoryBrowser({
 
   // Derive flat quest order from story tree for Previous / Next navigation
   const flattenedQuests = useMemo(() => {
-    const tree = buildStoryTree(entries, catalog, filters.query, isStarRail);
+    const tree = buildStoryTree(
+      entries,
+      catalog,
+      filters.query,
+      isStarRail,
+      filters.type,
+      filters.region,
+    );
     return flattenStoryTreeQuests(tree);
-  }, [entries, catalog, filters.query, isStarRail]);
+  }, [entries, catalog, filters.query, isStarRail, filters.type, filters.region]);
 
   const currentQuestIndex = flattenedQuests.findIndex((q) => q.questKey === quest?.questKey);
   const prevQuest = currentQuestIndex > 0 ? flattenedQuests[currentQuestIndex - 1] : undefined;
@@ -244,100 +244,6 @@ export function StoryBrowser({
     currentQuestIndex >= 0 && currentQuestIndex < flattenedQuests.length - 1
       ? flattenedQuests[currentQuestIndex + 1]
       : undefined;
-
-  const sections: GlobalNavSection[] = useMemo(
-    () => [
-      {
-        label: "剧情档案",
-        items: [
-          {
-            key: "all",
-            label: "全部剧情",
-            active: !filters.type,
-            onSelect: () => handleFiltersChange({ type: "" }),
-          },
-          ...(isStarRail
-            ? [
-                {
-                  key: "main",
-                  label: "开拓任务",
-                  active: filters.type === "trailblaze_mission",
-                  onSelect: () => handleFiltersChange({ type: "trailblaze_mission" }),
-                },
-                {
-                  key: "companion",
-                  label: "同行任务",
-                  active: filters.type === "companion_mission",
-                  onSelect: () => handleFiltersChange({ type: "companion_mission" }),
-                },
-                {
-                  key: "continuation",
-                  label: "开拓续闻",
-                  active: filters.type === "trailblaze_continuation",
-                  onSelect: () => handleFiltersChange({ type: "trailblaze_continuation" }),
-                },
-                {
-                  key: "world",
-                  label: "冒险任务",
-                  active: filters.type === "adventure_quest",
-                  onSelect: () => handleFiltersChange({ type: "adventure_quest" }),
-                },
-                {
-                  key: "daily",
-                  label: "日常任务",
-                  active: filters.type === "daily_mission",
-                  onSelect: () => handleFiltersChange({ type: "daily_mission" }),
-                },
-                {
-                  key: "event",
-                  label: "活动任务",
-                  active: filters.type === "event_quest",
-                  onSelect: () => handleFiltersChange({ type: "event_quest" }),
-                },
-              ]
-            : [
-                {
-                  key: "archon",
-                  label: "魔神任务",
-                  active: filters.type === "archon_quest" || filters.type === "archon",
-                  onSelect: () => handleFiltersChange({ type: "archon_quest" }),
-                },
-                {
-                  key: "story",
-                  label: "传说任务",
-                  active: filters.type === "story_quest" || filters.type === "story",
-                  onSelect: () => handleFiltersChange({ type: "story_quest" }),
-                },
-                {
-                  key: "world",
-                  label: "世界任务",
-                  active: filters.type === "world_quest" || filters.type === "world",
-                  onSelect: () => handleFiltersChange({ type: "world_quest" }),
-                },
-                {
-                  key: "event",
-                  label: "活动任务",
-                  active: filters.type === "event_quest" || filters.type === "event",
-                  onSelect: () => handleFiltersChange({ type: "event_quest" }),
-                },
-                {
-                  key: "commission",
-                  label: "委托",
-                  active: filters.type === "commission",
-                  onSelect: () => handleFiltersChange({ type: "commission" }),
-                },
-                {
-                  key: "hangout",
-                  label: "邀约事件",
-                  active: filters.type === "hangout",
-                  onSelect: () => handleFiltersChange({ type: "hangout" }),
-                },
-              ]),
-        ],
-      },
-    ],
-    [isStarRail, filters.type, handleFiltersChange],
-  );
 
   function selectEntry(entry: { questKey: string; title: string }) {
     setCursor(undefined);
@@ -365,9 +271,6 @@ export function StoryBrowser({
 
   return (
     <ArchiveLayout
-      globalNav={
-        <ArchiveGlobalNav gameLabel={gameName} revisionLabel={revisionLabel} sections={sections} />
-      }
       catalog={
         <StoryCatalog
           filters={filters}
@@ -533,11 +436,23 @@ export function StoryBrowser({
           {quest ? (
             <>
               <header className="story-reader-header">
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "6px" }}>
-                  {quest.region ? <span className="story-type-pill">{quest.region}</span> : null}
-                  {quest.chapter ? <span className="story-type-pill">{quest.chapter}</span> : null}
-                  <span className="story-type-pill">{questTypeLabel(quest.type, isStarRail)}</span>
-                </div>
+                <nav className="story-breadcrumb" aria-label="剧情路径">
+                  <span className="story-breadcrumb-item">
+                    {quest.region || (isStarRail ? "星穹世界" : "提瓦特")}
+                  </span>
+                  <span className="story-breadcrumb-sep">/</span>
+                  <span className="story-breadcrumb-item">
+                    {quest.series || quest.chapter || questTypeLabel(quest.type, isStarRail)}
+                  </span>
+                  {quest.chapter && quest.chapter !== quest.series ? (
+                    <>
+                      <span className="story-breadcrumb-sep">/</span>
+                      <span className="story-breadcrumb-item">{quest.chapter}</span>
+                    </>
+                  ) : null}
+                  <span className="story-breadcrumb-sep">/</span>
+                  <strong className="story-breadcrumb-current">{quest.title}</strong>
+                </nav>
                 <h2>{quest.title}</h2>
                 <p className="story-reader-meta">
                   {completenessLabel(quest.completeness)} ·{" "}

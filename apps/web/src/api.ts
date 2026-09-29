@@ -217,6 +217,21 @@ export type QuestDetail = QuestSearchHit & {
   regionId?: string | null;
   chapter?: string | null;
   series?: string | null;
+  storyPlacement?: {
+    catalogRegionId?: string;
+    catalogRegionTitle?: string;
+    taskRegionId?: string;
+    familyId?: string;
+    familyTitle?: string;
+    familyProvenance?: "upstream" | "derived" | "curated" | "fallback";
+    subseriesId?: string;
+    subseriesTitle?: string;
+    chapterId?: string;
+    chapterTitle?: string;
+    storyOrder?: number;
+    qualityCode?: string;
+    bodyAvailability?: "dialogue" | "document" | "objective_only" | "none";
+  };
   narrative?: {
     mode: "structured_dialogue" | "document" | "objective_only" | "unavailable";
     dialogueNodes: Array<{

@@ -85,7 +85,7 @@ type MetadataCacheEntry = {
 };
 
 type MetadataCache = {
-  version: 3;
+  version: 5;
   root: string;
   dialogueIndexFingerprint: string;
   files: Record<string, MetadataCacheEntry>;
@@ -155,7 +155,7 @@ export async function buildTalkSourceRegistry(
     options.metadataCachePath ??
     join(process.cwd(), "data", "generated", "cache", `talk-metadata-${rootKey}.json`);
   let metadataCache: MetadataCache = {
-    version: 3,
+    version: 5,
     root,
     dialogueIndexFingerprint,
     files: {},
@@ -163,7 +163,7 @@ export async function buildTalkSourceRegistry(
   try {
     const value = JSON.parse(await readFile(metadataCachePath, "utf8")) as MetadataCache;
     if (
-      value.version === 3 &&
+      value.version === 5 &&
       value.root === root &&
       value.dialogueIndexFingerprint === dialogueIndexFingerprint
     )
@@ -382,6 +382,7 @@ export async function buildTalkSourceRegistry(
     talkId: string,
     sourceKind?: TalkSourceKind,
   ): Promise<TalkAssetRecord[]> => {
+    if (!talkId || talkId === "0" || Number(talkId) === 0) return [];
     const fileMatches = [
       ...(metadataByTalkId.get(talkId) ?? []),
       ...(filesByStem.get(talkId) ?? []),

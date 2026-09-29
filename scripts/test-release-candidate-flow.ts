@@ -47,7 +47,11 @@ function questRecord(locale: "zh-CN" | "en"): NormalizedRecord {
     documentType: "archon_quest",
     gameVersion: "test-1",
     locale,
-    metadata: { version: "test-1", locale },
+    metadata: {
+      version: "test-1",
+      locale,
+      questPayload: { visibility: "public", completeness: "complete" },
+    },
     segments: [
       {
         segmentKey: "quest/1001/dialog/100101",
@@ -468,9 +472,19 @@ async function main() {
     const [questMaterialized] = (
       await pool.query(
         `select
-          (select count(*)::int from knowledge.quest_subquests where revision_id = $1) as subquests,
-          (select count(*)::int from knowledge.quest_dialogue_nodes where revision_id = $1) as nodes,
-          (select count(*)::int from knowledge.quest_dialogue_edges where revision_id = $1) as edges,
+          (select count(*)::int
+             from knowledge.revision_quest_content_bindings b
+             inner join knowledge.quest_content_subquests s on s.content_hash = b.content_hash
+            where b.revision_id = $1) as subquests,
+          (select count(*)::int
+             from knowledge.revision_quest_content_bindings b
+             inner join knowledge.quest_content_dialogue_nodes n on n.content_hash = b.content_hash
+            where b.revision_id = $1) as nodes,
+          (select count(*)::int
+             from knowledge.revision_quest_content_bindings b
+             inner join knowledge.quest_content_dialogue_edges e on e.content_hash = b.content_hash
+            where b.revision_id = $1) as edges,
+          (select count(*)::int from knowledge.revision_quest_content_bindings where revision_id = $1) as "contentBindings",
           (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'speaker') as "speakerBindings",
           (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'mention') as "mentionBindings",
           (select count(*)::int from knowledge.text_bindings where revision_id = $1 and binding_type = 'character_story') as "characterStoryBindings",
@@ -482,17 +496,95 @@ async function main() {
       subquests: 2,
       nodes: 2,
       edges: 2,
+      contentBindings: 2,
       speakerBindings: 2,
       mentionBindings: 4,
       characterStoryBindings: 1,
       itemDescriptionBindings: 1,
     });
 
+    const questPage = await repository.getQuest(gameId, {
+      questKey: "quest/1001",
+      locale: "zh-CN",
+      nodeLimit: 10,
+      revisionId: revision2.id,
+    });
+    assert.ok(questPage);
+    assert.equal(questPage.totalDialogueNodes, 1);
+    assert.equal(questPage.narrative.mode, "structured_dialogue");
+    assert.equal(questPage.narrative.dialogueNodes[0]?.body, "派蒙：我们到了。");
+    const questSegmentId = questPage.narrative.dialogueNodes[0]?.segmentId;
+    assert.ok(questSegmentId);
+    const section = await repository.readDocumentSection({
+      gameId,
+      revisionId: revision2.id,
+      documentId: questPage.documentId,
+      segmentId: questSegmentId,
+      maxChars: 500,
+    });
+    assert.equal(section?.body, "派蒙：我们到了。");
+
+    const [sharedCountsBeforeHotBuild] = (
+      await pool.query(
+        `select
+          (select count(*)::int from knowledge.quest_content_objects) as objects,
+          (select count(*)::int from knowledge.quest_content_segments) as segments,
+          (select count(*)::int from knowledge.quest_content_dialogue_nodes) as nodes,
+          (select count(*)::int from knowledge.quest_content_dialogue_edges) as edges`,
+      )
+    ).rows;
+    const candidateHot = await repository.createReleaseCandidate({
+      gameId,
+      name: "RC Hot Content Reuse",
+      importBatchIds: [batch2.id],
+    });
+    const buildHot = await repository.buildReleaseCandidate(candidateHot.id);
+    const readinessHot = await repository.getReleaseCandidateReadiness(candidateHot.id);
+    assert.equal(readinessHot.ready, true, JSON.stringify(readinessHot.blockingReasons));
+    await repository.promoteReleaseCandidate({
+      candidateId: candidateHot.id,
+      buildId: buildHot.id,
+      contentChecksum: buildHot.contentChecksum,
+      expectedCurrentRevisionId: revision2.id,
+      releaseNote: "候选流程测试热内容复用",
+      idempotencyKey: `candidate-flow-hot-${candidateHot.id}-${buildHot.id}`,
+    });
+    const revisionHot = await activatePendingRevision(repository, "candidate-flow-worker-hot");
+    const [sharedCountsAfterHotBuild] = (
+      await pool.query(
+        `select
+          (select count(*)::int from knowledge.quest_content_objects) as objects,
+          (select count(*)::int from knowledge.quest_content_segments) as segments,
+          (select count(*)::int from knowledge.quest_content_dialogue_nodes) as nodes,
+          (select count(*)::int from knowledge.quest_content_dialogue_edges) as edges,
+          (select count(*)::int from knowledge.revision_quest_content_bindings where revision_id = $1) as bindings`,
+        [revisionHot.id],
+      )
+    ).rows;
+    assert.deepEqual(
+      {
+        objects: sharedCountsAfterHotBuild.objects,
+        segments: sharedCountsAfterHotBuild.segments,
+        nodes: sharedCountsAfterHotBuild.nodes,
+        edges: sharedCountsAfterHotBuild.edges,
+      },
+      sharedCountsBeforeHotBuild,
+      "a hot revision must reuse immutable dialogue rows and indexes",
+    );
+    assert.equal(sharedCountsAfterHotBuild.bindings, 2);
+    const hotQuestPage = await repository.getQuest(gameId, {
+      questKey: "quest/1001",
+      locale: "zh-CN",
+      nodeLimit: 10,
+      revisionId: revisionHot.id,
+    });
+    assert.equal(hotQuestPage?.narrative.dialogueNodes[0]?.body, "派蒙：我们到了。");
+
     // Sprint 15 Phase 15.3: a failed materialization must leave the previous
     // current revision unchanged and the new revision in a non-published state.
     {
       const currentBeforeFailure = await repository.getCurrentRevision(gameId);
-      assert.equal(currentBeforeFailure?.id, revision2.id);
+      assert.equal(currentBeforeFailure?.id, revisionHot.id);
       const candidateFail = await repository.createReleaseCandidate({
         gameId,
         name: "RC Fail Inject",
@@ -504,7 +596,7 @@ async function main() {
         candidateId: candidateFail.id,
         buildId: build4.id,
         contentChecksum: build4.contentChecksum,
-        expectedCurrentRevisionId: revision2.id,
+        expectedCurrentRevisionId: revisionHot.id,
         releaseNote: "候选流程测试失败注入",
         idempotencyKey: `candidate-flow-fail-${build4.id}`,
       });
@@ -522,7 +614,7 @@ async function main() {
         /records.flatMap|materialization|payload/i,
       );
       const currentAfterFailure = await repository.getCurrentRevision(gameId);
-      assert.equal(currentAfterFailure?.id, revision2.id);
+      assert.equal(currentAfterFailure?.id, revisionHot.id);
     }
 
     const rolledBack = await repository.rollbackRevision(revision1.id, "隔离测试回滚");
@@ -542,12 +634,13 @@ async function main() {
     );
     console.log(
       JSON.stringify({
-        candidateBuilds: [build1.buildNumber, build2.buildNumber],
+        candidateBuilds: [build1.buildNumber, build2.buildNumber, buildHot.buildNumber],
         evidenceRequired: true,
         publishedRevisions: [
           revision1.revisionNumber,
           structuredRevision.revisionNumber,
           revision2.revisionNumber,
+          revisionHot.revisionNumber,
         ],
         rolledBackTo: revision1.revisionNumber,
         currentRevisionId: (await repository.getCurrentRevision(gameId))?.id,

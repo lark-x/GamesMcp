@@ -133,6 +133,11 @@ function taskLocaleReport(
     questType: quest.questType,
     regionId: quest.regionId,
     region: quest.regionName,
+    taskRegionId: quest.storyProjection?.taskRegionId ?? quest.regionId ?? "other",
+    taskRegionSource: quest.storyProjection?.taskRegionSource ?? "unresolved",
+    taskRegionReason: quest.storyProjection?.taskRegionReason,
+    taskRegionEvidence: quest.storyProjection?.taskRegionEvidence ?? [],
+    taskRegionConflicts: quest.storyProjection?.taskRegionConflicts ?? [],
     chapterId: quest.chapterId,
     chapter: quest.chapterTitle,
     chapterOrder: quest.chapterOrder,
@@ -168,7 +173,10 @@ function taskLocaleReport(
     dialogueNodeCount: quest.dialogueNodes.length,
     dialogueEdgeCount: quest.dialogueEdges.length,
     speakerUnresolvedCount: quest.dialogueNodes.filter(
-      (node) => Boolean(node.speakerKey) && !node.speakerName,
+      (node) =>
+        Boolean(node.speakerKey) &&
+        !node.speakerName &&
+        node.metadata?.speakerNameResolution !== "intentionally_nameless",
     ).length,
     qualityCode: quest.qualityCode,
     completeness: quest.completeness,
@@ -467,6 +475,52 @@ async function main() {
       ];
     }),
   );
+  const publicNarrativeRegionTasks = tasks.filter((task) => {
+    const zh = task.locales["zh-CN"];
+    return (
+      zh.status === "public" && ["story", "story_and_control"].includes(String(zh.contentRole))
+    );
+  });
+  const regionCount = (key: string) => {
+    const counts = new Map<string, number>();
+    for (const task of publicNarrativeRegionTasks) {
+      const value = String(task.locales["zh-CN"][key] ?? "unresolved");
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return Object.fromEntries(
+      [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    );
+  };
+  const publicNarrativeRegionAudit = {
+    total: publicNarrativeRegionTasks.length,
+    byTaskRegion: regionCount("taskRegionId"),
+    byResolutionSource: regionCount("taskRegionSource"),
+    unresolvedTasks: publicNarrativeRegionTasks
+      .filter((task) => task.locales["zh-CN"].taskRegionId === "other")
+      .map((task) => {
+        const zh = task.locales["zh-CN"];
+        return {
+          mainQuestId: task.mainQuestId,
+          title: zh.title,
+          questType: zh.questType,
+          taskRegionReason: zh.taskRegionReason,
+          taskRegionEvidence: zh.taskRegionEvidence,
+          taskRegionConflicts: zh.taskRegionConflicts,
+        };
+      }),
+    conflictTasks: publicNarrativeRegionTasks
+      .filter(
+        (task) =>
+          Array.isArray(task.locales["zh-CN"].taskRegionConflicts) &&
+          task.locales["zh-CN"].taskRegionConflicts.length > 0,
+      )
+      .map((task) => ({
+        mainQuestId: task.mainQuestId,
+        title: task.locales["zh-CN"].title,
+        taskRegionId: task.locales["zh-CN"].taskRegionId,
+        taskRegionConflicts: task.locales["zh-CN"].taskRegionConflicts,
+      })),
+  };
 
   const topologyEdges = tasks.flatMap((task) => {
     const topology = task.locales["zh-CN"].topology as ReportObject | undefined;
@@ -675,6 +729,12 @@ async function main() {
     publicLocaleRecords: result.records.length,
     excludedLocaleRecords: result.manifest.excluded.length,
     parserFailures: result.manifest.failures.length,
+    publicNarrativeRegionUnresolvedCount: publicNarrativeRegionAudit.unresolvedTasks.length,
+    publicWorldQuestRegionUnresolvedCount: publicNarrativeRegionTasks.filter(
+      (task) =>
+        task.locales["zh-CN"].questType === "world_quest" &&
+        task.locales["zh-CN"].taskRegionId === "other",
+    ).length,
     metadataOnlyZh: tasks.filter((task) => task.qualityCode === "metadata_only").length,
     partialZh: tasks.filter((task) => task.qualityCode === "partial_dialogue").length,
     completeZh: tasks.filter((task) => task.qualityCode === "complete").length,
@@ -819,11 +879,12 @@ async function main() {
       metadataScanFailures,
       codexFiles: inputs.codexQuest.length,
       codexFilesWithoutMainQuest: inputs.codexQuest
-        .filter((item) => !inputs.mainQuestById.has(String(item.value.IMJHJGBNMMD ?? "")))
+        .filter((item) => !inputs.mainQuestById.has(String(item.value.MFANMBMKKLC ?? item.value.IMJHJGBNMMD ?? "")))
         .map((item) => item.relativePath),
       duplicateFamilyTitles,
       duplicateChapterTitles,
       publicStoryAudit,
+      publicNarrativeRegionAudit,
       curatedOverrides: inputs.storyFamilyOverrides.map((override) => ({
         id: override.id,
         questIds: override.questIds,
@@ -842,7 +903,133 @@ async function main() {
   };
 
   await mkdir(outputBase, { recursive: true });
-  await writeFile(`${outputBase}.json`, JSON.stringify(report, null, 2) + "\n", "utf8");
+  const compactTask = (task: (typeof tasks)[number]) => {
+    const compactLocale = (value: ReportObject) =>
+      Object.fromEntries(
+        [
+          "status",
+          "title",
+          "questType",
+          "regionId",
+          "region",
+          "taskRegionId",
+          "taskRegionSource",
+          "taskRegionReason",
+          "taskRegionEvidence",
+          "taskRegionConflicts",
+          "chapterId",
+          "chapter",
+          "chapterOrder",
+          "seriesId",
+          "series",
+          "familyId",
+          "family",
+          "familyProvenance",
+          "familyOrder",
+          "storyPosition",
+          "contentRole",
+          "dialogueResolutionStatus",
+          "talkIds",
+          "resolvedTalkIds",
+          "unresolvedTalkIds",
+          "ambiguousTalkIds",
+          "subquestCount",
+          "dialogueNodeCount",
+          "dialogueEdgeCount",
+          "speakerUnresolvedCount",
+          "qualityCode",
+          "completeness",
+          "completenessReasons",
+          "bodyAvailability",
+          "sourceFiles",
+          "reasons",
+        ].flatMap((key) => (value[key] === undefined ? [] : [[key, value[key]]])),
+      );
+    return {
+      mainQuestId: task.mainQuestId,
+      rawTitle: task.rawTitle,
+      rawType: task.rawType,
+      directSeries: task.directSeries,
+      relationIds: task.relationIds,
+      contentRole: task.contentRole,
+      qualityCode: task.qualityCode,
+      familyId: task.familyId,
+      family: task.family,
+      chapter: task.chapter,
+      dialogueNodeCount: task.dialogueNodeCount,
+      locales: {
+        "zh-CN": compactLocale(task.locales["zh-CN"]),
+        en: compactLocale(task.locales.en),
+      },
+    };
+  };
+  const compactSummary = Object.fromEntries(
+    [
+      "mainQuests",
+      "auditLocaleRecords",
+      "publicLocaleRecords",
+      "excludedLocaleRecords",
+      "parserFailures",
+      "metadataOnlyZh",
+      "partialZh",
+      "completeZh",
+      "unresolvedSpeakerZh",
+      "publicNarrativeRegionUnresolvedCount",
+      "publicWorldQuestRegionUnresolvedCount",
+      "resolvedQuestCount",
+      "familyCount",
+      "fallbackFamilyCount",
+      "standaloneQuestCount",
+      "duplicateTitleGroups",
+      "talkResolvedQuestCount",
+      "talkProblemQuestCount",
+    ].map((key) => [key, summary[key as keyof typeof summary]]),
+  );
+  const compactIssueList = (values: unknown, limit = 50) => {
+    const rows = Array.isArray(values) ? values : [];
+    return { count: rows.length, sample: rows.slice(0, limit) };
+  };
+  const outputReport = process.argv.includes("--compact")
+    ? {
+        schemaVersion: report.schemaVersion,
+        generatedAt: report.generatedAt,
+        upstream: report.upstream,
+        summary: compactSummary,
+        publicNarrativeRegionAudit: report.publicNarrativeRegionAudit,
+        conversionManifest: {
+          parserVersion: result.manifest.parserVersion,
+          inputFileCount: result.manifest.inputFileCount,
+          builtRecordCount: result.manifest.builtRecordCount,
+          excludedRecordCount: result.manifest.excluded.length,
+          failureCount: result.manifest.failures.length,
+          failures: result.manifest.failures.slice(0, 100),
+        },
+        sourceAudit: {
+          binQuestFiles: report.sourceAudit.binQuestFiles,
+          binQuestParsedMainQuests: report.sourceAudit.binQuestParsedMainQuests,
+          binQuestFailures: compactIssueList(report.sourceAudit.binQuestFailures),
+          talkRegistry: {
+            coverage: report.sourceAudit.talkRegistry.coverage,
+            duplicateTalkIds: compactIssueList(report.sourceAudit.talkRegistry.duplicateTalkIds),
+            npcGroupRelationEdges: report.sourceAudit.talkRegistry.npcGroupRelationEdges,
+          },
+          talkResolutionProblems: compactIssueList(report.sourceAudit.talkResolutionProblems),
+          registeredTalkFilesNotReferenced: compactIssueList(
+            report.sourceAudit.registeredTalkFilesNotReferenced,
+          ),
+          orphanDialogueAssets: compactIssueList(report.sourceAudit.orphanDialogueAssets),
+          metadataScanFailures: compactIssueList(report.sourceAudit.metadataScanFailures),
+          codexFiles: report.sourceAudit.codexFiles,
+          codexFilesWithoutMainQuest: compactIssueList(
+            report.sourceAudit.codexFilesWithoutMainQuest,
+          ),
+          curatedOverrides: report.sourceAudit.curatedOverrides,
+        },
+        focus: report.focus.map(compactTask),
+        tasks: report.tasks.map(compactTask),
+      }
+    : report;
+  await writeFile(`${outputBase}.json`, JSON.stringify(outputReport, null, 2) + "\n", "utf8");
   const problemTasks = tasks.filter((task) => {
     const zh = task.locales["zh-CN"];
     return (
@@ -923,7 +1110,11 @@ async function main() {
   }
   console.log(
     JSON.stringify(
-      { json: `${outputBase}.json`, markdown: `${outputBase}.md`, summary: report.summary },
+      {
+        json: `${outputBase}.json`,
+        markdown: `${outputBase}.md`,
+        summary: process.argv.includes("--compact") ? compactSummary : report.summary,
+      },
       null,
       2,
     ),

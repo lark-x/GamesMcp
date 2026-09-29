@@ -2,6 +2,8 @@ import { loadConfig, type RuntimeConfig } from "@gip/config";
 import { createDatabase, createPool, SqlKnowledgeRepository } from "@gip/database";
 import type { KnowledgeRepository } from "@gip/domain";
 import { createProviderRegistry, type GameProviderRegistry } from "@gip/providers";
+import { McpTelemetry } from "./telemetry.js";
+import { join } from "node:path";
 
 type Pool = ReturnType<typeof createPool>;
 
@@ -14,6 +16,7 @@ export interface McpRuntime {
   pool: Pool;
   repository: KnowledgeRepository;
   providers: GameProviderRegistry;
+  telemetry: McpTelemetry;
   close(): Promise<void>;
 }
 
@@ -24,11 +27,15 @@ export async function createMcpRuntime(
   const pool = createPool(config.databaseUrl);
   const repository = new SqlKnowledgeRepository(createDatabase(pool), config.dataDir);
   const providers = createProviderRegistry(config.providers);
+  const telemetry = new McpTelemetry({
+    logDir: join(config.dataDir, "logs"),
+  });
   return {
     config,
     pool,
     repository,
     providers,
+    telemetry,
     async close() {
       await providers.close();
       await pool.end();

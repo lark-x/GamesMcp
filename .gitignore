@@ -36,3 +36,7 @@ artifacts/**
 .perfprof*
 .questprof
 .DS_Store
+dist-runtime/
+screenshots/
+browser_audit.png
+reports/genshin-quest-audit-*.json

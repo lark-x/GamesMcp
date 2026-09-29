@@ -62,6 +62,7 @@ export type QuestBinRecord = {
   execCounts?: Record<string, number>;
   hasCompleteTalk: boolean;
   completeTalkIds: string[];
+  subQuests?: Array<{ subId: string; stepDescTextMapHash?: string; order?: number }>;
 };
 
 export type QuestContentRole =
@@ -113,6 +114,18 @@ export type StoryProjectionQuest = {
   questId: string;
   title: string;
   order: number;
+  taskRegionId?: string;
+  taskRegionSource?:
+    | "chapter_city"
+    | "reputation"
+    | "talk_perform_cfg"
+    | "curated_override"
+    | "chapter_title"
+    | "inherited"
+    | "unresolved";
+  taskRegionReason?: string;
+  taskRegionEvidence?: string[];
+  taskRegionConflicts?: string[];
   questType?: string;
   completeness?: "complete" | "partial" | "metadata_only";
   displayTitle?: string;
@@ -167,4 +180,6 @@ export type StoryProjectionRegion = {
   title: string;
   order: number;
   families: StoryProjectionFamily[];
+  quests?: StoryProjectionQuest[];
+  collections?: StoryProjectionQuest[];
 };

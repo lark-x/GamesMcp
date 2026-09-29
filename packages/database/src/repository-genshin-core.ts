@@ -206,12 +206,14 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
     const offset = Math.max(options.offset ?? 0, 0);
     const query = options.query?.trim() ? `%${escapeLike(normalize(options.query))}%` : undefined;
     const category = options.category?.trim();
+    const subcategory = options.subcategory?.trim();
 
     const rows = rowsFromExecuteResult(
       await this.db.execute(sql`
       select * from knowledge.genshin_materials
       where revision_id = ${options.revisionId}::uuid
         ${category ? sql`and category = ${category}` : sql``}
+        ${subcategory ? sql`and provenance->>'subcategory' = ${subcategory}` : sql``}
         ${
           query
             ? sql`and (
@@ -233,12 +235,14 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
   async countMaterials(options: GenshinStructuredListOptions): Promise<number> {
     const query = options.query?.trim() ? `%${escapeLike(normalize(options.query))}%` : undefined;
     const category = options.category?.trim();
+    const subcategory = options.subcategory?.trim();
 
     const rows = rowsFromExecuteResult(
       await this.db.execute(sql`
       select count(*)::int as count from knowledge.genshin_materials
       where revision_id = ${options.revisionId}::uuid
         ${category ? sql`and category = ${category}` : sql``}
+        ${subcategory ? sql`and provenance->>'subcategory' = ${subcategory}` : sql``}
         ${
           query
             ? sql`and (
@@ -257,12 +261,23 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
   async aggregateMaterialCategories(
     revisionId: string,
     rawQuery?: string,
-  ): Promise<Array<{ key: string; label: string; count: number }>> {
+  ): Promise<
+    Array<{
+      key: string;
+      label: string;
+      count: number;
+      subcategories?: Array<{ key: string; label: string; count: number }>;
+    }>
+  > {
     const query = rawQuery?.trim() ? `%${escapeLike(normalize(rawQuery))}%` : undefined;
 
     const rows = rowsFromExecuteResult(
       await this.db.execute(sql`
-      select category, count(*)::int as count
+      select
+        category,
+        coalesce(provenance->>'subcategory', '') as subcategory,
+        coalesce(provenance->>'subcategoryLabel', '') as subcategory_label,
+        count(*)::int as count
       from knowledge.genshin_materials
       where revision_id = ${revisionId}::uuid
         ${
@@ -275,31 +290,80 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
               )`
             : sql``
         }
-      group by category
+      group by category, coalesce(provenance->>'subcategory', ''), coalesce(provenance->>'subcategoryLabel', '')
       order by count desc
     `),
     );
 
     const labels: Record<string, string> = {
+      // Genshin
       character_development: "角色培养素材",
       weapon_development: "武器强化素材",
       local_specialty: "区域特产",
-      currency: "货币",
+      material: "通用材料",
+      currency: "货币与代币",
+      precious: "贵重与小道具",
       consumable: "消耗品",
       quest_item: "任务道具",
       forging: "锻造材料",
-      cooking: "食材烹饪",
-      furnishing: "摆设素材",
-      other: "其他",
+      cooking: "食物与药剂",
+      furnishing: "尘歌壶图纸",
+      gcg: "七圣召唤",
+      other: "其他材料",
+      // Star Rail
+      character_ascension: "角色晋阶材料",
+      exp_material: "角色经验材料",
+      lightcone_exp: "光锥升级材料",
+      relic_exp: "遗器强化材料",
+      trace: "行迹材料",
+      trace_material: "行迹材料",
+      lightcone_ascension: "光锥晋阶材料",
+      light_cone_ascension: "光锥突破素材",
+      enemy_drop: "敌方掉落",
+      weekly_boss: "周本材料",
+      synthesis: "合成材料",
+      mission: "任务道具",
+      event: "活动道具",
     };
 
-    return rows.map((r) => ({
-      key: String((r as unknown as { category: string }).category),
-      label:
-        labels[String((r as unknown as { category: string }).category)] ??
-        String((r as unknown as { category: string }).category),
-      count: Number((r as unknown as { count?: number })?.count ?? 0),
-    }));
+    const categoryMap = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        count: number;
+        subcategories: Array<{ key: string; label: string; count: number }>;
+      }
+    >();
+
+    for (const r of rows) {
+      const catKey = String((r as unknown as { category: string }).category);
+      const subKey = String((r as unknown as { subcategory?: string }).subcategory ?? "");
+      const subLabel =
+        String((r as unknown as { subcategory_label?: string }).subcategory_label ?? "") || subKey;
+      const count = Number((r as unknown as { count?: number }).count ?? 0);
+
+      let catEntry = categoryMap.get(catKey);
+      if (!catEntry) {
+        catEntry = {
+          key: catKey,
+          label: labels[catKey] ?? catKey,
+          count: 0,
+          subcategories: [],
+        };
+        categoryMap.set(catKey, catEntry);
+      }
+      catEntry.count += count;
+      if (subKey) {
+        catEntry.subcategories.push({
+          key: subKey,
+          label: subLabel,
+          count,
+        });
+      }
+    }
+
+    return Array.from(categoryMap.values()).sort((a, b) => b.count - a.count);
   }
 
   async upsertAchievement(input: Omit<GenshinAchievement, "id">): Promise<GenshinAchievement> {
@@ -463,13 +527,25 @@ export class SqlGenshinStructuredRepository implements GenshinStructuredReposito
     options: GenshinStructuredListOptions,
   ): Promise<StructuredRecord[]> {
     const config = configs[kind];
-    const limit = Math.min(Math.max(options.limit, 1), 200);
+    const limit = Math.min(Math.max(options.limit, 1), 2000);
     const offset = Math.max(options.offset ?? 0, 0);
     const query = options.query ? `%${escapeLike(normalize(options.query))}%` : undefined;
+    const category = options.category?.trim();
     const rows = rowsFromExecuteResult(
       await this.db.execute(sql`
       select * from ${sql.raw(config.table)}
       where revision_id = ${options.revisionId}::uuid
+        ${
+          category
+            ? sql`and (
+                category = ${category}
+                or provenance->>'category' = ${category}
+                or provenance->>'goalName' = ${category}
+                or provenance->>'region' = ${category}
+                or provenance->>'regionLabel' = ${category}
+              )`
+            : sql``
+        }
         ${query ? sql`and normalized_name like ${query}` : sql``}
       order by name asc
       limit ${limit}
@@ -601,6 +677,8 @@ function mapRow(kind: StructuredKind, row: StructuredRow): StructuredRecord {
     return {
       ...base,
       category: row.category as GenshinMaterial["category"],
+      subcategory: (row.provenance?.subcategory as string | undefined),
+      subcategoryLabel: (row.provenance?.subcategoryLabel as string | undefined),
       rarity: row.rarity,
       description: row.description,
       sources: row.sources ?? [],

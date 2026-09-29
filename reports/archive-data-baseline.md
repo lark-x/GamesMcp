@@ -1,6 +1,6 @@
 # GamesMcp Archive Data Baseline Report
 
-> 生成时间: 2026-09-04T14:54:49.055Z
+> 生成时间: 2026-09-27T00:49:55.865Z
 > 基线 Commit: 8a105e63eddf78c8f35b6f2bc969a99d0d590bda
 > 审计脚本: scripts/archive-data-audit.ts
 
@@ -11,34 +11,34 @@
 ### 剧情 (Quests / Story)
 | 指标 | 统计数值 | 说明 |
 |---|---|---|
-| **任务总数 (total)** | **4372** | MainQuest 原始条目 |
-| **公开可用任务 (public)** | **3636** | 排除测试/内部后 |
-| **可读标题数 (withReadableTitle)** | **4246** | TextMap 解析有效标题 |
-| **原始关联地区 (withRegion)** | **800** | 通过 Chapter.cityId 关联（**当前未接入 Story 模型**） |
-| **未关联地区任务 (unresolvedRegions)** | **3572** | 当前前端普遍显示“未知地区” |
-| **结构化对白覆盖 (withDialogueNodes)** | **1225** | 具备对白结构 |
-| **正文段落可用数 (withDocumentBody)** | **4246** | 具备文本正文 |
+| **任务总数 (total)** | **4417** | MainQuest 原始条目 |
+| **公开可用任务 (public)** | **3676** | 排除测试/内部后 |
+| **可读标题数 (withReadableTitle)** | **4288** | TextMap 解析有效标题 |
+| **原始关联地区 (withRegion)** | **821** | 通过 Chapter.cityId 关联（**当前未接入 Story 模型**） |
+| **未关联地区任务 (unresolvedRegions)** | **3596** | 当前前端普遍显示“未知地区” |
+| **结构化对白覆盖 (withDialogueNodes)** | **1247** | 具备对白结构 |
+| **正文段落可用数 (withDocumentBody)** | **4288** | 具备文本正文 |
 
 ### 材料 (Materials)
 | 指标 | 统计数值 | 说明 |
 |---|---|---|
-| **原始材料总数 (totalRaw)** | **10404** | MaterialExcelConfigData |
-| **公开有效材料 (public)** | **10318** | 排除占位/无名/内部 |
+| **原始材料总数 (totalRaw)** | **10512** | MaterialExcelConfigData |
+| **公开有效材料 (public)** | **10426** | 排除占位/无名/内部 |
 | **内部/测试垃圾 (internalLike)** | **86** | 需由 isPublicMaterial 过滤 |
-| **描述覆盖数 (withDescription)** | **9997** | 具备有效中文描述 |
+| **描述覆盖数 (withDescription)** | **10096** | 具备有效中文描述 |
 | **来源覆盖数 (withSources)** | **0** | **当前 Converter 硬编码为 0 (sources: [])** |
 | **用途覆盖数 (withUsedBy)** | **0** | **当前 Converter 硬编码为 0 (usedBy: [])** |
-| **粗暴分类为 other 占比** | **4624 (44.4%)** | 字符串包含导致近半材料沦为 other |
+| **粗暴分类为 other 占比** | **4698 (44.7%)** | 字符串包含导致近半材料沦为 other |
 
 #### 原始粗暴分类分布：
 ```json
 {
-  "other": 4624,
-  "character_development": 747,
-  "quest_item": 2784,
-  "cooking": 752,
-  "weapon_development": 29,
-  "furnishing": 1468
+  "other": 4698,
+  "character_development": 753,
+  "quest_item": 2796,
+  "cooking": 759,
+  "weapon_development": 31,
+  "furnishing": 1475
 }
 ```
 

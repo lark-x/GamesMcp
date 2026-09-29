@@ -68,6 +68,15 @@ export function parseArchiveRoute(hash = window.location.hash): ArchiveRoute {
     };
   }
 
+  // Data Browser root redirect: #archive or #codex -> #archive/characters
+  if (raw === "archive" || raw === "archive/" || raw === "codex" || raw === "codex/") {
+    window.history.replaceState(null, "", "#archive/characters");
+    return {
+      kind: "data",
+      dataKind: "characters",
+    };
+  }
+
   // Data Browser: #archive/:dataKind (characters, weapons, artifacts, enemies, achievements)
   const dataMatch =
     /^archive\/(characters|weapons|artifacts|enemies|achievements)(?:\/(.+))?$/.exec(raw);

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, notExists, or, sql } from "drizzle-orm";
 import type {
   Capability,
   DocumentSummary,
@@ -56,7 +56,13 @@ import {
   genshinVoiceLines,
   questDialogueEdges,
   questDialogueNodes,
+  questContentDialogueEdges,
+  questContentDialogueNodes,
+  questContentMentions,
+  questContentSegments,
+  questContentSubquests,
   questSubquests,
+  revisionQuestContentBindings,
   relationships,
   sourceSnapshots,
   sources,
@@ -783,7 +789,7 @@ export class RepositoryReadModels {
              tb.entity_type,
              tb.entity_stable_id,
              tb.document_id,
-             tb.segment_id,
+             coalesce(tb.content_segment_id, tb.segment_id) as segment_id,
              tb.binding_type,
              tb.confidence,
              tb.binding_source,
@@ -792,7 +798,7 @@ export class RepositoryReadModels {
              d.title as document_title,
              d.type as document_type,
              d.locale as document_locale,
-             left(coalesce(ds.body, d.body), 600) as excerpt
+             left(coalesce(qcs.body, ds.body, d.body), 600) as excerpt
       from knowledge.text_bindings tb
       inner join knowledge.documents d
         on d.id = tb.document_id
@@ -801,6 +807,8 @@ export class RepositoryReadModels {
       left join knowledge.document_segments ds
         on ds.id = tb.segment_id
        and ds.revision_id = tb.revision_id
+      left join knowledge.quest_content_segments qcs
+        on qcs.id = tb.content_segment_id
       where tb.revision_id = ${revisionId}::uuid
         and tb.entity_stable_id = ${entityStableId}
         ${bindingTypeCondition}
@@ -814,7 +822,9 @@ export class RepositoryReadModels {
     documentId: string,
     segmentId?: string,
   ): Promise<TextBinding[]> {
-    const segmentCondition = segmentId ? sql`and segment_id = ${segmentId}::uuid` : sql``;
+    const segmentCondition = segmentId
+      ? sql`and (segment_id = ${segmentId}::uuid or content_segment_id = ${segmentId}::uuid)`
+      : sql``;
     const result = await this.db.execute(sql`
       select id,
              game_id,
@@ -822,7 +832,7 @@ export class RepositoryReadModels {
              entity_type,
              entity_stable_id,
              document_id,
-             segment_id,
+             coalesce(content_segment_id, segment_id) as segment_id,
              binding_type,
              confidence,
              binding_source,
@@ -929,34 +939,74 @@ export class RepositoryReadModels {
       .limit(1);
     const source = sourceRows[0]?.sources;
     const sourceSnapshot = sourceRows[0]?.source_snapshots;
-    const segmentRows = await this.db
-      .select({
-        id: documentSegments.id,
-        documentId: documentSegments.documentId,
-        revisionId: documentSegments.revisionId,
-        ordinal: documentSegments.ordinal,
-        headingPath: documentSegments.headingPath,
-        body: documentSegments.body,
-        startOffset: documentSegments.startOffset,
-        endOffset: documentSegments.endOffset,
-      })
-      .from(documentSegments)
+    const [sharedContentBinding] = await this.db
+      .select({ contentHash: revisionQuestContentBindings.contentHash })
+      .from(revisionQuestContentBindings)
       .where(
-        and(eq(documentSegments.documentId, row.id), eq(documentSegments.revisionId, revision.id)),
+        and(
+          eq(revisionQuestContentBindings.revisionId, revision.id),
+          eq(revisionQuestContentBindings.documentId, row.id),
+        ),
       )
-      .orderBy(asc(documentSegments.ordinal));
-    const mentionRows = segmentRows.length
+      .limit(1);
+    const segmentRows = sharedContentBinding
       ? await this.db
-          .select({ mention: entityMentions, entity: entities })
-          .from(entityMentions)
-          .innerJoin(entities, eq(entityMentions.entityId, entities.id))
+          .select({
+            id: questContentSegments.id,
+            ordinal: questContentSegments.ordinal,
+            headingPath: questContentSegments.headingPath,
+            body: questContentSegments.body,
+            startOffset: questContentSegments.startOffset,
+            endOffset: questContentSegments.endOffset,
+          })
+          .from(questContentSegments)
+          .where(eq(questContentSegments.contentHash, sharedContentBinding.contentHash))
+          .orderBy(asc(questContentSegments.ordinal))
+      : await this.db
+          .select({
+            id: documentSegments.id,
+            ordinal: documentSegments.ordinal,
+            headingPath: documentSegments.headingPath,
+            body: documentSegments.body,
+            startOffset: documentSegments.startOffset,
+            endOffset: documentSegments.endOffset,
+          })
+          .from(documentSegments)
           .where(
-            inArray(
-              entityMentions.segmentId,
-              segmentRows.map((segment) => segment.id),
+            and(
+              eq(documentSegments.documentId, row.id),
+              eq(documentSegments.revisionId, revision.id),
             ),
           )
-      : [];
+          .orderBy(asc(documentSegments.ordinal));
+    const mentionSelect = {
+      mention: {
+        segmentId: sharedContentBinding
+          ? questContentMentions.contentSegmentId
+          : entityMentions.segmentId,
+        entityId: sharedContentBinding ? questContentMentions.entityId : entityMentions.entityId,
+        rawText: sharedContentBinding ? questContentMentions.rawText : entityMentions.rawText,
+        startOffset: sharedContentBinding
+          ? questContentMentions.startOffset
+          : entityMentions.startOffset,
+        endOffset: sharedContentBinding ? questContentMentions.endOffset : entityMentions.endOffset,
+      },
+      entity: { sourceKey: entities.sourceKey, canonicalName: entities.canonicalName },
+    };
+    const mentionedSegmentIds = segmentRows.map((segment) => segment.id);
+    const mentionRows = !mentionedSegmentIds.length
+      ? []
+      : sharedContentBinding
+        ? await this.db
+            .select(mentionSelect)
+            .from(questContentMentions)
+            .innerJoin(entities, eq(questContentMentions.entityId, entities.id))
+            .where(inArray(questContentMentions.contentSegmentId, mentionedSegmentIds))
+        : await this.db
+            .select(mentionSelect)
+            .from(entityMentions)
+            .innerJoin(entities, eq(entityMentions.entityId, entities.id))
+            .where(inArray(entityMentions.segmentId, mentionedSegmentIds));
     // PERF: resolve display names only for entities actually mentioned in this document
     // (was: full game-wide entity scan per getDocument call).
     const mentionedSourceKeys = [
@@ -1051,6 +1101,13 @@ export class RepositoryReadModels {
           )`
         : sql``;
     if (request.segmentId || heading) {
+      const legacyContentBindingFilter = request.segmentId
+        ? sql``
+        : sql`and not exists (
+            select 1 from knowledge.revision_quest_content_bindings binding
+            where binding.revision_id = ${revision.id}::uuid
+              and binding.document_id = legacy.document_id
+          )`;
       const rows = await this.db.execute(sql`
         select d.id as document_id,
                d.title,
@@ -1058,7 +1115,20 @@ export class RepositoryReadModels {
                ds.id as segment_id,
                ds.heading_path,
                left(ds.body, ${maxChars + 1}) as body
-        from knowledge.document_segments ds
+        from (
+          select legacy.document_id, legacy.id, legacy.heading_path, legacy.heading_key,
+                 legacy.body, legacy.ordinal
+          from knowledge.document_segments legacy
+          where legacy.revision_id = ${revision.id}::uuid
+            ${legacyContentBindingFilter}
+          union all
+          select binding.document_id, shared.id, shared.heading_path, shared.heading_key,
+                 shared.body, shared.ordinal
+          from knowledge.revision_quest_content_bindings binding
+          inner join knowledge.quest_content_segments shared
+            on shared.content_hash = binding.content_hash
+          where binding.revision_id = ${revision.id}::uuid
+        ) ds
         inner join knowledge.documents d on d.id = ds.document_id
         where d.game_id = ${request.gameId}::uuid
           and d.revision_id = ${revision.id}::uuid
@@ -1201,26 +1271,41 @@ export class RepositoryReadModels {
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
         .slice(0, limit);
       if (types.includes("segment")) {
-        const segmentConditions = [
-          eq(documentSegments.revisionId, searchable.id),
+        const commonSegmentDocumentConditions = [
           eq(documents.gameId, gameId),
+          eq(documents.revisionId, searchable.id),
           eq(documents.deleted, false),
           publicDocumentCondition(),
-          or(
-            sql`${documentSegments.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
-          ),
         ];
         if (request.documentTypes?.length)
-          segmentConditions.push(inArray(documents.type, request.documentTypes));
+          commonSegmentDocumentConditions.push(inArray(documents.type, request.documentTypes));
         if (request.gameVersions?.length)
-          segmentConditions.push(inArray(documents.gameVersion, request.gameVersions));
+          commonSegmentDocumentConditions.push(
+            inArray(documents.gameVersion, request.gameVersions),
+          );
         if (request.locales?.length)
-          segmentConditions.push(inArray(documents.locale, request.locales));
+          commonSegmentDocumentConditions.push(inArray(documents.locale, request.locales));
         if (request.sourceId)
-          segmentConditions.push(
+          commonSegmentDocumentConditions.push(
             sql`${documents.sourceSnapshotId} in (select id from knowledge.source_snapshots where source_id = ${request.sourceId}::uuid)`,
           );
-        const segmentRows = await this.db
+        const legacySegmentConditions = [
+          eq(documentSegments.revisionId, searchable.id),
+          notExists(
+            this.db
+              .select({ documentId: revisionQuestContentBindings.documentId })
+              .from(revisionQuestContentBindings)
+              .where(
+                and(
+                  eq(revisionQuestContentBindings.revisionId, searchable.id),
+                  eq(revisionQuestContentBindings.documentId, documentSegments.documentId),
+                ),
+              ),
+          ),
+          ...commonSegmentDocumentConditions,
+          sql`${documentSegments.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
+        ];
+        const legacySegmentRows = await this.db
           .select({
             segment: documentSegments,
             document: documents,
@@ -1229,9 +1314,29 @@ export class RepositoryReadModels {
           .from(documentSegments)
           .innerJoin(documents, eq(documentSegments.documentId, documents.id))
           .innerJoin(sourceSnapshots, eq(documents.sourceSnapshotId, sourceSnapshots.id))
-          .where(and(...segmentConditions))
+          .where(and(...legacySegmentConditions))
           .limit(limit);
-        result.segments = segmentRows
+        const sharedSegmentConditions = [
+          eq(revisionQuestContentBindings.revisionId, searchable.id),
+          ...commonSegmentDocumentConditions,
+          sql`${questContentSegments.searchVector} @@ websearch_to_tsquery('simple', ${request.query})`,
+        ];
+        const sharedSegmentRows = await this.db
+          .select({
+            segment: questContentSegments,
+            document: documents,
+            sourceSnapshot: sourceSnapshots,
+          })
+          .from(revisionQuestContentBindings)
+          .innerJoin(
+            questContentSegments,
+            eq(revisionQuestContentBindings.contentHash, questContentSegments.contentHash),
+          )
+          .innerJoin(documents, eq(revisionQuestContentBindings.documentId, documents.id))
+          .innerJoin(sourceSnapshots, eq(documents.sourceSnapshotId, sourceSnapshots.id))
+          .where(and(...sharedSegmentConditions))
+          .limit(limit);
+        result.segments = [...legacySegmentRows, ...sharedSegmentRows]
           .map((item) => {
             const match = lexicalScore(request.query, item.segment.body);
             return {
@@ -1320,6 +1425,107 @@ export class RepositoryReadModels {
       return !["control", "trigger", "reward", "metadata", "unknown"].includes(String(role));
     });
 
+    const documentIds = visibleDocRows.map((row) => row.documentId);
+    const sharedContentBindings = documentIds.length
+      ? await this.db
+          .select({
+            documentId: revisionQuestContentBindings.documentId,
+            contentHash: revisionQuestContentBindings.contentHash,
+          })
+          .from(revisionQuestContentBindings)
+          .where(
+            and(
+              eq(revisionQuestContentBindings.revisionId, revision.id),
+              inArray(revisionQuestContentBindings.documentId, documentIds),
+            ),
+          )
+      : [];
+    const sharedDocumentIds = new Set(sharedContentBindings.map((row) => row.documentId));
+    const legacyDialogueCountRows = documentIds.length
+      ? await this.db
+          .select({
+            documentId: questDialogueNodes.documentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(questDialogueNodes)
+          .where(
+            and(
+              eq(questDialogueNodes.revisionId, revision.id),
+              inArray(questDialogueNodes.documentId, documentIds),
+            ),
+          )
+          .groupBy(questDialogueNodes.documentId)
+      : [];
+    const legacySubquestCountRows = documentIds.length
+      ? await this.db
+          .select({
+            documentId: questSubquests.documentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(questSubquests)
+          .where(
+            and(
+              eq(questSubquests.revisionId, revision.id),
+              inArray(questSubquests.documentId, documentIds),
+            ),
+          )
+          .groupBy(questSubquests.documentId)
+      : [];
+    const sharedDialogueCountRows = sharedContentBindings.length
+      ? await this.db
+          .select({
+            documentId: revisionQuestContentBindings.documentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(revisionQuestContentBindings)
+          .innerJoin(
+            questContentDialogueNodes,
+            eq(revisionQuestContentBindings.contentHash, questContentDialogueNodes.contentHash),
+          )
+          .where(eq(revisionQuestContentBindings.revisionId, revision.id))
+          .groupBy(revisionQuestContentBindings.documentId)
+      : [];
+    const sharedSubquestCountRows = sharedContentBindings.length
+      ? await this.db
+          .select({
+            documentId: revisionQuestContentBindings.documentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(revisionQuestContentBindings)
+          .innerJoin(
+            questContentSubquests,
+            eq(revisionQuestContentBindings.contentHash, questContentSubquests.contentHash),
+          )
+          .where(eq(revisionQuestContentBindings.revisionId, revision.id))
+          .groupBy(revisionQuestContentBindings.documentId)
+      : [];
+    const dialogueCounts = new Map([
+      ...legacyDialogueCountRows
+        .filter((row) => !sharedDocumentIds.has(row.documentId))
+        .map((row) => [row.documentId, Number(row.count)] as const),
+      ...sharedDialogueCountRows.map((row) => [row.documentId, Number(row.count)] as const),
+    ]);
+    const subquestCounts = new Map([
+      ...legacySubquestCountRows
+        .filter((row) => !sharedDocumentIds.has(row.documentId))
+        .map((row) => [row.documentId, Number(row.count)] as const),
+      ...sharedSubquestCountRows.map((row) => [row.documentId, Number(row.count)] as const),
+    ]);
+    const bodyAvailabilityByQuestKey = new Map(
+      visibleDocRows.map((row) => {
+        const dialogueCount = dialogueCounts.get(row.documentId) ?? 0;
+        const subquestCount = subquestCounts.get(row.documentId) ?? 0;
+        const bodyAvailability: BodyAvailability = dialogueCount
+          ? "dialogue"
+          : row.hasBody
+            ? "document"
+            : subquestCount
+              ? "objective_only"
+              : "none";
+        return [questKeyFromInput(row.sourceKey), bodyAvailability] as const;
+      }),
+    );
+
     const [catalogProjectionRow] = await this.db
       .select({ metadata: documents.metadata })
       .from(documents)
@@ -1336,7 +1542,10 @@ export class RepositoryReadModels {
       ?.storyCatalogProjection as
       { schemaVersion?: number; regions?: Array<Record<string, unknown>> } | undefined;
     if (persistedCatalog) {
-      if (persistedCatalog.schemaVersion !== 2 || !Array.isArray(persistedCatalog.regions))
+      if (
+        ![2, 3].includes(persistedCatalog.schemaVersion ?? 0) ||
+        !Array.isArray(persistedCatalog.regions)
+      )
         throw new DomainError(
           "story_projection_schema_mismatch",
           "The persisted Story Projection has an unsupported schema",
@@ -1365,17 +1574,23 @@ export class RepositoryReadModels {
           .map((entry) => ({
             questKey: `quest/${entry.questId}`,
             title: entry.title,
+            taskRegionId: typeof entry.taskRegionId === "string" ? entry.taskRegionId : undefined,
             questType: entry.questType,
             displayTitle: entry.displayTitle,
             order: entry.order,
             completeness: entry.completeness ?? "metadata_only",
-            bodyAvailability: entry.bodyAvailability ?? "none",
             entryType: entry.entryType,
             aggregateChildQuestIds: entry.aggregateChildQuestIds,
             parentQuestId: entry.parentQuestId,
             qualityCode: entry.qualityCode,
             contentRole: entry.contentRole,
             dialogueResolutionStatus: entry.dialogueResolutionStatus,
+            bodyAvailability:
+              entry.entryType === "collection" || entry.entryType === "aggregate"
+                ? "none"
+                : (bodyAvailabilityByQuestKey.get(`quest/${entry.questId}`) ??
+                  entry.bodyAvailability ??
+                  "none"),
           }));
       const chapters = (value: unknown) =>
         (Array.isArray(value) ? value : [])
@@ -1386,7 +1601,8 @@ export class RepositoryReadModels {
             quests: entries(chapter.quests),
             collections: entries(chapter.collections),
           }))
-          .filter((chapter) => chapter.quests.length || chapter.collections.length);
+          .filter((chapter) => chapter.quests.length || chapter.collections.length)
+          .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
       const subseries = (value: unknown) =>
         (Array.isArray(value) ? value : [])
           .map((item) => ({
@@ -1397,7 +1613,8 @@ export class RepositoryReadModels {
             collections: entries(item.collections),
             chapters: chapters(item.chapters),
           }))
-          .filter((item) => item.quests.length || item.collections.length || item.chapters.length);
+          .filter((item) => item.quests.length || item.collections.length || item.chapters.length)
+          .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
       const regions = persistedCatalog.regions
         .map((region) => {
           const families = (Array.isArray(region.families) ? region.families : [])
@@ -1417,16 +1634,22 @@ export class RepositoryReadModels {
                 family.collections.length ||
                 family.chapters.length ||
                 family.subseries.length,
-            );
+            )
+            .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
           return {
             id: String(region.id),
             name: String(region.title),
             order: Number(region.order ?? 0),
             families,
+            quests: entries(region.quests),
+            collections: entries(region.collections),
             chapters: families.flatMap((family) => family.chapters),
           };
         })
-        .filter((region) => region.families.length);
+        .filter(
+          (region) => region.families.length || region.quests.length || region.collections.length,
+        )
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
       const expected = new Set(visibleDocRows.map((row) => questKeyFromInput(row.sourceKey)));
       const actual = new Set<string>();
       const collect = (container: {
@@ -1440,6 +1663,7 @@ export class RepositoryReadModels {
           for (const entry of [...chapter.quests, ...(chapter.collections ?? [])])
             actual.add(entry.questKey);
       };
+      for (const region of regions) collect(region);
       for (const region of regions)
         for (const family of region.families) {
           collect(family);
@@ -1454,44 +1678,6 @@ export class RepositoryReadModels {
         );
       return { gameId, revisionId: revision.id, regions };
     }
-
-    const documentIds = visibleDocRows.map((row) => row.documentId);
-    const dialogueCountRows = documentIds.length
-      ? await this.db
-          .select({
-            documentId: questDialogueNodes.documentId,
-            count: sql<number>`count(*)::int`,
-          })
-          .from(questDialogueNodes)
-          .where(
-            and(
-              eq(questDialogueNodes.revisionId, revision.id),
-              inArray(questDialogueNodes.documentId, documentIds),
-            ),
-          )
-          .groupBy(questDialogueNodes.documentId)
-      : [];
-    const subquestCountRows = documentIds.length
-      ? await this.db
-          .select({
-            documentId: questSubquests.documentId,
-            count: sql<number>`count(*)::int`,
-          })
-          .from(questSubquests)
-          .where(
-            and(
-              eq(questSubquests.revisionId, revision.id),
-              inArray(questSubquests.documentId, documentIds),
-            ),
-          )
-          .groupBy(questSubquests.documentId)
-      : [];
-    const dialogueCounts = new Map(
-      dialogueCountRows.map((row) => [row.documentId, Number(row.count)]),
-    );
-    const subquestCounts = new Map(
-      subquestCountRows.map((row) => [row.documentId, Number(row.count)]),
-    );
 
     // The fallback is only a last-resort catalogue for an unpopulated Star Rail
     // revision.  It must not turn an intentional type filter into a fabricated
@@ -1574,8 +1760,9 @@ export class RepositoryReadModels {
         regionId?: string;
         regionTitle?: string;
         regionOrder?: number;
-        familyId: string;
-        familyTitle: string;
+        taskRegionId?: string;
+        familyId?: string;
+        familyTitle?: string;
         familyOrder?: number;
         subseriesId?: string;
         subseriesTitle?: string;
@@ -1635,29 +1822,35 @@ export class RepositoryReadModels {
           name: string;
           order: number;
           families: Map<string, FamilyBucket>;
+          quests: StoryQuestEntry[];
+          collections: StoryQuestEntry[];
         }
       >();
       for (const row of visibleDocRows) {
         const meta = questMetadata(row);
         const projection = meta.storyProjection as ProjectionMeta | undefined;
-        if (!projection?.familyId) continue;
+        if (!projection) continue;
         const regionId = projection.regionId ?? String(meta.regionId ?? "other");
         const region = regionMap.get(regionId) ?? {
           id: regionId,
           name: projection.regionTitle ?? String(meta.regionName ?? meta.region ?? regionId),
           order: projection.regionOrder ?? 99,
           families: new Map<string, FamilyBucket>(),
-        };
-        const family = region.families.get(projection.familyId) ?? {
-          id: projection.familyId,
-          name: projection.familyTitle,
-          order: projection.familyOrder ?? Number(meta.storyFamilyOrder ?? 999999),
-          provenance: meta.storyFamilyProvenance ?? "derived",
           quests: [],
           collections: [],
-          chapters: new Map<string, ChapterBucket>(),
-          subseries: new Map<string, SubSeriesBucket>(),
         };
+        const family = projection.familyId
+          ? (region.families.get(projection.familyId) ?? {
+              id: projection.familyId,
+              name: projection.familyTitle ?? projection.familyId,
+              order: projection.familyOrder ?? Number(meta.storyFamilyOrder ?? 999999),
+              provenance: meta.storyFamilyProvenance ?? "derived",
+              quests: [],
+              collections: [],
+              chapters: new Map<string, ChapterBucket>(),
+              subseries: new Map<string, SubSeriesBucket>(),
+            })
+          : undefined;
         const questKey = meta.questKey ?? questKeyFromInput(row.sourceKey);
         const contentRole = meta.contentRole;
         const entryType =
@@ -1683,6 +1876,7 @@ export class RepositoryReadModels {
         const entry: StoryQuestEntry = {
           questKey,
           title: row.title,
+          taskRegionId: projection.taskRegionId ?? String(meta.regionId ?? "other"),
           displayTitle: projection.displayTitle,
           order: Number(meta.topology?.storyOrder ?? meta.storyPosition ?? meta.order ?? 0),
           completeness,
@@ -1695,8 +1889,8 @@ export class RepositoryReadModels {
           contentRole,
           dialogueResolutionStatus: meta.dialogueResolutionStatus,
         };
-        let container: StoryContainerBucket = family;
-        if (projection.subseriesId) {
+        let container: StoryContainerBucket | undefined = family;
+        if (family && projection.subseriesId) {
           const subseries = family.subseries.get(projection.subseriesId) ?? {
             id: projection.subseriesId,
             name: projection.subseriesTitle ?? projection.subseriesId,
@@ -1709,7 +1903,7 @@ export class RepositoryReadModels {
           container = subseries;
         }
         let chapter: ChapterBucket | undefined;
-        if (projection.chapterId) {
+        if (container && projection.chapterId) {
           chapter = container.chapters.get(projection.chapterId) ?? {
             id: projection.chapterId,
             name: projection.chapterTitle ?? projection.chapterId,
@@ -1721,13 +1915,16 @@ export class RepositoryReadModels {
         }
         if (entryType === "collection" || entryType === "aggregate") {
           if (chapter) chapter.collections.push(entry);
-          else container.collections.push(entry);
+          else if (container) container.collections.push(entry);
+          else region.collections.push(entry);
         } else if (chapter) {
           chapter.quests.push(entry);
-        } else {
+        } else if (container) {
           container.quests.push(entry);
+        } else {
+          region.quests.push(entry);
         }
-        region.families.set(family.id, family);
+        if (family) region.families.set(family.id, family);
         regionMap.set(region.id, region);
       }
       const regions: StoryRegion[] = [...regionMap.values()]
@@ -1788,6 +1985,12 @@ export class RepositoryReadModels {
             name: region.name,
             order: region.order,
             families,
+            quests: region.quests.sort(
+              (a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey),
+            ),
+            collections: region.collections.sort(
+              (a, b) => a.order - b.order || a.questKey.localeCompare(b.questKey),
+            ),
             chapters: families.flatMap((family) => family.chapters),
           };
         });
@@ -2374,43 +2577,99 @@ export class RepositoryReadModels {
     const metadata = questMetadata(document);
     const nodeLimit = Math.min(Math.max(request.nodeLimit, 1), 300);
     const offset = cursor?.offset ?? 0;
-    const subquestRows = await this.db
-      .select()
-      .from(questSubquests)
+    const [sharedContentBinding] = await this.db
+      .select({ contentHash: revisionQuestContentBindings.contentHash })
+      .from(revisionQuestContentBindings)
       .where(
-        and(eq(questSubquests.documentId, document.id), eq(questSubquests.revisionId, revision.id)),
+        and(
+          eq(revisionQuestContentBindings.documentId, document.id),
+          eq(revisionQuestContentBindings.revisionId, revision.id),
+        ),
       )
-      .orderBy(asc(questSubquests.ordinal));
+      .limit(1);
+    const subquestRows = sharedContentBinding
+      ? await this.db
+          .select()
+          .from(questContentSubquests)
+          .where(eq(questContentSubquests.contentHash, sharedContentBinding.contentHash))
+          .orderBy(asc(questContentSubquests.ordinal))
+      : await this.db
+          .select()
+          .from(questSubquests)
+          .where(
+            and(
+              eq(questSubquests.documentId, document.id),
+              eq(questSubquests.revisionId, revision.id),
+            ),
+          )
+          .orderBy(asc(questSubquests.ordinal));
     const nodeConditions = [
       eq(questDialogueNodes.documentId, document.id),
       eq(questDialogueNodes.revisionId, revision.id),
       ...(requestedSubquestKey ? [eq(questDialogueNodes.subquestKey, requestedSubquestKey)] : []),
     ];
-    const totalRows = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(questDialogueNodes)
-      .where(and(...nodeConditions));
+    const totalRows = sharedContentBinding
+      ? await this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(questContentDialogueNodes)
+          .where(
+            and(
+              eq(questContentDialogueNodes.contentHash, sharedContentBinding.contentHash),
+              ...(requestedSubquestKey
+                ? [eq(questContentDialogueNodes.subquestKey, requestedSubquestKey)]
+                : []),
+            ),
+          )
+      : await this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(questDialogueNodes)
+          .where(and(...nodeConditions));
     const totalDialogueNodes = Number(totalRows[0]?.count ?? 0);
-    const nodeRows = await this.db
-      .select()
-      .from(questDialogueNodes)
-      .where(and(...nodeConditions))
-      .orderBy(asc(questDialogueNodes.ordinal))
-      .offset(offset)
-      .limit(nodeLimit + 1);
+    const nodeRows = sharedContentBinding
+      ? await this.db
+          .select()
+          .from(questContentDialogueNodes)
+          .where(
+            and(
+              eq(questContentDialogueNodes.contentHash, sharedContentBinding.contentHash),
+              ...(requestedSubquestKey
+                ? [eq(questContentDialogueNodes.subquestKey, requestedSubquestKey)]
+                : []),
+            ),
+          )
+          .orderBy(asc(questContentDialogueNodes.ordinal))
+          .offset(offset)
+          .limit(nodeLimit + 1)
+      : await this.db
+          .select()
+          .from(questDialogueNodes)
+          .where(and(...nodeConditions))
+          .orderBy(asc(questDialogueNodes.ordinal))
+          .offset(offset)
+          .limit(nodeLimit + 1);
     const pageRows = nodeRows.slice(0, nodeLimit);
     const pageNodeKeys = pageRows.map((row) => row.nodeKey);
     const edgeRows = pageNodeKeys.length
-      ? await this.db
-          .select()
-          .from(questDialogueEdges)
-          .where(
-            and(
-              eq(questDialogueEdges.documentId, document.id),
-              eq(questDialogueEdges.revisionId, revision.id),
-              inArray(questDialogueEdges.fromNodeKey, pageNodeKeys),
-            ),
-          )
+      ? sharedContentBinding
+        ? await this.db
+            .select()
+            .from(questContentDialogueEdges)
+            .where(
+              and(
+                eq(questContentDialogueEdges.contentHash, sharedContentBinding.contentHash),
+                inArray(questContentDialogueEdges.fromNodeKey, pageNodeKeys),
+              ),
+            )
+        : await this.db
+            .select()
+            .from(questDialogueEdges)
+            .where(
+              and(
+                eq(questDialogueEdges.documentId, document.id),
+                eq(questDialogueEdges.revisionId, revision.id),
+                inArray(questDialogueEdges.fromNodeKey, pageNodeKeys),
+              ),
+            )
       : [];
     const speakerKeys = [
       ...new Set(
@@ -2426,16 +2685,22 @@ export class RepositoryReadModels {
 
     const segmentRows =
       pageRows.length === 0 && document.id
-        ? await this.db
-            .select()
-            .from(documentSegments)
-            .where(
-              and(
-                eq(documentSegments.documentId, document.id),
-                eq(documentSegments.revisionId, revision.id),
-              ),
-            )
-            .orderBy(asc(documentSegments.ordinal))
+        ? sharedContentBinding
+          ? await this.db
+              .select()
+              .from(questContentSegments)
+              .where(eq(questContentSegments.contentHash, sharedContentBinding.contentHash))
+              .orderBy(asc(questContentSegments.ordinal))
+          : await this.db
+              .select()
+              .from(documentSegments)
+              .where(
+                and(
+                  eq(documentSegments.documentId, document.id),
+                  eq(documentSegments.revisionId, revision.id),
+                ),
+              )
+              .orderBy(asc(documentSegments.ordinal))
         : [];
 
     let narrativeMode: NarrativeMode = "unavailable";
@@ -2491,6 +2756,30 @@ export class RepositoryReadModels {
       regionId: (metadata.regionId ? String(metadata.regionId) : null) as string | null,
       chapter: (metadata.chapter ?? metadata.chapterTitle ?? null) as string | null,
       series: (metadata.series ?? metadata.seriesTitle ?? null) as string | null,
+      storyPlacement: metadata.storyProjection
+        ? {
+            catalogRegionId: metadata.storyProjection.regionId,
+            catalogRegionTitle: metadata.storyProjection.regionTitle,
+            taskRegionId: metadata.storyProjection.taskRegionId,
+            familyId: metadata.storyProjection.familyId,
+            familyTitle: metadata.storyProjection.familyTitle,
+            familyProvenance: metadata.storyFamilyProvenance,
+            subseriesId: metadata.storyProjection.subseriesId,
+            subseriesTitle: metadata.storyProjection.subseriesTitle,
+            chapterId: metadata.storyProjection.chapterId,
+            chapterTitle: metadata.storyProjection.chapterTitle,
+            storyOrder: metadata.topology?.storyOrder ?? metadata.storyPosition ?? metadata.order,
+            qualityCode: metadata.qualityCode,
+            bodyAvailability:
+              totalDialogueNodes > 0
+                ? "dialogue"
+                : subquestRows.some((row) => Boolean(row.objective))
+                  ? "objective_only"
+                  : document.body.trim()
+                    ? "document"
+                    : "none",
+          }
+        : undefined,
       subquests: subquestRows.map((row) => ({
         subquestKey: row.subquestKey,
         subquestId: row.subquestId,
@@ -2595,7 +2884,17 @@ export class RepositoryReadModels {
              ss.content_hash as source_version, ds.body,
              1 - (e.vector <=> ${vectorLiteral}::vector) as score
       from knowledge.embeddings e
-      inner join knowledge.document_segments ds on ds.id = e.target_id
+      inner join (
+        select legacy.id, legacy.document_id, legacy.body, legacy.revision_id
+        from knowledge.document_segments legacy
+        where legacy.revision_id = ${revision.id}
+        union all
+        select shared.id, binding.document_id, shared.body, binding.revision_id
+        from knowledge.revision_quest_content_bindings binding
+        inner join knowledge.quest_content_segments shared
+          on shared.content_hash = binding.content_hash
+        where binding.revision_id = ${revision.id}
+      ) ds on ds.id = e.target_id
       inner join knowledge.documents d on d.id = ds.document_id
       inner join knowledge.source_snapshots ss on ss.id = d.source_snapshot_id
       where e.target_type = 'segment'

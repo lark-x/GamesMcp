@@ -354,6 +354,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       questKey: request.questKey,
       nodeType: request.nodeType,
       locale: request.locale,
+      limit: request.limit,
     });
   }
 

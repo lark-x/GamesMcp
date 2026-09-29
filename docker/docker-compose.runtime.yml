@@ -1,0 +1,75 @@
+# Docker Compose configuration for lightweight standalone runtime deployment
+# Ideal for macOS (Intel or Apple Silicon) with minimal resource footprint (< 650 MB RAM total)
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: gamesmcp-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gip}
+      POSTGRES_DB: ${POSTGRES_DB:-gip}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gip} -d ${POSTGRES_DB:-gip}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: mcp-runtime
+    container_name: gamesmcp-mcp
+    image: gamesmcp-mcp:runtime
+    env_file:
+      - .env.runtime
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-gip}:${POSTGRES_PASSWORD:-gip}@postgres:5432/${POSTGRES_DB:-gip}
+      DATA_DIR: /app/data
+      MCP_HTTP_ENABLED: "true"
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 4200
+      MCP_PATH: /mcp
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      MCP_LOG_LEVEL: ${MCP_LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${MCP_PORT:-4200}:4200"
+    volumes:
+      - mcp_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4200/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  mcp_data:

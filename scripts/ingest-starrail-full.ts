@@ -339,17 +339,24 @@ async function persistStructuredCodex(
       story?: string;
       sources?: Array<{ description: string }>;
       usages?: Array<{ targetName: string }>;
+      provenance?: Record<string, unknown>;
     };
+    const prov = material.provenance ?? {};
+    const primaryCat = (prov.primaryCategory as string) || material.category;
     await repo.upsertMaterial({
       ...base,
       stableId: `material_${material.id}`,
       sourceKey: `item/${material.id}`,
       name: material.name,
-      category: material.category,
+      category: primaryCat,
       rarity: material.rarity,
       description: material.description || material.story || null,
       sources: (material.sources ?? []).map((source) => source.description),
       usedBy: (material.usages ?? []).map((usage) => usage.targetName),
+      provenance: {
+        ...base.provenance,
+        ...prov,
+      },
     });
   }
 
@@ -1022,8 +1029,8 @@ export async function runStarRailIngestion(options: IngestOptions) {
           structured?.worldTitle ??
           structured?.worldName ??
           wld?.name ??
-          (worldId ? `世界 ${worldId}` : "其他世界");
-        const regionId = `world_${worldId ?? 0}`;
+          (worldId ? `世界 ${worldId}` : "系统玩法引导");
+        const regionId = worldId ? `world_${worldId}` : "system_guide";
         const chapter = structured?.chapterTitle ?? chap?.name;
         const chapterId = structured?.chapterId
           ? `chapter_${structured.chapterId}`

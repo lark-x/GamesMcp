@@ -112,7 +112,7 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
     kind: TalkRelationEvidence,
     details?: Partial<TalkEvidence>,
   ): void => {
-    if (!talkId) return;
+    if (!talkId || talkId === "0" || Number(talkId) === 0) return;
     const list = refs.get(talkId) ?? [];
     const evidence: TalkEvidence = {
       kind,
@@ -128,7 +128,13 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
   };
   for (const talkId of input.completeTalkIds ?? []) addRef(talkId, "quest_complete_talk");
   for (const edge of relationEdges) {
-    if (!edge.talkId || !edge.fromQuestId || !relatedQuestIds.has(edge.fromQuestId)) continue;
+    if (
+      !edge.talkId ||
+      edge.talkId === "0" ||
+      !edge.fromQuestId ||
+      !relatedQuestIds.has(edge.fromQuestId)
+    )
+      continue;
     if (edge.relationType === "complete_talk") {
       addRef(edge.talkId, "quest_complete_talk", {
         confidence: edge.confidence,
@@ -147,26 +153,22 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
     if (evidence) addRef(edge.talkId, evidence.kind, evidence);
   }
   for (const row of input.talkRows) {
-    const questId = idText(row.questId ?? row.mainQuestId ?? row.mainId);
     const talkId = idText(row.id ?? row.talkId);
+    if (!talkId || talkId === "0" || Number(talkId) === 0) continue;
+    const questId = idText(row.questId ?? row.mainQuestId ?? row.mainId);
     const initDialog = idText(row.initDialog ?? row.initDialogId);
+    if (initDialog) {
+      const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
+      if (!initDialogs.includes(initDialog)) initDialogs.push(initDialog);
+      initDialogsByTalkId.set(talkId, initDialogs);
+    }
     if (questId && relatedQuestIds.has(questId)) {
       addRef(talkId, "talk_excel_quest_id", { confidence: 1 });
-      if (talkId && initDialog) {
-        const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
-        if (!initDialogs.includes(initDialog)) initDialogs.push(initDialog);
-        initDialogsByTalkId.set(talkId, initDialogs);
-      }
     } else if (
       !questId &&
       exactPerformCfgMatch(row.performCfg ?? row.performConfig, input.mainQuestId)
     ) {
       addRef(talkId, "perform_cfg_exact", { confidence: 0.85 });
-      if (talkId && initDialog) {
-        const initDialogs = initDialogsByTalkId.get(talkId) ?? [];
-        if (!initDialogs.includes(initDialog)) initDialogs.push(initDialog);
-        initDialogsByTalkId.set(talkId, initDialogs);
-      }
     }
   }
   const allReferencedTalkIds = [...refs.keys()].sort(
@@ -255,16 +257,30 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
     const exactInitDialogMatches = initDialogMatches.filter(([signature]) =>
       exactPathMatches.some(([exactSignature]) => exactSignature === signature),
     );
+    const questMatches = [...bySignature.entries()].filter(
+      ([, asset]) => asset.sourceKind === "quest",
+    );
+    const exactQuestMatches = exactPathMatches.filter(([, asset]) => asset.sourceKind === "quest");
+    const initDialogQuestMatches = initDialogMatches.filter(
+      ([, asset]) => asset.sourceKind === "quest",
+    );
+
     const selectedSignature =
       bySignature.size === 1
         ? [...bySignature.keys()][0]
         : exactInitDialogMatches.length === 1
           ? exactInitDialogMatches[0]?.[0]
-          : initDialogMatches.length === 1
-            ? initDialogMatches[0]?.[0]
-            : exactPathMatches.length === 1
-              ? exactPathMatches[0]?.[0]
-              : undefined;
+          : initDialogQuestMatches.length === 1
+            ? initDialogQuestMatches[0]?.[0]
+            : initDialogMatches.length === 1
+              ? initDialogMatches[0]?.[0]
+              : exactPathMatches.length === 1
+                ? exactPathMatches[0]?.[0]
+                : exactQuestMatches.length === 1
+                  ? exactQuestMatches[0]?.[0]
+                  : questMatches.length === 1
+                    ? questMatches[0]?.[0]
+                    : undefined;
     const isResolved = hasNarrativeEvidence && Boolean(selectedSignature);
     if (isResolved) resolvedTalkIds.push(talkId);
     if (hasNarrativeEvidence && bySignature.size > 1 && !selectedSignature) {
@@ -305,13 +321,19 @@ export async function resolveQuestTalks(input: ResolveQuestTalkInput): Promise<R
         resolutionReason:
           exactInitDialogMatches.length === 1 && bySignature.size > 1
             ? "talk_excel_init_dialog_exact_path"
-            : initDialogMatches.length === 1 && bySignature.size > 1
-              ? "talk_excel_init_dialog_exact"
-              : exactPathMatches.length === 1 && bySignature.size > 1
-                ? "exact_numeric_asset_path"
-                : bySignature.size === 1
-                  ? "unique_content_signature"
-                  : "multiple_content_signatures",
+            : initDialogQuestMatches.length === 1 && bySignature.size > 1
+              ? "talk_excel_init_dialog_quest_kind"
+              : initDialogMatches.length === 1 && bySignature.size > 1
+                ? "talk_excel_init_dialog_exact"
+                : exactPathMatches.length === 1 && bySignature.size > 1
+                  ? "exact_numeric_asset_path"
+                  : exactQuestMatches.length === 1 && bySignature.size > 1
+                    ? "exact_numeric_quest_asset_path"
+                    : questMatches.length === 1 && bySignature.size > 1
+                      ? "unique_quest_kind_asset"
+                      : bySignature.size === 1
+                        ? "unique_content_signature"
+                        : "multiple_content_signatures",
       };
       candidates.push(candidate);
     }

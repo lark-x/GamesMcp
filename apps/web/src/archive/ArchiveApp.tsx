@@ -5,6 +5,8 @@ import type { ArchiveRoute, DataKind } from "./archive.types.js";
 import { ArchiveHeader } from "./ArchiveHeader.js";
 import { ArchiveHome } from "./ArchiveHome.js";
 import { ArchiveLoading } from "./ArchiveStates.js";
+import { isStarRailGame } from "../shared.js";
+
 
 const StoryBrowser = lazy(() =>
   import("./story/StoryBrowser.js").then((m) => ({ default: m.StoryBrowser })),
@@ -47,6 +49,18 @@ export function ArchiveApp({
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        window.location.hash = "search";
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
 
   const gameName = currentGame?.name ?? "原神";
   const revisionLabel = selectedRevisionLabel ?? "正式发布";
@@ -183,8 +197,10 @@ export function ArchiveApp({
     }
   }
 
+  const isStarRail = isStarRailGame(currentGame?.slug || currentGame?.id, gameName);
+
   return (
-    <div className="archive-app-root">
+    <div className="archive-app-root" data-game={isStarRail ? "starrail" : "genshin"}>
       <ArchiveHeader
         gameName={gameName}
         games={games}

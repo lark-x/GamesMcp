@@ -9,7 +9,7 @@ import {
 import type { GameDomainService } from "@gip/domain";
 import {
   decodeStableId,
-  listQuerySchema,
+  codexListQuerySchema,
   parseIdParams,
   parseQuery,
   stableIdParams,
@@ -37,10 +37,14 @@ export function registerCodexRoutes(
   app.get("/api/games/:gameId/codex/materials", async (request) => {
     const { gameId } = parseIdParams(request);
     const rawQuery = parseQuery(request);
-    const query = listQuerySchema.parse(rawQuery);
+    const query = codexListQuerySchema.parse(rawQuery);
     const category =
       typeof rawQuery.category === "string" && rawQuery.category.trim()
         ? rawQuery.category.trim()
+        : undefined;
+    const subcategory =
+      typeof rawQuery.subcategory === "string" && rawQuery.subcategory.trim()
+        ? rawQuery.subcategory.trim()
         : undefined;
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
@@ -48,12 +52,14 @@ export function registerCodexRoutes(
       gameDomain.listMaterials(gameId, query.revisionId, {
         query: query.q,
         category,
+        subcategory,
         limit,
         offset,
       }),
       gameDomain.countMaterials(gameId, query.revisionId, {
         query: query.q,
         category,
+        subcategory,
       }),
       gameDomain.aggregateMaterialCategories(gameId, query.revisionId, query.q),
     ]);
@@ -71,7 +77,7 @@ export function registerCodexRoutes(
 
   app.get("/api/games/:gameId/codex/materials/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     try {
       const material = await gameDomain.getMaterial(
         params.gameId,
@@ -89,7 +95,7 @@ export function registerCodexRoutes(
   // Characters
   app.get("/api/games/:gameId/codex/characters", async (request) => {
     const { gameId } = parseIdParams(request);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     const [adapter, characters] = await Promise.all([
       gameDomain.getArchiveAdapter(gameId),
       gameDomain.listCharacters(gameId, query.revisionId, {
@@ -110,7 +116,7 @@ export function registerCodexRoutes(
 
   app.get("/api/games/:gameId/codex/characters/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     try {
       const [adapter, character] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
@@ -130,7 +136,7 @@ export function registerCodexRoutes(
   // Weapons
   app.get("/api/games/:gameId/codex/weapons", async (request) => {
     const { gameId } = parseIdParams(request);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     const [adapter, weapons] = await Promise.all([
       gameDomain.getArchiveAdapter(gameId),
       gameDomain.listWeapons(gameId, query.revisionId, {
@@ -149,7 +155,7 @@ export function registerCodexRoutes(
 
   app.get("/api/games/:gameId/codex/weapons/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     try {
       const [adapter, weapon] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
@@ -167,10 +173,16 @@ export function registerCodexRoutes(
   // Artifacts
   app.get("/api/games/:gameId/codex/artifacts", async (request) => {
     const { gameId } = parseIdParams(request);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const rawQuery = parseQuery(request);
+    const query = codexListQuerySchema.parse(rawQuery);
+    const category =
+      typeof rawQuery.category === "string" && rawQuery.category.trim()
+        ? rawQuery.category.trim()
+        : undefined;
     const sets = await gameDomain.listArtifactSets(gameId, query.revisionId, {
       query: query.q,
-      limit: query.limit ?? 20,
+      category,
+      limit: query.limit ?? 200,
       offset: query.offset ?? 0,
     });
     return {
@@ -182,7 +194,7 @@ export function registerCodexRoutes(
 
   app.get("/api/games/:gameId/codex/artifacts/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     try {
       const set = await gameDomain.getArtifactSet(
         params.gameId,
@@ -200,12 +212,18 @@ export function registerCodexRoutes(
   // Enemies
   app.get("/api/games/:gameId/codex/enemies", async (request) => {
     const { gameId } = parseIdParams(request);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const rawQuery = parseQuery(request);
+    const query = codexListQuerySchema.parse(rawQuery);
+    const category =
+      typeof rawQuery.category === "string" && rawQuery.category.trim()
+        ? rawQuery.category.trim()
+        : undefined;
     const [adapter, enemies] = await Promise.all([
       gameDomain.getArchiveAdapter(gameId),
       gameDomain.listEnemies(gameId, query.revisionId, {
         query: query.q,
-        limit: query.limit ?? 20,
+        category,
+        limit: query.limit ?? 2000,
         offset: query.offset ?? 0,
       }),
     ]);
@@ -219,7 +237,7 @@ export function registerCodexRoutes(
 
   app.get("/api/games/:gameId/codex/enemies/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     try {
       const [adapter, enemy] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),
@@ -237,12 +255,18 @@ export function registerCodexRoutes(
   // Achievements
   app.get("/api/games/:gameId/codex/achievements", async (request) => {
     const { gameId } = parseIdParams(request);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const rawQuery = parseQuery(request);
+    const query = codexListQuerySchema.parse(rawQuery);
+    const category =
+      typeof rawQuery.category === "string" && rawQuery.category.trim()
+        ? rawQuery.category.trim()
+        : undefined;
     const [adapter, achievements] = await Promise.all([
       gameDomain.getArchiveAdapter(gameId),
       gameDomain.listAchievements(gameId, query.revisionId, {
         query: query.q,
-        limit: query.limit ?? 20,
+        category,
+        limit: query.limit ?? 2000,
         offset: query.offset ?? 0,
       }),
     ]);
@@ -258,7 +282,7 @@ export function registerCodexRoutes(
 
   app.get("/api/games/:gameId/codex/achievements/:stableId", async (request, reply) => {
     const params = stableIdParams.parse(request.params);
-    const query = listQuerySchema.parse(parseQuery(request));
+    const query = codexListQuerySchema.parse(parseQuery(request));
     try {
       const [adapter, achievement] = await Promise.all([
         gameDomain.getArchiveAdapter(params.gameId),

@@ -21,6 +21,7 @@ export type DialogueSearchFilters = {
   questKey?: string;
   nodeType?: string;
   locale?: string;
+  limit?: number;
 };
 
 export type EntityCandidateSearchRequest = {

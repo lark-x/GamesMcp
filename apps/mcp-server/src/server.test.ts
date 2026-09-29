@@ -538,6 +538,37 @@ describe("MCP server", () => {
     await server.close();
   });
 
+  it("serves get_quest tool with optional subquest filtering", async () => {
+    const server = createMcpServer(repository);
+    const client = new Client({ name: "quest-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    const fullQuest = await client.callTool({
+      name: "get_quest",
+      arguments: { game_id: gameId, quest_id: "1001" },
+    });
+    expect(fullQuest.isError).toBeFalsy();
+    const fullBody = resultJson(fullQuest) as { quest?: { questKey?: string; subquests?: unknown[] } };
+    expect(fullBody.quest?.questKey).toBe("quest/1001");
+    expect(fullBody.quest?.subquests).toHaveLength(1);
+
+    const filteredQuest = await client.callTool({
+      name: "get_quest",
+      arguments: { game_id: gameId, quest_id: "1001", subquest_id: "100101" },
+    });
+    expect(filteredQuest.isError).toBeFalsy();
+    const filteredBody = resultJson(filteredQuest) as {
+      quest?: { subquests?: unknown[]; dialogueNodes?: unknown[] };
+    };
+    expect(filteredBody.quest?.subquests).toHaveLength(1);
+    expect(filteredBody.quest?.dialogueNodes).toHaveLength(1);
+
+    await client.close();
+    await server.close();
+  });
+
   it("serves structured character and material tools over the shared domain service", async () => {
     const character = {
       id: "00000000-0000-0000-0000-0000000000b1",
@@ -1016,6 +1047,72 @@ describe("MCP server", () => {
       const body = resultJson(result) as { hits?: unknown[] };
       expect(body.hits?.length).toBe(limit);
     }
+
+    await client.close();
+    await server.close();
+  });
+
+  it("reuses cached search results for prefix-slice sub-limits with mathematical identity", async () => {
+    let searchCalls = 0;
+    const testRepo = {
+      ...repository,
+      search: async () => {
+        searchCalls++;
+        return {
+          entities: [],
+          documents: Array.from({ length: 30 }, (_, i) => ({
+            id: "doc-" + i,
+            title: "文档" + i,
+            type: "book" as const,
+            snippet: "内容" + i,
+            score: 30 - i,
+            revision: "r1",
+          })),
+          segments: [],
+          revision: "r1",
+          indexStatus: "ready",
+          coreHits: { structured: [], lore: [] },
+        };
+      },
+      searchDialogue: async () => [],
+      searchQuests: async () => [],
+    };
+    const server = createMcpServer(testRepo as unknown as KnowledgeRepository);
+    const client = new Client({ name: "prefix-client", version: "0.1.0" }, { capabilities: {} });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await server.connect(st);
+    await client.connect(ct);
+
+    // Call 1: search with limit 15 (cache miss -> populates cache with 15)
+    const result15 = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "穿越星海", limit: 15 },
+    });
+    // For type: "all", repository.search is called 4 times across surfaces (structured, document, item, mechanism)
+    expect(searchCalls).toBe(4);
+    const body15 = resultJson(result15) as { hits: Array<{ title: string; score: number }> };
+    expect(body15.hits.length).toBe(15);
+
+    // Call 2: search with limit 10 (prefix-slice hit: limit 10 <= maxLimit 15)
+    const result10 = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "穿越星海", limit: 10 },
+    });
+    // Crucial: repository must NOT have been called again!
+    expect(searchCalls).toBe(4);
+    const body10 = resultJson(result10) as { hits: Array<{ title: string; score: number }> };
+    expect(body10.hits.length).toBe(10);
+
+    // Verify mathematical identity: the 10 items must be identical to the first 10 items of the 15-item result
+    expect(body10.hits).toEqual(body15.hits.slice(0, 10));
+
+    // Call 3: exact cache hit with limit 10
+    const result10Exact = await client.callTool({
+      name: "search",
+      arguments: { game_id: gameId, query: "穿越星海", limit: 10 },
+    });
+    expect(searchCalls).toBe(4);
+    expect(resultJson(result10Exact)).toEqual(body10);
 
     await client.close();
     await server.close();

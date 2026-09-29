@@ -7,7 +7,7 @@ export interface GameArchiveAdapter {
   getTerminology(): GameTerminology;
   listMaterials(
     revisionId: Id,
-    options: { query?: string; category?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; subcategory?: string; limit: number; offset?: number },
   ): Promise<CodexMaterial[]>;
   getMaterial(revisionId: Id, stableId: string): Promise<CodexMaterial | null>;
   listCharacters(
@@ -22,17 +22,17 @@ export interface GameArchiveAdapter {
   getWeapon(revisionId: Id, stableId: string): Promise<any | null>;
   listArtifactSets(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<any[]>;
   getArtifactSet(revisionId: Id, stableId: string): Promise<any | null>;
   listEnemies(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<any[]>;
   getEnemy(revisionId: Id, stableId: string): Promise<any | null>;
   listAchievements(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<any[]>;
   getAchievement(revisionId: Id, stableId: string): Promise<any | null>;
 }
@@ -53,12 +53,13 @@ export class GenshinArchiveAdapter implements GameArchiveAdapter {
 
   async listMaterials(
     revisionId: Id,
-    options: { query?: string; category?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; subcategory?: string; limit: number; offset?: number },
   ): Promise<CodexMaterial[]> {
     return this.repository.genshin.listMaterials({
       revisionId,
       query: options.query,
       category: options.category,
+      subcategory: options.subcategory,
       limit: options.limit,
       offset: options.offset,
     });
@@ -102,11 +103,12 @@ export class GenshinArchiveAdapter implements GameArchiveAdapter {
 
   async listArtifactSets(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<unknown[]> {
     return this.repository.genshin.listArtifactSets({
       revisionId,
       query: options.query,
+      category: options.category,
       limit: options.limit,
       offset: options.offset,
     });
@@ -118,11 +120,12 @@ export class GenshinArchiveAdapter implements GameArchiveAdapter {
 
   async listEnemies(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<unknown[]> {
     return this.repository.genshin.listEnemies({
       revisionId,
       query: options.query,
+      category: options.category,
       limit: options.limit,
       offset: options.offset,
     });
@@ -134,11 +137,12 @@ export class GenshinArchiveAdapter implements GameArchiveAdapter {
 
   async listAchievements(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<unknown[]> {
     return this.repository.genshin.listAchievements({
       revisionId,
       query: options.query,
+      category: options.category,
       limit: options.limit,
       offset: options.offset,
     });
@@ -184,12 +188,13 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
 
   async listMaterials(
     revisionId: Id,
-    options: { query?: string; category?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; subcategory?: string; limit: number; offset?: number },
   ): Promise<CodexMaterial[]> {
     const materials = await this.repository.genshin.listMaterials({
       revisionId,
       query: options.query,
       category: options.category,
+      subcategory: options.subcategory,
       limit: options.limit,
       offset: options.offset,
     });
@@ -202,6 +207,8 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
       name: material.name,
       category: material.category,
       categoryLabel: STARRAIL_CATEGORY_LABELS[material.category] ?? material.category,
+      subcategory: material.subcategory,
+      subcategoryLabel: material.subcategoryLabel,
       rarity: material.rarity ?? null,
       description: material.description ?? null,
       sources: material.sources ?? [],
@@ -222,6 +229,8 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
       name: material.name,
       category: material.category,
       categoryLabel: STARRAIL_CATEGORY_LABELS[material.category] ?? material.category,
+      subcategory: material.subcategory,
+      subcategoryLabel: material.subcategoryLabel,
       rarity: material.rarity ?? null,
       description: material.description ?? null,
       sources: material.sources ?? [],
@@ -264,11 +273,12 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
 
   async listArtifactSets(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<unknown[]> {
     return this.repository.genshin.listArtifactSets({
       revisionId,
       query: options.query,
+      category: options.category,
       limit: options.limit,
       offset: options.offset,
     });
@@ -280,11 +290,12 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
 
   async listEnemies(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<unknown[]> {
     return this.repository.genshin.listEnemies({
       revisionId,
       query: options.query,
+      category: options.category,
       limit: options.limit,
       offset: options.offset,
     });
@@ -296,11 +307,12 @@ export class StarRailArchiveAdapter implements GameArchiveAdapter {
 
   async listAchievements(
     revisionId: Id,
-    options: { query?: string; limit: number; offset?: number },
+    options: { query?: string; category?: string; limit: number; offset?: number },
   ): Promise<unknown[]> {
     return this.repository.genshin.listAchievements({
       revisionId,
       query: options.query,
+      category: options.category,
       limit: options.limit,
       offset: options.offset,
     });

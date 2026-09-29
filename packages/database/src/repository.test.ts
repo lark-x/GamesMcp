@@ -97,6 +97,39 @@ describe("release candidate snapshots", () => {
     ).not.toThrow();
   });
 
+  it("validates familyless quests placed directly under a region", () => {
+    const recordValue = record("quest/1001/locale/zh-CN", "hash");
+    recordValue.locale = "zh-CN";
+    recordValue.metadata = {
+      questPayload: {
+        visibility: "public",
+        contentRole: "story",
+        storyProjection: { schemaVersion: 3 },
+      },
+      storyCatalogProjection: {
+        schemaVersion: 3,
+        regions: [
+          {
+            id: "mondstadt",
+            title: "蒙德",
+            order: 1,
+            families: [],
+            quests: [
+              {
+                questId: "1001",
+                title: "独立任务",
+                contentRole: "story",
+              },
+            ],
+            collections: [],
+          },
+        ],
+      },
+    };
+
+    expect(() => assertConsistentQuestProjection([recordValue])).not.toThrow();
+  });
+
   it("produces a stable checksum which changes with preview content", () => {
     const first = [record("book/1", "a")];
     const second = [record("book/1", "b")];
@@ -293,8 +326,8 @@ describe("Genshin structured repository", () => {
     expect(query.sql).toContain("from knowledge.text_bindings");
     expect(query.sql).toContain("revision_id = $1::uuid");
     expect(query.sql).toContain("document_id = $2::uuid");
-    expect(query.sql).toContain("segment_id = $3::uuid");
-    expect(query.params).toEqual([characterInput.revisionId, documentId, segmentId]);
+    expect(query.sql).toContain("segment_id = $3::uuid or content_segment_id = $4::uuid");
+    expect(query.params).toEqual([characterInput.revisionId, documentId, segmentId, segmentId]);
   });
 });
 
@@ -395,7 +428,9 @@ describe("PostgreSQL search port", () => {
     expect(shape).toContain("quest_key");
     expect(shape).toContain("node_type");
     expect(shape).toContain("d.locale");
-    expect(shape).toContain("q.revision_id");
+    expect(shape).toContain("legacy.revision_id");
+    expect(shape).toContain("binding.revision_id");
+    expect(shape).toContain("d.revision_id");
     expect(shape).toContain("matchType");
   });
 

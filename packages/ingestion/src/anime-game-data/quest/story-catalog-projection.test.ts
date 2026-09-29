@@ -75,4 +75,56 @@ describe("story catalog projection", () => {
     expect(family?.chapters[0]?.quests[0]?.questId).toBe("76148");
     expect(family?.chapters[0]?.collections?.[0]?.questId).toBe("76152");
   });
+
+  it("merges same-title families in the same region", () => {
+    const regions = projectStoryCatalog([
+      {
+        questId: "76001",
+        title: "第一部",
+        order: 1,
+        regionId: "fontaine",
+        regionTitle: "枫丹",
+        familyId: "genshin:series:long-day-part1",
+        familyTitle: "山中好长日",
+        contentRole: "story",
+        dialogueResolutionStatus: "resolved",
+      },
+      {
+        questId: "76002",
+        title: "第二部",
+        order: 2,
+        regionId: "fontaine",
+        regionTitle: "枫丹",
+        familyId: "genshin:series:long-day-part2",
+        familyTitle: "山中好长日",
+        contentRole: "story",
+        dialogueResolutionStatus: "resolved",
+      },
+    ]);
+
+    expect(regions[0]?.families).toHaveLength(1);
+    expect(regions[0]?.families[0]?.title).toBe("山中好长日");
+    expect(regions[0]?.families[0]?.quests?.map((q) => q.questId)).toEqual(["76001", "76002"]);
+  });
+
+  it("creates family when familyTitle is present but familyId is omitted", () => {
+    const regions = projectStoryCatalog([
+      {
+        questId: "80001",
+        title: "捕风的异乡人",
+        order: 1,
+        regionId: "mondstadt",
+        regionTitle: "蒙德",
+        familyTitle: "魔神任务 · 序章「巨龙与自由之歌」",
+        chapterTitle: "第一幕 捕风的异乡人",
+        contentRole: "story",
+        dialogueResolutionStatus: "resolved",
+      },
+    ]);
+
+    expect(regions[0]?.families).toHaveLength(1);
+    expect(regions[0]?.families[0]?.title).toBe("魔神任务 · 序章「巨龙与自由之歌」");
+    expect(regions[0]?.families[0]?.chapters[0]?.title).toBe("第一幕 捕风的异乡人");
+    expect(regions[0]?.families[0]?.chapters[0]?.quests[0]?.questId).toBe("80001");
+  });
 });

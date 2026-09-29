@@ -369,14 +369,61 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
       : sql``;
     const nodeTypeFilter = nodeType ? sql`and lower(q.node_type) = ${nodeType}` : sql``;
     const localeFilter = locale ? sql`and d.locale = ${locale}` : sql``;
+    const resultLimit = Math.min(Math.max(filters.limit ?? 20, 1), 60);
+    const candidateLimit = Math.min(Math.max(resultLimit * 10, 100), 500);
     const result = await this.db.execute(sql`
-      with search_terms as (
+      with search_terms as not materialized (
         select
           ${normalizedQuery}::text as normalized_query,
           ${prefix}::text as prefix,
           ${contains}::text as contains,
           plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
           websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
+      ), shared_candidates as materialized (
+        select
+          binding.document_id,
+          shared.node_key,
+          shared.subquest_key,
+          shared.quest_key,
+          shared.node_type,
+          shared.speaker_key,
+          shared.speaker_name,
+          shared.body,
+          shared.search_vector
+        from knowledge.revision_quest_content_bindings binding
+        inner join knowledge.quest_content_dialogue_nodes shared
+          on shared.content_hash = binding.content_hash
+        cross join search_terms t
+        where binding.revision_id = ${revisionId}::uuid
+          and (
+            shared.search_vector @@ t.plain_query
+            or shared.search_vector @@ t.web_query
+          )
+        limit ${candidateLimit}
+      ), legacy_candidates as materialized (
+        select
+          legacy.document_id,
+          legacy.node_key,
+          legacy.subquest_key,
+          legacy.quest_key,
+          legacy.node_type,
+          legacy.speaker_key,
+          legacy.speaker_name,
+          legacy.body,
+          legacy.search_vector
+        from knowledge.quest_dialogue_nodes legacy
+        cross join search_terms t
+        where legacy.revision_id = ${revisionId}::uuid
+          and (
+            legacy.search_vector @@ t.plain_query
+            or legacy.search_vector @@ t.web_query
+          )
+          and not exists (
+            select 1 from knowledge.revision_quest_content_bindings binding
+            where binding.revision_id = ${revisionId}::uuid
+              and binding.document_id = legacy.document_id
+          )
+        limit ${candidateLimit}
       ), candidates as (
         select
           q.document_id,
@@ -395,31 +442,20 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           t.contains,
           t.plain_query,
           t.web_query
-        from knowledge.quest_dialogue_nodes q
+        from (
+          select * from shared_candidates
+          union all
+          select * from legacy_candidates
+        ) q
         inner join knowledge.documents d on d.id = q.document_id
         cross join search_terms t
-          where q.revision_id = ${revisionId}::uuid
-            and d.revision_id = ${revisionId}::uuid
-            and d.game_id = ${gameId}::uuid
-            and d.deleted = false
-            ${speakerFilter}
-            ${questFilter}
-            ${nodeTypeFilter}
-            ${localeFilter}
-            and (
-              lower(coalesce(q.speaker_name, '')) = t.normalized_query
-              or lower(d.title) = t.normalized_query
-              or lower(coalesce(q.speaker_name, '')) like t.prefix escape '\\'
-              or d.normalized_title like t.prefix escape '\\'
-              or q.search_vector @@ t.plain_query
-              or q.search_vector @@ t.web_query
-              or d.search_vector @@ t.plain_query
-              or d.search_vector @@ t.web_query
-              or q.body ilike t.contains escape '\\'
-              or d.title ilike t.contains escape '\\'
-              or q.body % t.normalized_query
-              or d.normalized_title % t.normalized_query
-            )
+        where d.revision_id = ${revisionId}::uuid
+          and d.game_id = ${gameId}::uuid
+          and d.deleted = false
+          ${speakerFilter}
+          ${questFilter}
+          ${nodeTypeFilter}
+          ${localeFilter}
       ), ranked as (
         select
           c.*,
@@ -488,7 +524,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         rank desc,
         document_id asc,
         node_key asc
-      limit 60
+      limit ${resultLimit}
     `);
     return rowsFromExecuteResult(result).map((row) => ({
       key: `${readString(row, "document_id")}/${readString(row, "node_key")}`,
@@ -660,7 +696,6 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
               d.normalized_title = t.normalized_query
               or d.normalized_title like t.prefix escape '\\'
               or d.title ilike t.contains escape '\\'
-              or d.body ilike t.contains escape '\\'
               or d.search_vector @@ t.plain_query
               or d.search_vector @@ t.web_query
               or d.normalized_title % t.normalized_query
@@ -702,13 +737,56 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
       : Promise.resolve([]);
     const segmentQuery = includeSegments
       ? this.db.execute(sql`
-        with search_terms as (
+        with search_terms as not materialized (
           select
             ${normalizedQuery}::text as normalized_query,
             ${prefix}::text as prefix,
             ${contains}::text as contains,
             plainto_tsquery('simple'::regconfig, ${query.trim()}) as plain_query,
             websearch_to_tsquery('simple'::regconfig, ${query.trim()}) as web_query
+        ), legacy_candidates as materialized (
+          select
+            legacy.document_id,
+            legacy.id,
+            legacy.body,
+            legacy.search_text,
+            legacy.search_vector
+          from knowledge.document_segments legacy
+          cross join search_terms t
+          where legacy.revision_id = ${revisionId}::uuid
+            and (
+              legacy.search_vector @@ t.plain_query
+              or legacy.search_vector @@ t.web_query
+              or legacy.search_text % t.normalized_query
+            )
+            and not exists (
+              select 1 from knowledge.revision_quest_content_bindings binding
+              where binding.revision_id = ${revisionId}::uuid
+                and binding.document_id = legacy.document_id
+            )
+          limit ${candidateLimit}
+        ), shared_candidates as materialized (
+          select
+            binding.document_id,
+            shared.id,
+            shared.body,
+            shared.search_text,
+            shared.search_vector
+          from knowledge.revision_quest_content_bindings binding
+          inner join knowledge.quest_content_segments shared
+            on shared.content_hash = binding.content_hash
+          cross join search_terms t
+          where binding.revision_id = ${revisionId}::uuid
+            and (
+              shared.search_vector @@ t.plain_query
+              or shared.search_vector @@ t.web_query
+              or shared.search_text % t.normalized_query
+            )
+          limit ${candidateLimit}
+        ), ds as (
+          select * from legacy_candidates
+          union all
+          select * from shared_candidates
         ), candidates as (
           select
             ds.document_id,
@@ -718,12 +796,12 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
             d.type,
             d.locale,
             ds.id as segment_id,
+            ds.body as body,
             case
               when lower(ds.body) = t.normalized_query
                 or d.normalized_title = t.normalized_query then 1.0
               when lower(ds.body) like t.prefix escape '\\'
                 or d.normalized_title like t.prefix escape '\\' then 0.8
-              when ds.body ilike t.contains escape '\\' then 0.6
               when ds.search_vector @@ t.plain_query
                 or ds.search_vector @@ t.web_query then greatest(
                   ts_rank(ds.search_vector, t.plain_query),
@@ -739,38 +817,29 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
                 or d.normalized_title = t.normalized_query then 'exact'
               when lower(ds.body) like t.prefix escape '\\'
                 or d.normalized_title like t.prefix escape '\\' then 'prefix'
-              when ds.body ilike t.contains escape '\\' then 'substring'
               when ds.search_vector @@ t.plain_query
                 or ds.search_vector @@ t.web_query then 'fts'
               else 'trgm'
             end as match_type
-          from knowledge.document_segments ds
+          from ds
           inner join knowledge.documents d on d.id = ds.document_id
           cross join search_terms t
-          where ds.revision_id = ${revisionId}::uuid
-            and d.revision_id = ${revisionId}::uuid
+          where d.revision_id = ${revisionId}::uuid
             and d.game_id = ${gameId}::uuid
             and d.deleted = false
             ${documentTypeFilter}
             ${localeFilter}
             and (
-              lower(ds.body) = t.normalized_query
-              or d.normalized_title = t.normalized_query
-              or lower(ds.body) like t.prefix escape '\\'
-              or d.normalized_title like t.prefix escape '\\'
-              or ds.body ilike t.contains escape '\\'
-              or ds.search_vector @@ t.plain_query
+              ds.search_vector @@ t.plain_query
               or ds.search_vector @@ t.web_query
               or ds.search_text % t.normalized_query
-              or d.normalized_title % t.normalized_query
             )
           order by
             case
               when lower(ds.body) = t.normalized_query or d.normalized_title = t.normalized_query then 0
               when lower(ds.body) like t.prefix escape '\\' or d.normalized_title like t.prefix escape '\\' then 1
-              when ds.body ilike t.contains escape '\\' then 2
-              when ds.search_vector @@ t.plain_query or ds.search_vector @@ t.web_query then 3
-              else 4
+              when ds.search_vector @@ t.plain_query or ds.search_vector @@ t.web_query then 2
+              else 3
             end,
             rank desc,
             ds.document_id asc,
@@ -780,7 +849,7 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
         select
           c.document_id,
           c.segment_id,
-          left(ds.body, 1200) as segment_body,
+          left(c.body, 1200) as segment_body,
           c.id,
           c.source_key,
           c.title,
@@ -790,7 +859,6 @@ export class SqlSearchRepositoryPort implements SearchRepositoryPort {
           c.rank,
           c.match_type as "matchType"
         from candidates c
-        inner join knowledge.document_segments ds on ds.id = c.segment_id
         order by
           case c.match_type
             when 'exact' then 0

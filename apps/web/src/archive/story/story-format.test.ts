@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StoryCatalog as ApiStoryCatalog } from "../../api.js";
-import { buildStoryTree } from "./StoryCatalog.js";
+import { buildStoryTree, compareChapterOrder, parseStoryOrder } from "./StoryCatalog.js";
 import { formatStoryString } from "./story-format.js";
 import type { ProtagonistPreferences } from "./story.types.js";
 import type { StoryEntry } from "./story.types.js";
@@ -51,6 +51,28 @@ const storyEntry = (questKey: string, title: string): StoryEntry => ({
 });
 
 describe("story catalog filtering", () => {
+  it("renders independent quests directly under their region without a synthetic family", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "fontaine",
+          name: "枫丹",
+          order: 5,
+          families: [],
+          quests: [catalogEntry("quest/76148", "狮子奋迅")],
+          chapters: [],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog);
+    expect(tree[0]?.children).toEqual([
+      expect.objectContaining({ type: "quest", questKey: "quest/76148" }),
+    ]);
+  });
+
   it("renders collections as expandable non-clickable nodes", () => {
     const catalog: ApiStoryCatalog = {
       gameId: "game",
@@ -151,6 +173,407 @@ describe("story catalog filtering", () => {
 
   it("returns no catalog nodes when a query has no title or body matches", () => {
     expect(buildStoryTree([], storyCatalogFixture, "不存在的任务", true)).toEqual([]);
+  });
+
+  it("groups region children under type nodes when questType is present", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "fontaine",
+          name: "枫丹",
+          order: 1,
+          families: [
+            {
+              id: "genshin:aq:chapter-4",
+              name: "魔神任务 · 第四章「罪人舞步旋」",
+              order: 1,
+              provenance: "derived",
+              chapters: [
+                {
+                  id: "1401",
+                  name: "第四章 第一幕 白露与黑潮的序诗",
+                  order: 100,
+                  quests: [
+                    {
+                      questKey: "quest/400403",
+                      title: "白露与黑潮的序诗",
+                      order: 1,
+                      questType: "archon_quest",
+                      completeness: "complete",
+                      bodyAvailability: "dialogue",
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              id: "genshin:personal-line:emilie",
+              name: "艾梅莉埃 · 香氛瓶之章",
+              order: 2,
+              provenance: "derived",
+              chapters: [
+                {
+                  id: "2051",
+                  name: "香氛瓶之章 第一幕 花债血偿",
+                  order: 100,
+                  quests: [
+                    {
+                      questKey: "quest/14037",
+                      title: "前调·花债",
+                      order: 1,
+                      questType: "story_quest",
+                      completeness: "complete",
+                      bodyAvailability: "dialogue",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog);
+    expect(tree[0]?.type).toBe("region");
+    expect(tree[0]?.children?.map((c) => ({ type: c.type, title: c.title }))).toEqual([
+      { type: "type", title: "魔神任务" },
+      { type: "type", title: "传说任务" },
+    ]);
+    const archonTypeNode = tree[0]?.children?.[0];
+    expect(archonTypeNode?.children?.[0]?.title).toBe("魔神任务 · 第四章「罪人舞步旋」");
+  });
+
+  it("filters by typeFilter matching left-sidebar selection", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "fontaine",
+          name: "枫丹",
+          order: 1,
+          families: [
+            {
+              id: "genshin:aq:chapter-4",
+              name: "魔神任务 · 第四章「罪人舞步旋」",
+              order: 1,
+              provenance: "derived",
+              chapters: [],
+              quests: [
+                {
+                  questKey: "quest/400403",
+                  title: "白露与黑潮的序诗",
+                  order: 1,
+                  questType: "archon_quest",
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+              ],
+            },
+            {
+              id: "genshin:personal-line:emilie",
+              name: "艾梅莉埃 · 香氛瓶之章",
+              order: 2,
+              provenance: "derived",
+              chapters: [],
+              quests: [
+                {
+                  questKey: "quest/14037",
+                  title: "花债血偿",
+                  order: 1,
+                  questType: "story_quest",
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+
+    const archonTree = buildStoryTree([], catalog, "", false, "archon_quest");
+    expect(archonTree[0]?.children?.map((c) => c.title)).toEqual([
+      "魔神任务 · 第四章「罪人舞步旋」",
+    ]);
+
+    const storyTree = buildStoryTree([], catalog, "", false, "story_quest");
+    expect(storyTree[0]?.children?.map((c) => c.title)).toEqual(["艾梅莉埃 · 香氛瓶之章"]);
+  });
+
+  it("strictly orders acts in chronological narrative sequence: prologue, act 1..10", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "genshin",
+      revisionId: "r1",
+      regions: [
+        {
+          id: "nod_krai",
+          name: "诺德卡莱",
+          order: 7,
+          chapters: [],
+          families: [
+            {
+              id: "genshin:aq:nod-krai",
+              name: "魔神任务 · 空月之歌",
+              order: 100,
+              provenance: "derived",
+              chapters: [
+                {
+                  id: "1609",
+                  name: "空月之歌 第九幕 身土坏空，五蕴识转",
+                  order: 900,
+                  quests: [{ questKey: "quest/409", title: "第九幕任务", order: 1, questType: "archon_quest" }],
+                },
+                {
+                  id: "1601",
+                  name: "空月之歌 第一幕 雪浪与苍林之舞",
+                  order: 100,
+                  quests: [{ questKey: "quest/401", title: "第一幕任务", order: 1, questType: "archon_quest" }],
+                },
+                {
+                  id: "1600",
+                  name: "空月之歌 序奏 归途",
+                  order: 50,
+                  quests: [{ questKey: "quest/400", title: "序奏任务", order: 1, questType: "archon_quest" }],
+                },
+                {
+                  id: "1602",
+                  name: "空月之歌 第二幕 尘与灯的挽歌",
+                  order: 200,
+                  quests: [{ questKey: "quest/402", title: "第二幕任务", order: 1, questType: "archon_quest" }],
+                },
+                {
+                  id: "1610",
+                  name: "空月之歌 第十幕 道成千壑，因果异灭",
+                  order: 1000,
+                  quests: [{ questKey: "quest/410", title: "第十幕任务", order: 1, questType: "archon_quest" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog, "", false, "archon_quest");
+    const familyNode = tree[0]?.children?.[0];
+    const chapterTitles = familyNode?.children?.map((c) => c.title);
+    expect(chapterTitles).toEqual([
+      "空月之歌 序奏 归途",
+      "空月之歌 第一幕 雪浪与苍林之舞",
+      "空月之歌 第二幕 尘与灯的挽歌",
+      "空月之歌 第九幕 身土坏空，五蕴识转",
+      "空月之歌 第十幕 道成千壑，因果异灭",
+    ]);
+  });
+
+  it("strictly filters development test data and hidden tasks from the tree", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "fontaine",
+          name: "枫丹",
+          order: 1,
+          families: [
+            {
+              id: "f1",
+              name: "正常系列",
+              order: 1,
+              provenance: "derived",
+              chapters: [],
+              quests: [
+                {
+                  questKey: "quest/100",
+                  title: "正常任务",
+                  order: 1,
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+                {
+                  questKey: "quest/5003",
+                  title: "测试任务5003",
+                  order: 2,
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+                {
+                  questKey: "quest/101",
+                  title: "内部调试(test)",
+                  order: 3,
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+                {
+                  questKey: "quest/102",
+                  title: "未发布任务$UNRELEASED$",
+                  order: 4,
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+              ],
+            },
+            {
+              id: "f2",
+              name: "开发测试(test)",
+              order: 2,
+              provenance: "derived",
+              chapters: [],
+              quests: [
+                {
+                  questKey: "quest/103",
+                  title: "子项",
+                  order: 1,
+                  completeness: "complete",
+                  bodyAvailability: "dialogue",
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog);
+    const quests = tree[0]?.children?.[0]?.children ?? [];
+    expect(quests.map((q) => q.title)).toEqual(["正常任务"]);
+    expect(tree[0]?.children?.find((f) => f.title.includes("开发测试"))).toBeUndefined();
+  });
+
+  it("deduplicates and merges same-title families under the same region", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "fontaine",
+          name: "枫丹",
+          order: 1,
+          families: [
+            {
+              id: "f1",
+              name: "山中好长日",
+              order: 1,
+              provenance: "curated",
+              chapters: [
+                {
+                  id: "c1",
+                  name: "第一章",
+                  order: 1,
+                  quests: [catalogEntry("quest/1", "任务一")],
+                },
+              ],
+            },
+            {
+              id: "f2",
+              name: "山中好长日",
+              order: 2,
+              provenance: "derived",
+              chapters: [
+                {
+                  id: "c2",
+                  name: "第二章",
+                  order: 2,
+                  quests: [catalogEntry("quest/2", "任务二")],
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog);
+    const families = tree[0]?.children ?? [];
+    expect(families).toHaveLength(1);
+    expect(families[0]?.title).toBe("山中好长日");
+    expect(families[0]?.children?.map((c) => c.title)).toEqual(["第一章", "第二章"]);
+  });
+
+  it("retains legitimate quests with words like hidden, test, or tutorial in title", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "mondstadt",
+          name: "蒙德",
+          order: 1,
+          families: [
+            {
+              id: "prologue",
+              name: "魔神任务 · 序章",
+              order: 1,
+              provenance: "derived",
+              chapters: [],
+              quests: [
+                { ...catalogEntry("quest/381", "Hidden Tears"), order: 1 },
+                { ...catalogEntry("quest/425", "Gliding Test Quest"), order: 2 },
+                { ...catalogEntry("quest/20039", "Timaeus' Alchemy Tutorial"), order: 3 },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog);
+    const quests = tree[0]?.children?.[0]?.children ?? [];
+    expect(quests.map((q) => q.title)).toEqual([
+      "Hidden Tears",
+      "Gliding Test Quest",
+      "Timaeus' Alchemy Tutorial",
+    ]);
+  });
+
+  it("filters out chapters with test markers even if child quests have normal titles", () => {
+    const catalog: ApiStoryCatalog = {
+      gameId: "game",
+      revisionId: "revision",
+      regions: [
+        {
+          id: "fontaine",
+          name: "枫丹",
+          order: 1,
+          families: [
+            {
+              id: "fam",
+              name: "正常系列",
+              order: 1,
+              provenance: "derived",
+              chapters: [
+                {
+                  id: "chap-normal",
+                  name: "正常章节",
+                  order: 1,
+                  quests: [catalogEntry("quest/10", "任务A")],
+                },
+                {
+                  id: "chap-test",
+                  name: "测试章节(test)",
+                  order: 2,
+                  quests: [catalogEntry("quest/11", "任务B")],
+                },
+              ],
+            },
+          ],
+          chapters: [],
+        },
+      ],
+    };
+
+    const tree = buildStoryTree([], catalog);
+    const chapters = tree[0]?.children?.[0]?.children ?? [];
+    expect(chapters.map((c) => c.title)).toEqual(["正常章节"]);
   });
 });
 
@@ -341,6 +764,40 @@ describe("formatStoryString", () => {
       );
       expect(formatStoryString("未闭合{RUBY_B#注释}的文本", srMale)).toBe("未闭合的文本");
       expect(formatStoryString("孤立{RUBY_E#}标记", srMale)).toBe("孤立标记");
+    });
+  });
+
+  describe("chapter and story ordering", () => {
+    it("orders Star Rail chapters by act and section correctly (第一节 before 第二节)", () => {
+      const sec1 = parseStoryOrder("第一幕•第一节");
+      const sec2 = parseStoryOrder("第一幕•第二节");
+      expect(sec1).toBeLessThan(sec2);
+
+      const sorted = [
+        { name: "第一幕•第二节" },
+        { name: "第一幕•第一节" },
+        { name: "第一幕•第三节" },
+      ].sort(compareChapterOrder);
+
+      expect(sorted.map((s) => s.name)).toEqual([
+        "第一幕•第一节",
+        "第一幕•第二节",
+        "第一幕•第三节",
+      ]);
+    });
+
+    it("orders sub-parts like 上/中/下 and 其一/其二 correctly", () => {
+      const sorted = [
+        { name: "间章·下" },
+        { name: "间章·上" },
+        { name: "间章·中" },
+      ].sort(compareChapterOrder);
+
+      expect(sorted.map((s) => s.name)).toEqual([
+        "间章·上",
+        "间章·中",
+        "间章·下",
+      ]);
     });
   });
 });

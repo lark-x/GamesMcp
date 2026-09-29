@@ -8,5 +8,7 @@ export default tseslint.config(eslint.configs.recommended, ...tseslint.configs.r
     "**/coverage/**",
     "data/upstream/**",
     "data/imports/**",
+    "dist-runtime/**",
+    "screenshots/**",
   ],
 });

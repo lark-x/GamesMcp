@@ -33,6 +33,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   weekly_boss: "周本材料",
   synthesis: "合成材料",
   mission: "任务道具",
+  precious: "贵重物与货币",
   other: "其他",
 };
 
@@ -41,14 +42,47 @@ function categoryLabel(key: string): string {
 }
 
 function stars(rarity?: number | null): string {
-  if (!rarity) return "";
+  if (!rarity || rarity <= 0) return "★";
   return "★".repeat(Math.min(rarity, 5));
 }
 
-/**
- * Material browser for characters, weapons, ascension materials using the
- * /codex/materials API. Images fall back to the shared initial avatar.
- */
+const GENSHIN_CATEGORY_ORDER = [
+  "character_development",
+  "weapon_development",
+  "local_specialty",
+  "cooking",
+  "material",
+  "quest_item",
+  "precious",
+  "currency",
+  "gcg",
+  "furnishing",
+  "other",
+];
+
+const STARRAIL_CATEGORY_ORDER = [
+  "character_development",
+  "consumable",
+  "mission",
+  "precious",
+  "currency",
+  "character_ascension",
+  "trace",
+  "trace_material",
+  "exp_material",
+  "lightcone_ascension",
+  "light_cone_ascension",
+  "lightcone_exp",
+  "relic_exp",
+  "enemy_drop",
+  "weekly_boss",
+  "synthesis",
+  "event",
+  "other",
+];
+
+const PAGE_SIZE = 60;
+
 export function MaterialBrowser({
   gameId,
   gameName,
@@ -70,31 +104,46 @@ export function MaterialBrowser({
   const [materials, setMaterials] = useState<ArchiveMaterial[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [serverCategories, setServerCategories] = useState<
-    Array<{ key: string; label: string; count: number }>
+    Array<{
+      key: string;
+      label: string;
+      count: number;
+      subcategories?: Array<{ key: string; label: string; count: number }>;
+    }>
   >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("");
+  const [activeCategory, setActiveCategory] = useState("character_development");
+  const [activeSubcategory, setActiveSubcategory] = useState("");
+  const [activeRarity, setActiveRarity] = useState<number>(0); // 0: 全部, 5: 5星, 4: 4星, 3: 3星, 1: 1~2星
   const [selected, setSelected] = useState<ArchiveMaterial | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [offset, setOffset] = useState(0);
-  const limit = 50;
+  const [currentPage, setCurrentPage] = useState(0);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("grid");
+
+  const isStarRail = isStarRailGame(gameId, gameName);
 
   const loadMaterials = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      // Pull catalog for the active category (up to 1500 items, sufficient for entire category)
+      const params = new URLSearchParams({ limit: "1500", offset: "0" });
       if (selectedRevision) params.set("revisionId", selectedRevision);
       if (query.trim()) params.set("q", query.trim());
       if (activeCategory) params.set("category", activeCategory);
       const result = await apiFetch<{
         materials: ArchiveMaterial[];
         total?: number;
-        categories?: Array<{ key: string; label: string; count: number }>;
+        categories?: Array<{
+          key: string;
+          label: string;
+          count: number;
+          subcategories?: Array<{ key: string; label: string; count: number }>;
+        }>;
       }>(`/api/games/${gameId}/codex/materials?${params.toString()}`);
-      // 原神上游材料表混有 (test)/？？？ 等内部占位条目，目录中不展示。
+      // Filter internal placeholder entries
       setMaterials((result.materials ?? []).filter((m) => !isInternalEntry(m.name)));
       setTotal(result.total ?? result.materials?.length ?? 0);
       if (result.categories) {
@@ -105,22 +154,76 @@ export function MaterialBrowser({
     } finally {
       setLoading(false);
     }
-  }, [gameId, selectedRevision, limit, offset, query, activeCategory]);
+  }, [gameId, selectedRevision, query, activeCategory]);
 
   useEffect(() => {
     void loadMaterials();
   }, [loadMaterials]);
 
-  const categories = useMemo(() => {
+  const sortedCategories = useMemo(() => {
+    const orderList = isStarRail ? STARRAIL_CATEGORY_ORDER : GENSHIN_CATEGORY_ORDER;
+    return [...serverCategories].sort((a, b) => {
+      const idxA = orderList.indexOf(a.key);
+      const idxB = orderList.indexOf(b.key);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return b.count - a.count;
+    });
+  }, [serverCategories, isStarRail]);
+
+  const allMaterialsCount = useMemo(() => {
     if (serverCategories.length > 0) {
-      return serverCategories.map((c) => [c.key, c.count] as [string, number]);
+      return serverCategories.reduce((sum, c) => sum + c.count, 0);
     }
-    const counts = new Map<string, number>();
-    for (const material of materials) {
-      counts.set(material.category, (counts.get(material.category) ?? 0) + 1);
+    return total;
+  }, [serverCategories, total]);
+
+  const currentCategoryEntry = useMemo(
+    () => serverCategories.find((c) => c.key === activeCategory),
+    [serverCategories, activeCategory],
+  );
+  const subcategories = currentCategoryEntry?.subcategories ?? [];
+
+  // Deduplicate materials by name, category and rarity to prevent constellation clutter
+  const deduplicatedMaterials = useMemo(() => {
+    const seen = new Set<string>();
+    const list: ArchiveMaterial[] = [];
+    for (const m of materials) {
+      const key = `${m.name}__${m.category}__${m.rarity ?? 0}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push(m);
+      }
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [serverCategories, materials]);
+    return list;
+  }, [materials]);
+
+  // Client-side filtering by subcategory and rarity over the entire category dataset
+  const filteredMaterials = useMemo(() => {
+    return deduplicatedMaterials.filter((m) => {
+      if (activeSubcategory && m.subcategory !== activeSubcategory) return false;
+      if (activeRarity === 5) return m.rarity === 5;
+      if (activeRarity === 4) return m.rarity === 4;
+      if (activeRarity === 3) return m.rarity === 3;
+      if (activeRarity === 1) return (m.rarity ?? 0) <= 2;
+      return true;
+    });
+  }, [deduplicatedMaterials, activeSubcategory, activeRarity]);
+
+  // Strict page calculation: guarantees exactly PAGE_SIZE (60) items per full page
+  const totalPages = Math.ceil(filteredMaterials.length / PAGE_SIZE) || 1;
+  const safePage = Math.min(currentPage, totalPages - 1);
+
+  const displayedMaterials = useMemo(() => {
+    const start = safePage * PAGE_SIZE;
+    return filteredMaterials.slice(start, start + PAGE_SIZE);
+  }, [filteredMaterials, safePage]);
+
+  // Reset to first page whenever filtering conditions change
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [activeCategory, activeSubcategory, activeRarity, query]);
 
   const loadMaterialDetail = useCallback(
     async (id: string) => {
@@ -141,15 +244,41 @@ export function MaterialBrowser({
     [gameId, selectedRevision],
   );
 
+  const handleSelectMaterial = useCallback(
+    (material: ArchiveMaterial) => {
+      setSelected(material);
+      onMaterialIdChange?.(material.stableId, "push");
+      void loadMaterialDetail(material.stableId);
+    },
+    [onMaterialIdChange, loadMaterialDetail],
+  );
+
   useEffect(() => {
     if (!initialMaterialId) {
-      setSelected(null);
+      if (displayedMaterials.length > 0 && !selected) {
+        const first = displayedMaterials[0];
+        if (first) {
+          setSelected(first);
+          void loadMaterialDetail(first.stableId);
+        }
+      }
       return;
     }
     void loadMaterialDetail(initialMaterialId);
   }, [initialMaterialId, loadMaterialDetail]);
 
-  const isStarRail = isStarRailGame(gameId, gameName);
+  // Auto select first material when filters change and current selection is missing
+  useEffect(() => {
+    if (displayedMaterials.length > 0) {
+      if (!selected || !displayedMaterials.some((m) => m.stableId === selected.stableId)) {
+        const first = displayedMaterials[0];
+        if (first) {
+          setSelected(first);
+          void loadMaterialDetail(first.stableId);
+        }
+      }
+    }
+  }, [displayedMaterials]);
 
   const sections: GlobalNavSection[] = useMemo(
     () => [
@@ -199,109 +328,289 @@ export function MaterialBrowser({
 
   return (
     <ArchiveLayout
-      wide
+      noCatalog={true}
       globalNav={
         <ArchiveGlobalNav gameLabel={gameName} revisionLabel={revisionLabel} sections={sections} />
       }
-      catalog={
-        <div className="material-catalog">
-          <input
-            aria-label="搜索材料"
-            placeholder="搜索材料名称、用途、来源…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setOffset(0);
-            }}
-          />
-          <nav aria-label="材料分类">
-            <button
-              type="button"
-              className={!activeCategory ? "is-active" : ""}
-              onClick={() => {
-                setActiveCategory("");
-                setOffset(0);
-              }}
-            >
-              全部材料
-            </button>
-            {categories.map(([category, count]) => (
-              <button
-                type="button"
-                key={category}
-                className={activeCategory === category ? "is-active" : ""}
-                onClick={() => {
-                  setActiveCategory(category);
-                  setOffset(0);
-                }}
-              >
-                {categoryLabel(category)}
-                <small> {count}</small>
-              </button>
-            ))}
-          </nav>
-        </div>
-      }
       main={
-        <section className="material-list-panel" aria-busy={loading || detailLoading}>
-          {error ? (
-            <ArchiveError
-              message="资料加载失败"
-              detail={error}
-              onRetry={() => {
-                void loadMaterials();
-                if (selected) void loadMaterialDetail(selected.stableId);
-              }}
-            />
-          ) : null}
-          {loading ? (
-            <ArchiveLoading label="材料加载中" />
-          ) : materials.length ? (
-            <>
-              <div className="material-list" role="list">
-                {materials.map((material) => (
+        <div className="material-browser-container">
+          {/* 1. Integrated Multi-Dimensional Filter Hub */}
+          <section className="material-filter-hub" aria-label="材料综合检索与筛选">
+            {/* Level 1 Category Tabs */}
+            <div className="material-filter-row">
+              <span className="material-filter-label">一级分类</span>
+              <div className="material-pills-wrap" role="tablist" aria-label="材料大类">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={!activeCategory}
+                  className={`material-filter-pill ${!activeCategory ? "is-active" : ""}`}
+                  onClick={() => {
+                    setActiveCategory("");
+                    setActiveSubcategory("");
+                  }}
+                >
+                  <span>全部材料</span>
+                  <span className="material-pill-count">{allMaterialsCount}</span>
+                </button>
+                {sortedCategories.map((cat) => (
                   <button
                     type="button"
-                    role="listitem"
-                    key={material.stableId}
-                    className={
-                      "material-row " +
-                      (selected?.stableId === material.stableId ? "is-active" : "")
-                    }
+                    key={cat.key}
+                    role="tab"
+                    aria-selected={activeCategory === cat.key}
+                    className={`material-filter-pill ${activeCategory === cat.key ? "is-active" : ""}`}
                     onClick={() => {
-                      onMaterialIdChange?.(material.stableId, "push");
-                      setSelected(material);
+                      setActiveCategory(cat.key);
+                      setActiveSubcategory("");
                     }}
                   >
-                    <ArchiveAvatar
-                      fallbackText={material.name.slice(0, 1)}
-                      seed={material.stableId}
-                      label={material.name}
-                      size={32}
-                    />
-                    <span className="material-row-body">
-                      <strong>{material.name}</strong>
-                      <small>{categoryLabel(material.category)}</small>
-                    </span>
-                    <span className="material-rarity" aria-label={`星级 ${material.rarity ?? 0}`}>
-                      {stars(material.rarity)}
-                    </span>
+                    <span>{cat.label || categoryLabel(cat.key)}</span>
+                    <span className="material-pill-count">{cat.count}</span>
                   </button>
                 ))}
               </div>
-              <ArchivePagination
-                current={Math.floor(offset / limit) + 1}
-                limit={limit}
-                hasMore={offset + materials.length < total}
-                disabled={loading}
-                onPrev={() => setOffset((prev) => Math.max(0, prev - limit))}
-                onNext={() => setOffset((prev) => prev + limit)}
+            </div>
+
+            {/* Level 2 Subcategory Pills (Dynamic) */}
+            {subcategories.length > 0 && (
+              <div className="material-filter-row material-filter-row-sub">
+                <span className="material-filter-label">二级子类</span>
+                <div className="material-pills-wrap" role="tablist" aria-label="材料子分类">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={!activeSubcategory}
+                    className={`material-sub-pill ${!activeSubcategory ? "is-active" : ""}`}
+                    onClick={() => {
+                      setActiveSubcategory("");
+                    }}
+                  >
+                    <span>全部{currentCategoryEntry?.label ?? categoryLabel(activeCategory)}</span>
+                    <span className="material-pill-count">{currentCategoryEntry?.count ?? 0}</span>
+                  </button>
+                  {subcategories.map((sub) => (
+                    <button
+                      type="button"
+                      key={sub.key}
+                      role="tab"
+                      aria-selected={activeSubcategory === sub.key}
+                      className={`material-sub-pill ${activeSubcategory === sub.key ? "is-active" : ""}`}
+                      onClick={() => {
+                        setActiveSubcategory(sub.key);
+                      }}
+                    >
+                      <span>{sub.label}</span>
+                      <span className="material-pill-count">{sub.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Control Bar (Rarity, Search, View Mode) */}
+            <div className="material-filter-controls">
+              {/* Rarity Segmented Control */}
+              <div className="material-rarity-group">
+                <span className="material-filter-label-inline">稀有度</span>
+                <div className="material-rarity-bar" role="radiogroup" aria-label="稀有度筛选">
+                  {[
+                    { value: 0, label: "全部", cls: "" },
+                    { value: 5, label: "★★★★★ 5星", cls: "rarity-opt-5" },
+                    { value: 4, label: "★★★★ 4星", cls: "rarity-opt-4" },
+                    { value: 3, label: "★★★ 3星", cls: "rarity-opt-3" },
+                    { value: 1, label: "★ 1-2星", cls: "rarity-opt-1" },
+                  ].map((opt) => (
+                    <button
+                      type="button"
+                      key={opt.value}
+                      className={`material-rarity-btn ${activeRarity === opt.value ? "is-active" : ""} ${opt.cls}`}
+                      onClick={() => setActiveRarity(opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Standard Search Box */}
+              <div className="material-search-box">
+                <span className="material-search-icon" aria-hidden="true">🔍</span>
+                <input
+                  type="search"
+                  aria-label="搜索材料"
+                  placeholder="搜索材料名称、用途、来源…"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                  }}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    className="material-search-clear"
+                    aria-label="清空搜索"
+                    onClick={() => {
+                      setQuery("");
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Total Count & View Mode Switcher */}
+              <div className="material-view-actions">
+                <span className="material-total-count">
+                  共 {filteredMaterials.length} 条材料{totalPages > 1 ? `（第 ${safePage + 1} / ${totalPages} 页）` : ""}
+                </span>
+                <div className="data-view-switcher" role="radiogroup" aria-label="视图模式">
+                  <button
+                    type="button"
+                    className={`data-view-btn ${viewMode === "grid" ? "is-active" : ""}`}
+                    onClick={() => setViewMode("grid")}
+                    title="背包图鉴视图"
+                    aria-label="背包图鉴视图"
+                  >
+                    ⊞ 图鉴
+                  </button>
+                  <button
+                    type="button"
+                    className={`data-view-btn ${viewMode === "list" ? "is-active" : ""}`}
+                    onClick={() => setViewMode("list")}
+                    title="紧凑列表视图"
+                    aria-label="紧凑列表视图"
+                  >
+                    ☰ 列表
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 2. Main Content Canvas */}
+          <section className="material-list-panel" aria-busy={loading || detailLoading}>
+            {error ? (
+              <ArchiveError
+                message="资料加载失败"
+                detail={error}
+                onRetry={() => {
+                  void loadMaterials();
+                  if (selected) void loadMaterialDetail(selected.stableId);
+                }}
               />
-            </>
-          ) : (
-            <ArchiveEmpty title="当前版本没有可浏览的材料" detail="尝试清除筛选或切换关键词。" />
-          )}
-        </section>
+            ) : null}
+
+            {loading ? (
+              <ArchiveLoading label="材料加载中" />
+            ) : displayedMaterials.length ? (
+              <>
+                {viewMode === "grid" ? (
+                  <div className="material-inventory-grid" role="list">
+                    {displayedMaterials.map((material) => {
+                      const isSelected = selected?.stableId === material.stableId;
+                      const rarityLevel = material.rarity ?? 1;
+                      return (
+                        <div
+                          key={material.stableId}
+                          role="button"
+                          tabIndex={0}
+                          aria-selected={isSelected}
+                          aria-label={`${material.name} (${rarityLevel}星)`}
+                          className={`material-inventory-tile rarity-${rarityLevel} ${
+                            isSelected ? "is-selected" : ""
+                          }`}
+                          onClick={() => handleSelectMaterial(material)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleSelectMaterial(material);
+                            }
+                          }}
+                        >
+                          <div className="material-tile-avatar-wrap">
+                            <ArchiveAvatar
+                              fallbackText={material.name.slice(0, 1)}
+                              seed={material.stableId}
+                              label={material.name}
+                              size={44}
+                            />
+                          </div>
+                          <div className="material-tile-stars" aria-hidden="true">
+                            {stars(material.rarity)}
+                          </div>
+                          <div className="material-tile-nameplate" title={material.name}>
+                            <span className="material-tile-name">{material.name}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="material-list" role="list">
+                    {displayedMaterials.map((material) => {
+                      const isSelected = selected?.stableId === material.stableId;
+                      const rarityLevel = material.rarity ?? 1;
+                      return (
+                        <button
+                          type="button"
+                          role="listitem"
+                          key={material.stableId}
+                          className={`material-row rarity-border-${rarityLevel} ${
+                            isSelected ? "is-active" : ""
+                          }`}
+                          onClick={() => handleSelectMaterial(material)}
+                        >
+                          <ArchiveAvatar
+                            fallbackText={material.name.slice(0, 1)}
+                            seed={material.stableId}
+                            label={material.name}
+                            size={36}
+                          />
+                          <span className="material-row-body">
+                            <strong>{material.name}</strong>
+                            <span className="material-row-tags">
+                              <small className="material-category-tag">
+                                {material.categoryLabel ?? categoryLabel(material.category)}
+                              </small>
+                              {material.subcategoryLabel ? (
+                                <small className="material-subcategory-tag">
+                                  {material.subcategoryLabel}
+                                </small>
+                              ) : null}
+                            </span>
+                          </span>
+                          <span
+                            className="material-rarity"
+                            aria-label={`星级 ${material.rarity ?? 0}`}
+                          >
+                            {stars(material.rarity)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {totalPages > 1 && (
+                  <ArchivePagination
+                    current={safePage + 1}
+                    limit={PAGE_SIZE}
+                    hasMore={safePage + 1 < totalPages}
+                    disabled={loading}
+                    onPrev={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
+                    onNext={() => setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                  />
+                )}
+              </>
+            ) : (
+              <ArchiveEmpty
+                title="没有找到匹配的材料"
+                detail="尝试清除稀有度筛选、重置二级分类或切换搜索关键词。"
+              />
+            )}
+          </section>
+        </div>
       }
       inspector={
         <ArchiveInspector title="材料详情">
@@ -309,71 +618,129 @@ export function MaterialBrowser({
             <p className="muted">选择材料查看详情、获取方式与用途。</p>
           ) : (
             <>
+              {/* Header Hero Banner */}
               <div className="material-detail-head">
-                <ArchiveAvatar
-                  fallbackText={selected.name.slice(0, 1)}
-                  seed={selected.stableId}
-                  label={selected.name}
-                  size={44}
-                />
-                <div>
-                  <strong>{selected.name}</strong>
-                  <span className="material-rarity">{stars(selected.rarity)}</span>
+                <div
+                  className={`material-detail-avatar-box rarity-${selected.rarity ?? 1}`}
+                  aria-hidden="true"
+                >
+                  <ArchiveAvatar
+                    fallbackText={selected.name.slice(0, 1)}
+                    seed={selected.stableId}
+                    label={selected.name}
+                    size={44}
+                  />
+                </div>
+                <div className="material-detail-title-wrap">
+                  <strong className="material-detail-name" title={selected.name}>
+                    {selected.name}
+                  </strong>
+                  <div className="material-detail-meta-row">
+                    <span
+                      className={`material-detail-stars rarity-star-${selected.rarity ?? 1}`}
+                      aria-label={`${selected.rarity ?? 1}星`}
+                    >
+                      {stars(selected.rarity)}
+                    </span>
+                    {(selected.subcategoryLabel || selected.categoryLabel) && (
+                      <span className="material-detail-tag">
+                        {selected.subcategoryLabel ??
+                          selected.categoryLabel ??
+                          categoryLabel(selected.category)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <InspectorSection title="分类">
-                <InspectorField
-                  label="分类"
-                  value={selected.categoryLabel ?? categoryLabel(selected.category)}
-                />
-                {selected.gameVersion ? (
-                  <InspectorField label="游戏版本" value={selected.gameVersion} />
-                ) : null}
-              </InspectorSection>
-              <InspectorSection title="描述">
+
+              {/* Description Section */}
+              <InspectorSection title="档案描述">
                 {selected.description ? (
-                  <p className="material-description">{selected.description}</p>
+                  <div className="material-desc-card">
+                    <p className="material-description">{selected.description}</p>
+                  </div>
                 ) : (
                   <p className="muted">暂无描述</p>
                 )}
               </InspectorSection>
-              <InspectorSection title="获取方式">
+
+              {/* Drop Locations / Sources Section */}
+              <InspectorSection title="📍 获取途径 / 掉落秘境">
                 {selected.sources?.length ? (
-                  <ul className="material-source-list">
-                    {selected.sources.map((source) => (
-                      <li key={source}>{source}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="muted">暂无来源</p>
-                )}
-              </InspectorSection>
-              <InspectorSection title="用途">
-                {selected.usedBy?.length ? (
-                  <div className="archive-avatar-row">
-                    {selected.usedBy.map((used) => (
-                      <span className="archive-avatar-chip" key={used}>
-                        <ArchiveAvatar
-                          fallbackText={used.slice(0, 1)}
-                          seed={used}
-                          label={used}
-                          size={28}
-                        />
-                        <small>{used}</small>
-                      </span>
-                    ))}
+                  <div className="material-source-card">
+                    <ul className="material-source-list">
+                      {selected.sources.map((source) => (
+                        <li key={source}>
+                          <span className="material-source-icon" aria-hidden="true">
+                            ⚔️
+                          </span>
+                          <span>{source}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ) : (
-                  <p className="muted">暂无关联</p>
+                  <p className="muted">暂无来源信息</p>
                 )}
               </InspectorSection>
-              <InspectorSection title="来源">
-                <InspectorField label="数据来源" value={selected.sourceName ?? undefined} />
-                <InspectorField label="Stable ID" value={<code>{selected.stableId}</code>} />
+
+              {/* Used by Characters Section (Interactive Links) */}
+              <InspectorSection title="👥 培养用途 (谁需要此材料?)">
+                {selected.usedBy?.length ? (
+                  <div className="material-used-by-section">
+                    <div className="material-used-by-hint">
+                      <span>点击角色卡片直达档案</span>
+                      <span aria-hidden="true">→</span>
+                    </div>
+                    <div className="material-used-by-grid">
+                      {selected.usedBy.map((characterName) => (
+                        <button
+                          type="button"
+                          key={characterName}
+                          className="material-character-chip"
+                          title={`查看「${characterName}」角色档案`}
+                          onClick={() => {
+                            window.location.hash = `archive/characters/${encodeURIComponent(characterName)}`;
+                          }}
+                        >
+                          <ArchiveAvatar
+                            fallbackText={characterName.slice(0, 1)}
+                            seed={characterName}
+                            label={characterName}
+                            size={28}
+                          />
+                          <div className="material-character-chip-info">
+                            <span className="material-character-name">{characterName}</span>
+                            <span className="material-character-role">突破 / 天赋</span>
+                          </div>
+                          <span className="material-chip-arrow" aria-hidden="true">
+                            ›
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="muted">暂无关联角色</p>
+                )}
+              </InspectorSection>
+
+              {/* Metadata & Classification Section */}
+              <InspectorSection title="分类与系统信息">
                 <InspectorField
-                  label="Revision"
-                  value={<code>{selected.revisionId ?? selectedRevision ?? "当前发布"}</code>}
+                  label="官方大类"
+                  value={selected.categoryLabel ?? categoryLabel(selected.category)}
                 />
+                {selected.subcategoryLabel ? (
+                  <InspectorField label="二级子类" value={selected.subcategoryLabel} />
+                ) : null}
+                {selected.gameVersion ? (
+                  <InspectorField label="游戏版本" value={selected.gameVersion} />
+                ) : null}
+                <InspectorField label="Stable ID" value={<code>{selected.stableId}</code>} />
+                {selected.revisionId && (
+                  <InspectorField label="Revision" value={<code>{selected.revisionId}</code>} />
+                )}
               </InspectorSection>
             </>
           )}

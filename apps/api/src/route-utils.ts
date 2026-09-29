@@ -83,6 +83,13 @@ export const listQuerySchema = z.object({
   revisionId: revisionIdSchema.optional(),
 });
 
+export const codexListQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(2000).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  revisionId: revisionIdSchema.optional(),
+});
+
 export const stableIdParams = z.object({
   gameId: z.string().uuid(),
   stableId: z.string().min(1).max(200),

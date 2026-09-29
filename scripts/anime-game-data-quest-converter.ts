@@ -31,7 +31,7 @@ import {
 import { isPathInside, runStoragePreflight } from "./check-data-storage.ts";
 import { loadConfig } from "../packages/config/src/index.ts";
 
-export const QUEST_CONVERTER_VERSION = "anime-game-data-quests-v2";
+export const QUEST_CONVERTER_VERSION = "anime-game-data-quests-v3";
 export const DEFAULT_QUEST_UPSTREAM_DIR =
   process.env.ANIME_GAME_DATA_DIR ??
   (existsSync("data/upstream/AnimeGameData-current")
@@ -65,6 +65,7 @@ type Json = Record<string, unknown>;
 type StoryFamilyOverride = {
   id: string;
   title?: Partial<Record<Locale, string>>;
+  catalogRegionId?: string;
   questIds: string[];
   order?: number;
   chapterOrders?: Record<string, number>;
@@ -95,7 +96,7 @@ export type QuestConversionOptions = {
 
 export type QuestConversionManifest = {
   schemaVersion: 3;
-  storyProjectionSchemaVersion: 2;
+  storyProjectionSchemaVersion: 3;
   generatedAt?: string;
   upstream: {
     source: string;
@@ -179,6 +180,13 @@ type TitleResolution = {
   source: string;
 };
 type CodexQuestFile = Inputs["codexQuest"][number];
+type QuestRegionEvidence = {
+  regionId?: string;
+  candidateRegionIds: string[];
+  talkIds: string[];
+  talkPathEvidence: string[];
+  performCfgValues: string[];
+};
 
 const dialogueRegionAliases: Record<string, string> = {
   mengde: "mondstadt",
@@ -186,44 +194,207 @@ const dialogueRegionAliases: Record<string, string> = {
   liyue: "liyue",
   inazuma: "inazuma",
   daoqi: "inazuma",
+  dq: "inazuma",
   sumeru: "sumeru",
   xumi: "sumeru",
   fontaine: "fontaine",
   water: "fontaine",
   natlan: "natlan",
+  natian: "natlan",
+  nt: "natlan",
   nodkrai: "nod_krai",
   "nod-krai": "nod_krai",
   snezhnaya: "snezhnaya",
+  zhidong: "snezhnaya",
+  enkanomiya: "enkanomiya",
+  thechasm: "the_chasm_underground",
+  thechasmchallenge: "the_chasm_underground",
+  seaofbygoneeras: "sea_of_bygone_eras",
+  homeworld: "homeworld",
+  furniture: "homeworld",
+  island: "golden_apple",
+  dreamisland: "golden_apple",
+  michiae: "three_realms",
+  michiaematsuri: "three_realms",
+  penumbra: "veluriyam_mirage",
+  fairybook: "simulanka",
+  templeofspace: "temple_of_space",
+  sealamp: "liyue",
+  sealampv3: "liyue",
+  hdj: "liyue",
+  fenghua: "mondstadt",
+  vintage: "mondstadt",
+  mdzjc: "mondstadt",
+  mdzjcmbtalk: "mondstadt",
+  v45catcafe: "mondstadt",
+  filmfest: "fontaine",
+  sumerubirth: "sumeru",
+  sumeruadventuretraining: "sumeru",
+  dog1: "inazuma",
+  mimitomo: "mondstadt",
+  akafes: "sumeru",
+  v45alchemysim: "mondstadt",
+  v54dqdhd: "inazuma",
+  rongcaiji: "inazuma",
+  ylyz: "natlan",
+  v48fairy: "simulanka",
+  fairy: "simulanka",
+  ndklzx: "nod_krai",
+  nodkraitour: "nod_krai",
+  autochess: "natlan",
+  catcafe: "mondstadt",
+  alchemysim: "mondstadt",
+  dqdhd: "inazuma",
+  fishblaster: "mondstadt",
+  fishingjoy: "fontaine",
+  bubbledramadrink: "fontaine",
+  bubble: "fontaine",
+  hexenzirkel: "mondstadt",
+  tradeshow: "nod_krai",
+  sdn: "nod_krai",
+  fungusfighter: "sumeru",
+  slimecannon: "fontaine",
+  birdball: "liyue",
+  bullethell: "inazuma",
+  goalchallenge: "natlan",
+  effigychallenge: "mondstadt",
+  brickbreaker: "inazuma",
+  saurus: "natlan",
+  humandragonpuzzle: "natlan",
+  towerdefense: "liyue",
+  oneshot: "fontaine",
+  tpsdefense: "natlan",
+  resort: "simulanka",
+  fleurflower: "mondstadt",
+  kapaixunyou: "inazuma",
+  rainbowprince: "fontaine",
+  greatfestival: "inazuma",
+  ceremony: "natlan",
+  nteqmatch: "natlan",
+  themeparksim: "fontaine",
+  lolifriend: "nod_krai",
+  origamiwq: "simulanka",
+  sandsworm: "sumeru",
+  wolf: "mondstadt",
+  musicgame: "mondstadt",
+  dpeq: "mondstadt",
 };
+
+const cityRegions: Record<number, { id: string; zh: string; en: string }> = {
+  1: { id: "mondstadt", zh: "蒙德", en: "Mondstadt" },
+  2: { id: "liyue", zh: "璃月", en: "Liyue" },
+  3: { id: "inazuma", zh: "稻妻", en: "Inazuma" },
+  4: { id: "sumeru", zh: "须弥", en: "Sumeru" },
+  5: { id: "fontaine", zh: "枫丹", en: "Fontaine" },
+  6: { id: "natlan", zh: "纳塔", en: "Natlan" },
+  7: { id: "nod_krai", zh: "诺德卡莱", en: "Nod-Krai" },
+  8: { id: "snezhnaya", zh: "至冬", en: "Snezhnaya" },
+};
+
+const allRegions: Array<{ id: string; zh: string; en: string; order: number }> = [
+  { id: "mondstadt", zh: "蒙德", en: "Mondstadt", order: 1 },
+  { id: "liyue", zh: "璃月", en: "Liyue", order: 2 },
+  { id: "inazuma", zh: "稻妻", en: "Inazuma", order: 3 },
+  { id: "sumeru", zh: "须弥", en: "Sumeru", order: 4 },
+  { id: "fontaine", zh: "枫丹", en: "Fontaine", order: 5 },
+  { id: "natlan", zh: "纳塔", en: "Natlan", order: 6 },
+  { id: "nod_krai", zh: "诺德卡莱", en: "Nod-Krai", order: 7 },
+  { id: "snezhnaya", zh: "至冬", en: "Snezhnaya", order: 8 },
+  { id: "enkanomiya", zh: "渊下宫", en: "Enkanomiya", order: 20 },
+  {
+    id: "the_chasm_underground",
+    zh: "层岩巨渊·地下矿区",
+    en: "The Chasm: Underground Mines",
+    order: 21,
+  },
+  { id: "sea_of_bygone_eras", zh: "旧日之海", en: "Sea of Bygone Eras", order: 22 },
+  { id: "homeworld", zh: "尘歌壶", en: "Serenitea Pot", order: 23 },
+  { id: "golden_apple", zh: "金苹果群岛", en: "Golden Apple Archipelago", order: 30 },
+  { id: "three_realms", zh: "三界路飨祭", en: "Three Realms Gateway Offering", order: 31 },
+  { id: "veluriyam_mirage", zh: "琉形蜃境", en: "Veluriyam Mirage", order: 32 },
+  { id: "simulanka", zh: "希穆兰卡", en: "Simulanka", order: 33 },
+  { id: "temple_of_space", zh: "空之神殿", en: "Temple of Space", order: 34 },
+  { id: "system_guidance", zh: "全局系统引导", en: "System Guidance", order: 40 },
+  { id: "other", zh: "其他地区", en: "Other Region", order: 99 },
+];
+
+const regionById = new Map(allRegions.map((region) => [region.id, region]));
 
 /**
  * QuestDialogue paths carry the game's own region partition, including for
- * world quests that have no ChapterExcelConfigData row.  Keep this mapping
- * deliberately small: only tokens that are unambiguous region names are
- * accepted, while event/temporary scene names remain unclassified.
+ * world quests that have no ChapterExcelConfigData row.
  */
-function regionIdFromPerformCfg(value: unknown): string | undefined {
+export function regionIdFromPerformCfg(value: unknown): string | undefined {
   const raw = text(value);
   if (!raw) return undefined;
   const match = raw.match(/QuestDialogue[\\/]([^\\/]+)[\\/]([^\\/_]+)(?:_|[\\/])/i);
   const token = match?.[2]?.toLocaleLowerCase("en");
-  return token ? dialogueRegionAliases[token] : undefined;
+  if (token) {
+    const normalized = token
+      .replace(/^(?:v?\d+\.\d+_*|v\d+_*|ver\d+\.\d+_*|activity_*)/i, "")
+      .replace(/^activity/i, "");
+    for (const cand of [token, normalized]) {
+      if (dialogueRegionAliases[cand]) return dialogueRegionAliases[cand];
+      const strippedV = cand.replace(/v\d+$/i, "");
+      if (dialogueRegionAliases[strippedV]) return dialogueRegionAliases[strippedV];
+      const stripped = cand.replace(/\d+$/u, "");
+      if (dialogueRegionAliases[stripped]) return dialogueRegionAliases[stripped];
+      const strippedBareV = stripped.replace(/v$/i, "");
+      if (dialogueRegionAliases[strippedBareV]) return dialogueRegionAliases[strippedBareV];
+    }
+  }
+  const categoryToken = match?.[1]?.toLocaleLowerCase("en");
+  if (categoryToken && dialogueRegionAliases[categoryToken]) {
+    return dialogueRegionAliases[categoryToken];
+  }
+  return undefined;
 }
 
-function indexQuestRegions(talk: Json[]): Map<string, string> {
-  const candidates = new Map<string, Set<string>>();
+function indexQuestRegions(talk: Json[]): Map<string, QuestRegionEvidence> {
+  const candidates = new Map<
+    string,
+    {
+      regionIds: Set<string>;
+      talkIds: Set<string>;
+      talkPathEvidence: Set<string>;
+      performCfgValues: Set<string>;
+    }
+  >();
   for (const row of talk) {
     const mainId = idText(row.questId ?? row.mainQuestId ?? row.mainId);
-    const regionId = regionIdFromPerformCfg(row.performCfg ?? row.performConfig);
-    if (!mainId || !regionId) continue;
-    const values = candidates.get(mainId) ?? new Set<string>();
-    values.add(regionId);
-    candidates.set(mainId, values);
+    if (!mainId) continue;
+    const performCfg = text(row.performCfg ?? row.performConfig);
+    const regionId = regionIdFromPerformCfg(performCfg);
+    const value = candidates.get(mainId) ?? {
+      regionIds: new Set<string>(),
+      talkIds: new Set<string>(),
+      talkPathEvidence: new Set<string>(),
+      performCfgValues: new Set<string>(),
+    };
+    const talkId = idText(row.id ?? row.talkId);
+    if (talkId) value.talkIds.add(talkId);
+    if (performCfg) {
+      value.performCfgValues.add(performCfg);
+      const sourcePath = text(row.__sourceFile) ?? "ExcelBinOutput/TalkExcelConfigData_*.json";
+      value.talkPathEvidence.add(`${sourcePath}:questId=${mainId}.performCfg=${performCfg}`);
+    }
+    if (regionId) value.regionIds.add(regionId);
+    candidates.set(mainId, value);
   }
   return new Map(
-    [...candidates.entries()]
-      .filter(([, regionIds]) => regionIds.size === 1)
-      .map(([mainId, regionIds]) => [mainId, [...regionIds][0]!]),
+    [...candidates.entries()].map(([mainId, value]) => {
+      const regionIds = [...value.regionIds].sort();
+      return [
+        mainId,
+        {
+          regionId: regionIds.length === 1 ? regionIds[0] : undefined,
+          candidateRegionIds: regionIds,
+          talkIds: [...value.talkIds].sort(),
+          talkPathEvidence: [...value.talkPathEvidence].sort(),
+          performCfgValues: [...value.performCfgValues].sort(),
+        },
+      ];
+    }),
   );
 }
 
@@ -235,8 +406,13 @@ type Inputs = {
   quest: Json[];
   questByMainId: Map<string, Json[]>;
   chapter: Json[];
+  chapterById: Map<string, Json>;
   chapterByMainId: Map<string, Json>;
-  questRegionByMainId: Map<string, string>;
+  usableChapterGroups: Set<string>;
+  chapterGroupTitleByLocale: Record<Locale, Map<string, string>>;
+  questRegionByMainId: Map<string, QuestRegionEvidence>;
+  reputationRegionByMainId: Map<string, { regionId: string; evidence: string }>;
+  questRegionOverrides: Map<string, QuestRegionOverride>;
   questCodex: Json[];
   talk: Json[];
   dialog: Json[];
@@ -350,6 +526,39 @@ async function loadStoryFamilyOverrides(): Promise<StoryFamilyOverride[]> {
   }
 }
 
+export type QuestRegionOverride = {
+  questId: string;
+  regionId: string;
+  reason?: string;
+  evidence?: string[];
+};
+
+async function loadQuestRegionOverrides(): Promise<Map<string, QuestRegionOverride>> {
+  const relativePath = "data/curated/genshin-story-family-overrides.json";
+  try {
+    const raw = await readFile(resolve(process.cwd(), relativePath), "utf8");
+    const parsed = asObject(JSON.parse(raw));
+    const overrides = new Map<string, QuestRegionOverride>();
+    for (const item of asArray(parsed.questRegionOverrides)) {
+      const questId = idText(item.questId);
+      const regionId = text(item.regionId);
+      if (!questId || !regionId) continue;
+      overrides.set(questId, {
+        questId,
+        regionId,
+        reason: text(item.reason),
+        evidence: Array.isArray(item.evidence)
+          ? item.evidence.filter((e): e is string => typeof e === "string")
+          : [],
+      });
+    }
+    return overrides;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return new Map();
+    throw error;
+  }
+}
+
 function textHash(value: unknown): string | undefined {
   if (typeof value === "number" && Number.isSafeInteger(value)) return String(value);
   return text(value);
@@ -358,7 +567,8 @@ function textHash(value: unknown): string | undefined {
 function textRefHash(value: unknown): string | undefined {
   const object = asObject(value);
   return textHash(
-    object.BNJEGIAOKGM ??
+    object.textId ??
+      object.BNJEGIAOKGM ??
       object.textMapHash ??
       object.hash ??
       object.value ??
@@ -387,9 +597,17 @@ function cleanDialogue(value: string): string {
     .trim();
 }
 
-const questMarkerPattern = /\$(?:HIDDEN|UNRELEASED)\$?/i;
-const questTestPattern =
-  /(?:^|[\s._()（）【】[\]{}*·-])(?:test|debug|tutorial|mirror|placeholder|dummy|hidden|internal)(?:$|[\s._()（）【】[\]{}*·-])/i;
+const questMarkerPattern = /\$(?:HIDDEN|UNRELEASED|TEST|DEBUG)\$?/i;
+
+export function isForbiddenStoryTitle(title: string | undefined): boolean {
+  if (!title) return false;
+  return (
+    /[（(]\s*(?:test|hide|debug)\s*[)）]/iu.test(title) ||
+    /^[（(]\s*test/iu.test(title) ||
+    questMarkerPattern.test(title) ||
+    /【已废弃】|\[已废弃\]/u.test(title)
+  );
+}
 
 export type QuestVisibilityReason =
   | "public"
@@ -409,6 +627,8 @@ export function classifyQuestVisibility(
   main: Json,
   title: string | undefined,
 ): QuestVisibilityReason {
+  const mainId = idText(main.id ?? main.mainQuestId);
+  if (mainId === "5003") return "test_or_placeholder";
   const showType = text(main.showType ?? main.questShowType ?? main.visibility);
   if (showType) {
     if (/UNRELEASED/i.test(showType)) return "unreleased_marker";
@@ -421,7 +641,7 @@ export function classifyQuestVisibility(
   if (!title) return "unresolved_title";
   if (questMarkerPattern.test(title))
     return /UNRELEASED/i.test(title) ? "unreleased_marker" : "hidden_show_type";
-  if (questTestPattern.test(title) || /\$(?:TEST|DEBUG|HIDDEN)\$/i.test(title))
+  if (isForbiddenStoryTitle(title))
     return "test_or_placeholder";
   if (/^Quest\s+\d+$/i.test(title)) return "unresolved_title";
   return "public";
@@ -473,6 +693,19 @@ async function readJson(
 ): Promise<{ value: unknown; hash: string }> {
   const raw = await readFile(join(root, relativePath), "utf8");
   return { value: JSON.parse(raw), hash: sha256(raw) };
+}
+
+async function readJsonSafe(
+  root: string,
+  relativePath: string,
+): Promise<{ value: unknown; hash: string } | undefined> {
+  try {
+    const raw = await readFile(join(root, relativePath), "utf8");
+    return { value: JSON.parse(raw), hash: sha256(raw) };
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+    return undefined;
+  }
 }
 
 type BinQuestLoadResult = {
@@ -596,38 +829,44 @@ export async function loadInputs(root: string): Promise<Inputs> {
       Array.isArray(value)
         ? value.map((item) => idText(item)).filter((item): item is string => Boolean(item))
         : [];
-    const related = [...relatedIds(row.JPHNIKNHFBL), ...relatedIds(row.GCOCPOOBMEE)];
-    if (related.length) mainQuestRelations.set(mainId, [...new Set(related)]);
+    const related: string[] = [];
     for (const [rawField, rawValue] of Object.entries(row)) {
       if (rawField === "mainQuestID" || rawField === "mainQuestId" || rawField === "id") continue;
       const values = relatedIds(rawValue);
-      for (const [rawIndex, toQuestId] of values.entries()) {
-        mainQuestRelationEdges.push({
-          fromQuestId: mainId,
-          toQuestId,
-          relationType:
-            rawField === "JPHNIKNHFBL"
-              ? "main_quest_relation_a"
-              : rawField === "GCOCPOOBMEE"
-                ? "main_quest_relation_b"
-                : "main_quest_relation_unknown",
-          rawRelationType: rawField,
-          rawField,
-          rawIndex,
-          sourceFile: mainQuestRelationsPath,
-          sourcePath: `rows[mainQuestID=${mainId}].${rawField}[${rawIndex}]`,
-          sourceHash: mainQuestRelationsHash ?? "",
-          derived: false,
-          confidence: 1,
-          metadata: { direction: "source_related_ids" },
-        });
+      if (values.length) {
+        related.push(...values);
+        for (const [rawIndex, toQuestId] of values.entries()) {
+          mainQuestRelationEdges.push({
+            fromQuestId: mainId,
+            toQuestId,
+            relationType:
+              rawField === "JPHNIKNHFBL" || rawField === "GPIJAIFIKDI"
+                ? "main_quest_relation_a"
+                : rawField === "GCOCPOOBMEE" || rawField === "KMJMAGOIBID"
+                  ? "main_quest_relation_b"
+                  : "main_quest_relation_unknown",
+            rawRelationType: rawField,
+            rawField,
+            rawIndex,
+            sourceFile: mainQuestRelationsPath,
+            sourcePath: `rows[mainQuestID=${mainId}].${rawField}[${rawIndex}]`,
+            sourceHash: mainQuestRelationsHash ?? "",
+            derived: false,
+            confidence: 1,
+            metadata: { direction: "source_related_ids" },
+          });
+        }
       }
     }
+    if (related.length) mainQuestRelations.set(mainId, [...new Set(related)]);
   }
   const quest = asArray(byKey.quest.value);
   const chapter = asArray(byKey.chapter.value);
   const questCodex = asArray(byKey.questCodex.value);
-  const talk = [...asArray(byKey.talk0.value), ...asArray(byKey.talk1.value)];
+  const talk = [
+    ...asArray(byKey.talk0.value).map((row) => ({ ...row, __sourceFile: inputPaths.talk0 })),
+    ...asArray(byKey.talk1.value).map((row) => ({ ...row, __sourceFile: inputPaths.talk1 })),
+  ];
   const dialog = asArray(byKey.dialog.value);
   const npc = asArray(byKey.npc.value);
   const avatar = asArray(byKey.avatar.value);
@@ -653,12 +892,76 @@ export async function loadInputs(root: string): Promise<Inputs> {
       ...asObject(byKey.textMapMediumEn.value),
     },
   };
+  const chapterById = new Map(
+    chapter.flatMap((row) => {
+      const id = idText(row.id ?? row.chapterId);
+      return id ? [[id, row] as const] : [];
+    }),
+  );
   const chapterByMainId = new Map<string, Json>();
+  // MainQuest.chapterId is the complete membership relation. PACJEJCGPLN is
+  // only an anchor list in this source snapshot, so it must never be treated
+  // as the exhaustive chapter-to-quest index.
+  for (const [mainId, row] of mainQuestById) {
+    const chapterId = idText(row.chapterId);
+    const chapterRow = chapterId ? chapterById.get(chapterId) : undefined;
+    if (chapterRow) chapterByMainId.set(mainId, chapterRow);
+  }
   for (const row of chapter) {
     const chapterQuestIds = Array.isArray(row.PACJEJCGPLN) ? row.PACJEJCGPLN : [];
     for (const value of chapterQuestIds) {
       const mainId = idText(value);
-      if (mainId) chapterByMainId.set(mainId, row);
+      if (mainId && !chapterByMainId.has(mainId)) chapterByMainId.set(mainId, row);
+    }
+  }
+  const groupRows = new Map<string, Json[]>();
+  for (const row of chapter) {
+    const groupId = idText(row.groupId);
+    if (!groupId) continue;
+    const rows = groupRows.get(groupId) ?? [];
+    rows.push(row);
+    groupRows.set(groupId, rows);
+  }
+  const usableChapterGroups = new Set<string>();
+  const chapterGroupTitleByLocale: Inputs["chapterGroupTitleByLocale"] = {
+    "zh-CN": new Map(),
+    en: new Map(),
+  };
+  for (const [groupId, rows] of groupRows) {
+    const cities = new Set(rows.map((row) => idText(row.cityId)).filter(Boolean));
+    const styles = new Set(rows.map((row) => text(row.IMFDDPKLIDD ?? row.LINLPCFFGFC)).filter(Boolean));
+    // A type label can differ within a valid group (some chapters include
+    // related world-quest records); mixed physical regions or chapter styles
+    // are the stronger conflict signals.
+    if (cities.size <= 1 && styles.size <= 1) usableChapterGroups.add(groupId);
+    for (const locale of locales) {
+      const imageTitles = new Set(
+        rows
+          .map(
+            (row) =>
+              resolveLocalizedText(textMaps, locale, row.chapterImageTitleTextMapHash)?.value,
+          )
+          .filter((value): value is string => Boolean(value)),
+      );
+      const canonicalImageTitle = imageTitles.size === 1 ? [...imageTitles][0] : undefined;
+      if (canonicalImageTitle) {
+        chapterGroupTitleByLocale[locale].set(groupId, canonicalImageTitle);
+        continue;
+      }
+      const chapterPrefixes = new Set(
+        rows
+          .map((row) => {
+            const chapterNum = resolveLocalizedText(
+              textMaps,
+              locale,
+              row.chapterNumTextMapHash ?? row.numTextMapHash,
+            )?.value;
+            return chapterFamilyPrefix(chapterNum);
+          })
+          .filter((value): value is string => Boolean(value)),
+      );
+      if (chapterPrefixes.size === 1)
+        chapterGroupTitleByLocale[locale].set(groupId, [...chapterPrefixes][0]!);
     }
   }
   const questByMainId = new Map<string, Json[]>();
@@ -704,7 +1007,83 @@ export async function loadInputs(root: string): Promise<Inputs> {
   if (mainQuestRelationsHash) inputHashes[mainQuestRelationsPath] = mainQuestRelationsHash;
   Object.assign(inputHashes, binQuest.inputHashes);
   const storyFamilyOverrides = await loadStoryFamilyOverrides();
+  const questRegionOverrides = await loadQuestRegionOverrides();
   const questRegionByMainId = indexQuestRegions(talk);
+
+  const reputationQuestFile = await readJsonSafe(
+    root,
+    "ExcelBinOutput/ReputationQuestExcelConfigData.json",
+  );
+  const tribalReputationQuestFile = await readJsonSafe(
+    root,
+    "ExcelBinOutput/TribalReputationQuestExcelConfigData.json",
+  );
+  const reputationRequestFile = await readJsonSafe(
+    root,
+    "ExcelBinOutput/ReputationRequestExcelConfigData.json",
+  );
+
+  const reputationRegionByMainId = new Map<string, { regionId: string; evidence: string }>();
+  if (reputationQuestFile) {
+    if (reputationQuestFile.hash)
+      inputHashes["ExcelBinOutput/ReputationQuestExcelConfigData.json"] = reputationQuestFile.hash;
+    for (const row of asArray(reputationQuestFile.value)) {
+      const parentQuestId = idText(row.parentQuestId);
+      const cityId = typeof row.cityId === "number" ? row.cityId : undefined;
+      const reg = cityId ? cityRegions[cityId]?.id : undefined;
+      if (parentQuestId && reg) {
+        reputationRegionByMainId.set(parentQuestId, {
+          regionId: reg,
+          evidence: `ExcelBinOutput/ReputationQuestExcelConfigData.json:parentQuestId=${parentQuestId}.cityId=${cityId}`,
+        });
+      }
+    }
+  }
+  if (tribalReputationQuestFile) {
+    if (tribalReputationQuestFile.hash)
+      inputHashes["ExcelBinOutput/TribalReputationQuestExcelConfigData.json"] =
+        tribalReputationQuestFile.hash;
+    for (const row of asArray(tribalReputationQuestFile.value)) {
+      const parentQuestId = idText(row.parentQuestId);
+      if (parentQuestId && !reputationRegionByMainId.has(parentQuestId)) {
+        reputationRegionByMainId.set(parentQuestId, {
+          regionId: "natlan",
+          evidence: `ExcelBinOutput/TribalReputationQuestExcelConfigData.json:parentQuestId=${parentQuestId}`,
+        });
+      }
+    }
+  }
+  if (reputationRequestFile) {
+    if (reputationRequestFile.hash)
+      inputHashes["ExcelBinOutput/ReputationRequestExcelConfigData.json"] =
+        reputationRequestFile.hash;
+    const questSubToMain = new Map(
+      asArray(byKey.quest.value).flatMap((q) => {
+        const subId = idText(q.subId ?? q.id);
+        const mainId = idText(q.mainId ?? q.mainQuestId);
+        return subId && mainId ? [[subId, mainId] as const] : [];
+      }),
+    );
+    for (const row of asArray(reputationRequestFile.value)) {
+      const questId = idText(row.questId);
+      const mainId = questId ? questSubToMain.get(questId) : undefined;
+      if (!mainId || reputationRegionByMainId.has(mainId)) continue;
+      const iconName = text(row.iconName) ?? "";
+      let reg: string | undefined;
+      if (iconName.includes("Mengde")) reg = "mondstadt";
+      else if (iconName.includes("Liyue")) reg = "liyue";
+      else if (iconName.includes("Inazuma")) reg = "inazuma";
+      else if (iconName.includes("Sumeru")) reg = "sumeru";
+      else if (iconName.includes("Fontaine")) reg = "fontaine";
+      else if (iconName.includes("Natlan")) reg = "natlan";
+      if (reg) {
+        reputationRegionByMainId.set(mainId, {
+          regionId: reg,
+          evidence: `ExcelBinOutput/ReputationRequestExcelConfigData.json:questId=${questId}.iconName=${iconName}`,
+        });
+      }
+    }
+  }
 
   const baseRelationEdges: QuestRelationEdge[] = [
     ...binQuest.records.flatMap((record) => record.relationEdges),
@@ -732,8 +1111,8 @@ export async function loadInputs(root: string): Promise<Inputs> {
       .filter((edge) => ["starts_after", "aggregate_of"].includes(edge.relationType)),
     {
       compatible: (leftQuestId, rightQuestId) => {
-        const leftRegion = questRegionByMainId.get(leftQuestId);
-        const rightRegion = questRegionByMainId.get(rightQuestId);
+        const leftRegion = questRegionByMainId.get(leftQuestId)?.regionId;
+        const rightRegion = questRegionByMainId.get(rightQuestId)?.regionId;
         if (leftRegion && rightRegion && leftRegion !== rightRegion) return false;
         const leftType = questType(mainQuestById.get(leftQuestId)?.type);
         const rightType = questType(mainQuestById.get(rightQuestId)?.type);
@@ -876,8 +1255,13 @@ export async function loadInputs(root: string): Promise<Inputs> {
     quest,
     questByMainId,
     chapter,
+    chapterById,
     chapterByMainId,
+    usableChapterGroups,
+    chapterGroupTitleByLocale,
     questRegionByMainId,
+    reputationRegionByMainId,
+    questRegionOverrides,
     questCodex,
     talk,
     dialog,
@@ -975,23 +1359,33 @@ function deriveSeriesTitle(
   );
   const titles = members
     .map((row) => questTitleForSeries(inputs, row, locale))
-    .filter((value): value is string => Boolean(value));
+    .filter((value): value is string => Boolean(value) && !isForbiddenStoryTitle(value));
   const prefixes = new Map<string, number>();
   for (const title of titles) {
     const match = title.match(/^(.+?)[·・:：]\s*.+$/u);
     if (!match?.[1]) continue;
     const prefix = match[1].trim();
+    if (isForbiddenStoryTitle(prefix)) continue;
     prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1);
   }
   const preferredPrefix = preferredTitle?.match(/^(.+?)[·・:：]\s*.+$/u)?.[1]?.trim();
-  if (preferredPrefix && prefixes.size > 1 && prefixes.has(preferredPrefix)) {
+  if (
+    preferredPrefix &&
+    !isForbiddenStoryTitle(preferredPrefix) &&
+    prefixes.size > 1 &&
+    prefixes.has(preferredPrefix)
+  ) {
     return preferredPrefix;
   }
   const repeatedPrefix = [...prefixes.entries()]
-    .filter(([, count]) => count >= 2)
+    .filter(([prefix, count]) => count >= 2 && !isForbiddenStoryTitle(prefix))
     .sort((left, right) => right[1] - left[1] || right[0].length - left[0].length)[0]?.[0];
   if (repeatedPrefix) return repeatedPrefix;
-  if (members.length > 1) return locale === "en" ? "Quest Series" : "连续任务";
+  const nonTestMembers = members.filter((row) => {
+    const title = questTitleForSeries(inputs, row, locale);
+    return title && !isForbiddenStoryTitle(title);
+  });
+  if (nonTestMembers.length > 1) return locale === "en" ? "Quest Series" : "连续任务";
   return undefined;
 }
 
@@ -1010,30 +1404,108 @@ const genericStoryFamilyTitles = new Set([
   "Archon Quests",
 ]);
 
-function chapterStoryOrder(value: string | undefined): number | undefined {
+export function chapterStoryOrder(value: string | undefined): number | undefined {
   if (!value) return undefined;
-  if (value.includes("序曲") || value.includes("序章") || /\bprologue\b/iu.test(value)) return 10;
-  const match = value.match(/第([一二三四五六七八九十百]+)章/u);
-  if (!match?.[1]) return undefined;
-  const digits: Record<string, number> = {
-    一: 1,
-    二: 2,
-    三: 3,
-    四: 4,
-    五: 5,
-    六: 6,
-    七: 7,
-    八: 8,
-    九: 9,
-    十: 10,
-    百: 100,
+  if (/终章|尾声|\b(?:finale|epilogue|requiem)\b/iu.test(value)) return 9000;
+  if (/间章|幕间|\b(?:interlude|intermezzo)\b/iu.test(value)) return 550;
+
+  const chineseNumber = (raw: string): number | undefined => {
+    const digits: Record<string, number> = {
+      零: 0,
+      一: 1,
+      二: 2,
+      三: 3,
+      四: 4,
+      五: 5,
+      六: 6,
+      七: 7,
+      八: 8,
+      九: 9,
+    };
+    if (/^\d+$/u.test(raw)) return Number(raw);
+    if ([...raw].every((char) => char in digits))
+      return [...raw].reduce((value, char) => value * 10 + digits[char]!, 0);
+    const parts = raw.split("十");
+    if (parts.length === 2)
+      return (
+        (parts[0] ? (digits[parts[0]] ?? 0) : 1) * 10 + (parts[1] ? (digits[parts[1]] ?? 0) : 0)
+      );
+    return undefined;
   };
-  const valueText = match[1];
-  if (valueText.length === 1) return (digits[valueText] ?? 0) * 10;
-  if (valueText === "十一") return 110;
-  if (valueText.startsWith("十")) return (10 + (digits[valueText.slice(1)] ?? 0)) * 10;
-  if (valueText.endsWith("十")) return (digits[valueText[0] ?? ""] ?? 0) * 100;
+  const englishOrdinals: Record<string, number> = {
+    first: 1,
+    second: 2,
+    third: 3,
+    fourth: 4,
+    fifth: 5,
+    sixth: 6,
+    seventh: 7,
+    eighth: 8,
+    ninth: 9,
+    tenth: 10,
+  };
+  const romanValues: Record<string, number> = {
+    i: 1,
+    v: 5,
+    x: 10,
+    l: 50,
+    c: 100,
+    d: 500,
+    m: 1000,
+  };
+
+  const parseOrdinal = (raw: string | undefined): number | undefined => {
+    if (!raw) return undefined;
+    const lower = raw.toLocaleLowerCase("en");
+    let order = chineseNumber(lower);
+    if (order === undefined && lower in englishOrdinals) order = englishOrdinals[lower];
+    if (order === undefined && /^[ivxlcdm]+$/u.test(lower)) {
+      order = 0;
+      for (let index = 0; index < lower.length; index += 1) {
+        const current = romanValues[lower[index]!] ?? 0;
+        const next = romanValues[lower[index + 1]!] ?? 0;
+        order += current < next ? -current : current;
+      }
+    }
+    return order !== undefined ? order * 100 : undefined;
+  };
+
+  // Prioritize Act first so acts within a chapter don't all match chapter number
+  const actMatch =
+    value.match(/第\s*([一二三四五六七八九十零\d]+)\s*幕/u) ??
+    value.match(
+      /\bact\s+(\d+|[ivxlcdm]+|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/iu,
+    );
+  if (actMatch?.[1]) {
+    const actOrder = parseOrdinal(actMatch[1]);
+    if (actOrder !== undefined) return actOrder;
+  }
+
+  if (/序章|序曲|序幕|序奏|\b(?:prologue|prelude)\b/iu.test(value)) return 50;
+
+  const numbered =
+    value.match(/第\s*([一二三四五六七八九十零\d]+)\s*(?:章|部|篇)/u) ??
+    value.match(
+      /(?:part|chapter|movement|volume)\s+(\d+|[ivxlcdm]+|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)/iu,
+    ) ??
+    value.match(/(?:its|part)\s+([一二三四五六七八九十零\d]+)/iu);
+  if (numbered?.[1]) {
+    const chapOrder = parseOrdinal(numbered[1]);
+    if (chapOrder !== undefined) return chapOrder;
+  }
   return undefined;
+}
+
+function chapterFamilyPrefix(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const chinese = value.match(
+    /^(.+?)(?:\s*第[一二三四五六七八九十零\d]+(?:章|幕|部|篇)|[·・:：]\s*(?:序曲|序章|终章|尾声|第))/u,
+  );
+  if (chinese?.[1]) return chinese[1].trim();
+  const english = value.match(
+    /^(.+?)(?::\s*(?:part\s+|chapter\s+|movement\s+|act\s+|prelude|prologue|finale|epilogue))/iu,
+  );
+  return english?.[1]?.trim();
 }
 
 function storyFamilyOverrideFor(inputs: Inputs, mainId: string): StoryFamilyOverride | undefined {
@@ -1042,27 +1514,269 @@ function storyFamilyOverrideFor(inputs: Inputs, mainId: string): StoryFamilyOver
   );
 }
 
+function regionForMainQuest(inputs: Inputs, mainId: string): string | undefined {
+  const main = inputs.mainQuestById.get(mainId);
+  const chapterId = idText(main?.chapterId);
+  const chapter = chapterId ? inputs.chapterById.get(chapterId) : undefined;
+  const cityId = typeof chapter?.cityId === "number" ? chapter.cityId : undefined;
+  return (
+    (cityId ? cityRegions[cityId]?.id : undefined) ??
+    inputs.questRegionByMainId.get(mainId)?.regionId
+  );
+}
+
+function slugifyIdentifier(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function resolveArchonStoryFamily(
+  chapterId: string | undefined,
+  chapterNum: string | undefined,
+  locale: Locale,
+  rawCityId?: number,
+): {
+  id: string;
+  title: string;
+  provenance: "derived";
+  catalogRegionId: string;
+  familyOrder: number;
+} | undefined {
+  const idNum = chapterId ? Number(chapterId) : undefined;
+  const numStr = chapterNum ?? "";
+
+  // 1. Prologue (序章)
+  if ((idNum && idNum >= 1001 && idNum <= 1003) || /序章|Prologue/i.test(numStr)) {
+    return {
+      id: "genshin:aq:prologue",
+      title:
+        locale === "en"
+          ? "Archon Quest · Prologue: Song of the Dragon and Freedom"
+          : "魔神任务 · 序章「巨龙与自由之歌」",
+      provenance: "derived",
+      catalogRegionId: "mondstadt",
+      familyOrder: 100,
+    };
+  }
+
+  // 2. Chapter I (第一章)
+  if ((idNum && idNum >= 1101 && idNum <= 1105) || /第一章|Chapter I\b/i.test(numStr)) {
+    return {
+      id: "genshin:aq:chapter-1",
+      title:
+        locale === "en"
+          ? "Archon Quest · Chapter I: Farewell, Archaic Lord"
+          : "魔神任务 · 第一章「辞行久远之躯」",
+      provenance: "derived",
+      catalogRegionId: "liyue",
+      familyOrder: 100,
+    };
+  }
+
+  // 3. Chapter II (第二章)
+  if (
+    (idNum && ((idNum >= 1201 && idNum <= 1204) || idNum === 1206)) ||
+    /第二章|Chapter II\b/i.test(numStr)
+  ) {
+    return {
+      id: "genshin:aq:chapter-2",
+      title:
+        locale === "en"
+          ? "Archon Quest · Chapter II: Omnipresence Over Mortals"
+          : "魔神任务 · 第二章「千手百眼，天下人间」",
+      provenance: "derived",
+      catalogRegionId: "inazuma",
+      familyOrder: 100,
+    };
+  }
+
+  // 4. Chapter III (第三章)
+  if (
+    (idNum && ((idNum >= 1301 && idNum <= 1306) || idNum === 1308)) ||
+    /第三章|Chapter III\b/i.test(numStr)
+  ) {
+    return {
+      id: "genshin:aq:chapter-3",
+      title:
+        locale === "en"
+          ? "Archon Quest · Chapter III: Akasha Pulses, the Kalpa Flame Rises"
+          : "魔神任务 · 第三章「虚空鼓动，劫火高扬」",
+      provenance: "derived",
+      catalogRegionId: "sumeru",
+      familyOrder: 100,
+    };
+  }
+
+  // 5. Chapter IV (第四章)
+  if ((idNum && idNum >= 1400 && idNum <= 1406) || /第四章|Chapter IV\b/i.test(numStr)) {
+    return {
+      id: "genshin:aq:chapter-4",
+      title:
+        locale === "en"
+          ? "Archon Quest · Chapter IV: Masquerade of the Guilty"
+          : "魔神任务 · 第四章「罪人舞步旋」",
+      provenance: "derived",
+      catalogRegionId: "fontaine",
+      familyOrder: 100,
+    };
+  }
+
+  // 6. Chapter V (第五章)
+  if ((idNum && idNum >= 1500 && idNum <= 1506) || /第五章|Chapter V\b/i.test(numStr)) {
+    return {
+      id: "genshin:aq:chapter-5",
+      title:
+        locale === "en"
+          ? "Archon Quest · Chapter V: Incandescent Ode of Resurrection"
+          : "魔神任务 · 第五章「炽烈的还魂诗」",
+      provenance: "derived",
+      catalogRegionId: "natlan",
+      familyOrder: 100,
+    };
+  }
+
+  // 7. Nod-Krai / Welkin Moon (空月之歌)
+  if (
+    (idNum && idNum >= 1600 && idNum <= 1611) ||
+    /空月之歌|Welkin Moon|第六章|Chapter VI\b/i.test(numStr)
+  ) {
+    return {
+      id: "genshin:aq:nod-krai",
+      title:
+        locale === "en" ? "Archon Quest · Song of the Welkin Moon" : "魔神任务 · 空月之歌",
+      provenance: "derived",
+      catalogRegionId: "nod_krai",
+      familyOrder: 100,
+    };
+  }
+
+  // 8. Chapter VII (第七章)
+  if ((idNum && idNum >= 1700 && idNum <= 1701) || /第七章|Chapter VII\b/i.test(numStr)) {
+    return {
+      id: "genshin:aq:chapter-7",
+      title:
+        locale === "en"
+          ? "Archon Quest · Chapter VII: Everwinter Without Mercy"
+          : "魔神任务 · 第七章「无神怜爱的雪国」",
+      provenance: "derived",
+      catalogRegionId: "snezhnaya",
+      familyOrder: 100,
+    };
+  }
+
+  // 9. Interlude (间章)
+  if (
+    (idNum && (idNum === 1205 || idNum === 1207 || idNum === 1307 || idNum === 1004)) ||
+    /间章|Interlude/i.test(numStr)
+  ) {
+    let regionId = "liyue";
+    if (idNum === 1307 || rawCityId === 4) regionId = "sumeru";
+    else if (idNum === 1004 || rawCityId === 1) regionId = "mondstadt";
+    else if (rawCityId && cityRegions[rawCityId]) regionId = cityRegions[rawCityId]!.id;
+    return {
+      id: `genshin:aq:interlude:${regionId}`,
+      title: locale === "en" ? "Archon Quest · Interlude Chapter" : "魔神任务 · 间章",
+      provenance: "derived",
+      catalogRegionId: regionId,
+      familyOrder: 150,
+    };
+  }
+
+  return undefined;
+}
+
+export function resolvePersonalLineStoryFamily(
+  inputs: Inputs,
+  chapterRow: Json | undefined,
+  chapterId: string | undefined,
+  chapterTitle: string | undefined,
+  locale: Locale,
+): {
+  id: string;
+  title: string;
+  provenance: "derived";
+  catalogRegionId?: string;
+  familyOrder: number;
+  chapterOrder?: number;
+} | undefined {
+  if (!chapterRow) return undefined;
+  const style = text(chapterRow.IMFDDPKLIDD ?? chapterRow.LINLPCFFGFC);
+  if (style !== "CHAPTER_STYLE_TYPE_PERSONALLINE") return undefined;
+
+  const charNameResolution =
+    resolveLocalizedText(inputs.textMaps, locale, chapterRow.chapterImageTitleTextMapHash) ??
+    resolveLocalizedText(inputs.textMaps, "zh-CN", chapterRow.chapterImageTitleTextMapHash);
+  if (!charNameResolution?.value) return undefined;
+  const charName = charNameResolution.value;
+
+  const charNameEnResolution =
+    resolveLocalizedText(inputs.textMaps, "en", chapterRow.chapterImageTitleTextMapHash) ??
+    charNameResolution;
+  const charSlug = slugifyIdentifier(charNameEnResolution.value);
+
+  const chapterNumResolution =
+    resolveLocalizedText(
+      inputs.textMaps,
+      locale,
+      chapterRow.chapterNumTextMapHash ?? chapterRow.numTextMapHash,
+    ) ??
+    resolveLocalizedText(
+      inputs.textMaps,
+      "zh-CN",
+      chapterRow.chapterNumTextMapHash ?? chapterRow.numTextMapHash,
+    );
+  const chapterNum = chapterNumResolution?.value ?? "";
+
+  let familyTitle: string;
+  if (locale === "zh-CN") {
+    const match = chapterNum.match(/^(.+?之章)/u);
+    const prefix = match ? match[1] : chapterNum.split(/\s+/u)[0];
+    familyTitle = prefix ? `${charName} · ${prefix}` : `${charName} · 传说任务`;
+  } else {
+    const match = chapterNum.match(/^(.+?\s+Chapter)/iu);
+    const prefix = match ? match[1] : chapterNum.split(/:\s*Act|\s+Act/iu)[0];
+    familyTitle = prefix ? `${charName}: ${prefix}` : `${charName}: Story Quest`;
+  }
+
+  const rawCityId = typeof chapterRow.cityId === "number" ? chapterRow.cityId : undefined;
+  const catalogRegionId = rawCityId ? cityRegions[rawCityId]?.id : undefined;
+
+  return {
+    id: `genshin:personal-line:${charSlug || (chapterId ?? "unknown")}`,
+    title: familyTitle,
+    provenance: "derived",
+    catalogRegionId,
+    familyOrder: 200,
+    chapterOrder: chapterStoryOrder(chapterTitle),
+  };
+}
+
 function resolveStoryFamily(
   inputs: Inputs,
   mainId: string,
-  main: Json,
   locale: Locale,
   chapterId: string | undefined,
   chapterTitle: string | undefined,
   resolvedSeriesTitle: string | undefined,
   seriesId: string | undefined,
-  resolvedRegionId: string,
+  chapterStyle?: string,
+  resolvedQuestType?: QuestType,
+  chapterRow?: Json,
+  rawCityId?: number,
+  chapterNum?: string,
 ): {
-  id: string;
-  title: string;
+  id?: string;
+  title?: string;
   provenance: "upstream" | "derived" | "curated" | "fallback";
+  catalogRegionId?: string;
   familyOrder?: number;
   chapterOrder?: number;
   subseriesId?: string;
   subseriesTitle?: string;
   subseriesOrder?: number;
 } {
-  const regionKey = resolvedRegionId || inputs.questRegionByMainId.get(mainId) || "other";
   const override = storyFamilyOverrideFor(inputs, mainId);
   if (override) {
     const subseries = override.subseries?.find((item) => item.questIds.includes(mainId));
@@ -1070,6 +1784,8 @@ function resolveStoryFamily(
       id: override.id,
       title: override.title?.[locale] ?? override.title?.["zh-CN"] ?? override.id,
       provenance: "curated",
+      catalogRegionId:
+        override.catalogRegionId ?? regionForMainQuest(inputs, override.questIds[0] ?? mainId),
       familyOrder: override.order,
       chapterOrder: override.chapterOrders?.[chapterId ?? ""] ?? chapterStoryOrder(chapterTitle),
       subseriesId: subseries?.id,
@@ -1077,8 +1793,60 @@ function resolveStoryFamily(
       subseriesOrder: subseries?.order,
     };
   }
+
+  const resolvedChapterRow =
+    chapterRow ??
+    (chapterId ? inputs.chapterById.get(chapterId) : undefined) ??
+    inputs.chapterByMainId.get(mainId);
+
+  // 1. Archon Quest convergence
+  if (resolvedQuestType === "archon_quest" || chapterStyle === "CHAPTER_STYLE_TYPE_AQ") {
+    const aqFamily = resolveArchonStoryFamily(chapterId, chapterNum, locale, rawCityId);
+    if (aqFamily) {
+      return {
+        ...aqFamily,
+        chapterOrder: chapterStoryOrder(chapterTitle),
+      };
+    }
+  }
+
+  // 2. Personal line convergence
+  if (chapterStyle === "CHAPTER_STYLE_TYPE_PERSONALLINE") {
+    const personalFamily = resolvePersonalLineStoryFamily(
+      inputs,
+      resolvedChapterRow,
+      chapterId,
+      chapterTitle,
+      locale,
+    );
+    if (personalFamily) {
+      return personalFamily;
+    }
+  }
+
+  const chapterGroupId = idText(resolvedChapterRow?.groupId);
+  const chapterGroup =
+    chapterGroupId && inputs.usableChapterGroups.has(chapterGroupId) ? chapterGroupId : undefined;
+  const chapterFamilyTitle = chapterGroup
+    ? inputs.chapterGroupTitleByLocale[locale].get(chapterGroup)
+    : undefined;
+
+  // Group membership is stronger than a per-quest series field. For example,
+  // Forest Book chapters share a chapter group while individual MainQuest
+  // rows expose different series IDs.
+  if (chapterGroup && chapterFamilyTitle) {
+    return {
+      id: `genshin:chapter-group:${chapterGroup}`,
+      title: chapterFamilyTitle,
+      provenance: "derived",
+      chapterOrder: override?.chapterOrders?.[chapterId ?? ""] ?? chapterStoryOrder(chapterTitle),
+    };
+  }
+
   const meaningfulSeries =
-    resolvedSeriesTitle && !genericStoryFamilyTitles.has(resolvedSeriesTitle.trim())
+    resolvedSeriesTitle &&
+    !genericStoryFamilyTitles.has(resolvedSeriesTitle.trim()) &&
+    !isForbiddenStoryTitle(resolvedSeriesTitle.trim())
       ? resolvedSeriesTitle.trim()
       : undefined;
   if (meaningfulSeries) {
@@ -1086,36 +1854,6 @@ function resolveStoryFamily(
       id: `genshin:series:${seriesId ?? meaningfulSeries}`,
       title: meaningfulSeries,
       provenance: seriesId ? "upstream" : "derived",
-      chapterOrder: chapterStoryOrder(chapterTitle),
-    };
-  }
-
-  const chapterGroup = inputs.chapterByMainId.get(mainId)?.groupId;
-  if (chapterGroup !== undefined && chapterGroup !== null) {
-    const groupId = idText(chapterGroup) ?? String(chapterGroup);
-    return {
-      id: `genshin:chapter-group:${groupId}`,
-      title:
-        chapterTitle?.split(/[·:：]/u, 1)[0]?.trim() ||
-        (locale === "en" ? "Story Group" : "任务系列"),
-      provenance: "derived",
-      chapterOrder: chapterStoryOrder(chapterTitle),
-    };
-  }
-
-  const chapterRow = inputs.chapterByMainId.get(mainId);
-  const chapterMembers = Array.isArray(chapterRow?.PACJEJCGPLN)
-    ? chapterRow.PACJEJCGPLN.map((value) => idText(value)).filter((value): value is string =>
-        Boolean(value),
-      )
-    : [];
-  if (chapterId && chapterMembers.length > 1 && chapterMembers.includes(mainId)) {
-    return {
-      id: `genshin:chapter:${chapterId}`,
-      title:
-        chapterTitle?.split(/[·:：]/u, 1)[0]?.trim() ||
-        (locale === "en" ? "Story Chapter" : "剧情章节"),
-      provenance: "derived",
       chapterOrder: chapterStoryOrder(chapterTitle),
     };
   }
@@ -1151,19 +1889,9 @@ function resolveStoryFamily(
     };
   }
 
-  const direct = directSeriesId(main);
-  if (direct) {
-    return {
-      id: `genshin:series:${regionKey}:${direct}`,
-      title: locale === "en" ? "Quest Series" : "任务系列",
-      provenance: "derived",
-      chapterOrder: chapterStoryOrder(chapterTitle),
-    };
-  }
-
   return {
-    id: `genshin:standalone:${regionKey}`,
-    title: locale === "en" ? "Other Independent Quests" : "其他独立任务",
+    // A numeric/generic series field without a human-readable series title is
+    // not enough to manufacture a visible one-task family.
     provenance: "fallback",
     chapterOrder: chapterStoryOrder(chapterTitle),
   };
@@ -1178,7 +1906,7 @@ function resolveTitle(
   mainId: string,
 ): TitleResolution {
   const mainTitle = main.titleTextMapHash ?? main.titleHash;
-  const codexTitle = codexFile?.value.HEDPNHPBMJH;
+  const codexTitle = codexFile?.value.NFFJLFOECKD ?? codexFile?.value.HEDPNHPBMJH;
   const directTitle = text(main.title);
   if (directTitle) {
     return {
@@ -1246,7 +1974,7 @@ function participantEntity(row: Json, locale: Locale, textMap: Record<string, un
 }
 
 function codexMainId(value: Json): string | undefined {
-  return idText(value.IMJHJGBNMMD ?? value.mainQuestId ?? value.mainId ?? value.id);
+  return idText(value.MFANMBMKKLC ?? value.IMJHJGBNMMD ?? value.mainQuestId ?? value.mainId ?? value.id);
 }
 
 function codexText(value: Json, key: string): unknown {
@@ -1257,11 +1985,44 @@ function dialogueId(row: Json): string | undefined {
   return idText(row.GFLDJMJKIKE ?? row.id ?? row.dialogId);
 }
 
-function talkRoleNpcId(row: Json): string | undefined {
-  const role = asObject(row.talkRole);
+function isPlayerRole(role: Json): boolean {
   const type = text(role.type);
   const id = idText(role.id);
-  return type === "TALK_ROLE_NPC" && id ? id : undefined;
+  if (type === "TALK_ROLE_PLAYER") return true;
+  if (
+    id === "主角" ||
+    id === "玩家" ||
+    id === "PLAYER" ||
+    id === "Player" ||
+    id === "10000005" ||
+    id === "10000007"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isBlackScreenRole(role: Json): boolean {
+  const type = text(role.type);
+  const id = idText(role.id);
+  return (
+    type?.includes("BLACK_SCREEN") === true ||
+    id?.startsWith("BLACKSCREEN") === true
+  );
+}
+
+function isPlaceholderRole(role: Json): boolean {
+  const id = idText(role.id);
+  if (!id) return false;
+  return (id.startsWith("{") && id.endsWith("}")) || id === "****";
+}
+
+function talkRoleNpcId(row: Json): string | undefined {
+  const role = asObject(row.talkRole);
+  if (isPlayerRole(role) || isBlackScreenRole(role) || isPlaceholderRole(role)) return undefined;
+  const type = text(role.type);
+  const id = idText(role.id);
+  return type === "TALK_ROLE_NPC" && id && id !== "0" && id !== "" ? id : undefined;
 }
 
 function npcDisplayName(
@@ -1272,22 +2033,63 @@ function npcDisplayName(
   const npc = npcId ? inputs.npcById.get(npcId) : undefined;
   if (!npc) return undefined;
   const nameHash = npc.nameTextMapHash ?? npc.nameHash;
-  return (
-    (nameHash === undefined ? undefined : tryResolveText(textMap, nameHash)) ??
-    text(npc.name) ??
-    text(npc.jsonName)
-  );
+  const resolvedName = nameHash === undefined ? undefined : tryResolveText(textMap, nameHash);
+  if (resolvedName) return resolvedName;
+  const explicitName = text(npc.name);
+  if (explicitName && !explicitName.startsWith("ConfigNpc_")) return explicitName;
+  return undefined;
 }
 
-function resolveDialogSpeakerName(
+export type SpeakerResolutionMethod =
+  | "dialog_textmap"
+  | "npc_fallback"
+  | "player_identity"
+  | "intentionally_nameless"
+  | "codex_line_textmap"
+  | "unresolved";
+
+export function resolveDialogSpeakerName(
   inputs: Inputs,
   dialogRow: Json,
   textMap: Record<string, unknown>,
-): { value?: string; method: "dialog_textmap" | "npc_fallback" | "unresolved" } {
+  locale: Locale,
+): { value?: string; method: SpeakerResolutionMethod } {
+  const role = asObject(dialogRow.talkRole);
+  if (isPlayerRole(role)) {
+    return {
+      value: locale === "en" ? "Traveler" : "旅行者",
+      method: "player_identity",
+    };
+  }
+  if (isBlackScreenRole(role) || isPlaceholderRole(role) || idText(role.id) === "0") {
+    return { value: undefined, method: "intentionally_nameless" };
+  }
   const direct = tryResolveText(textMap, dialogRow.talkRoleNameTextMapHash);
   if (direct) return { value: direct, method: "dialog_textmap" };
-  const fallback = npcDisplayName(inputs, talkRoleNpcId(dialogRow), textMap);
-  return fallback ? { value: fallback, method: "npc_fallback" } : { method: "unresolved" };
+  const npcId = talkRoleNpcId(dialogRow);
+  const fallback = npcDisplayName(inputs, npcId, textMap);
+  if (fallback) return { value: fallback, method: "npc_fallback" };
+
+  const body = tryResolveText(textMap, dialogRow.talkContentTextMapHash);
+  if (body && /^[（(].+[）)]$/su.test(body.trim())) {
+    return {
+      value: locale === "en" ? "Traveler" : "旅行者",
+      method: "player_identity",
+    };
+  }
+
+  const npc = npcId ? inputs.npcById.get(npcId) : undefined;
+  const scriptDataPath = text(npc?.scriptDataPath);
+  const luaDataPath = text(npc?.luaDataPath);
+  if (
+    (npc && (npc.disableShowName === true || npc.disableShowName === 1)) ||
+    scriptDataPath?.startsWith("Data/ScriptData/PropObject") ||
+    luaDataPath === "Actor/Npc/TempNPC"
+  ) {
+    return { value: undefined, method: "intentionally_nameless" };
+  }
+
+  return { method: "unresolved" };
 }
 
 function buildDialogueGraph(
@@ -1295,7 +2097,6 @@ function buildDialogueGraph(
   mainId: string,
   locale: Locale,
   textMap: Record<string, unknown>,
-  subquestKeyByTitleHash: Map<string, string>,
 ): {
   nodes: QuestRecordPayload["dialogueNodes"];
   edges: QuestRecordPayload["dialogueEdges"];
@@ -1432,22 +2233,114 @@ function buildDialogueGraph(
     return nodeKey;
   }
 
+  function linearizeCodexLines(lines: Json[]): Json[] {
+    if (lines.length <= 1) return lines;
+    const lineById = new Map<string, Json>();
+    lines.forEach((l, idx) => {
+      const id = idText(l.BMAHMPOKJEG ?? l.EICGDLLPINH ?? idx) ?? String(idx);
+      lineById.set(id, l);
+    });
+    function getNext(l: Json): string[] {
+      const targets: string[] = [];
+      const direct = Array.isArray(l.IKBPMKLHLGD)
+        ? l.IKBPMKLHLGD
+        : Array.isArray(l.MOMDAPFBMBM)
+          ? l.MOMDAPFBMBM
+          : [];
+      for (const t of direct) {
+        const id = idText(t);
+        if (id) targets.push(id);
+      }
+      const refs = asArray(l.EDJPJDLLBOJ ?? l.OFKGPGLHIDJ);
+      for (const r of refs) {
+        const robj = asObject(r);
+        const nextId = idText(robj.AAFIOOJDGFN);
+        if (nextId) targets.push(nextId);
+      }
+      return [...new Set(targets)];
+    }
+    function findReachable(startId: string, stopId?: string): Set<string> {
+      const reach = new Set<string>();
+      const q = [startId];
+      while (q.length) {
+        const curr = q.shift()!;
+        if (!curr || reach.has(curr) || curr === stopId) continue;
+        reach.add(curr);
+        const l = lineById.get(curr);
+        if (!l) continue;
+        for (const n of getNext(l)) q.push(n);
+      }
+      return reach;
+    }
+    const visited = new Set<string>();
+    const result: Json[] = [];
+    function traverse(id: string) {
+      if (!id || visited.has(id)) return;
+      visited.add(id);
+      const l = lineById.get(id);
+      if (!l) return;
+      result.push(l);
+      const next = getNext(l);
+      if (next.length === 0) return;
+      if (next.length === 1) {
+        traverse(next[0]);
+        return;
+      }
+      const branchReachables = next.map((n) => findReachable(n));
+      let common: string[] = [];
+      if (branchReachables.length > 0) {
+        common = [...branchReachables[0]].filter((x) =>
+          branchReachables.every((set) => set.has(x)),
+        );
+      }
+      const joinNode = common[0];
+      for (const n of next) {
+        function traverseBranch(bid: string) {
+          if (!bid || visited.has(bid) || bid === joinNode) return;
+          visited.add(bid);
+          const bl = lineById.get(bid);
+          if (!bl) return;
+          result.push(bl);
+          for (const target of getNext(bl)) {
+            traverseBranch(target);
+          }
+        }
+        traverseBranch(n);
+      }
+      if (joinNode) traverse(joinNode);
+    }
+    const rootId = idText(lines[0].BMAHMPOKJEG ?? lines[0].EICGDLLPINH ?? 0) ?? "0";
+    traverse(rootId);
+    for (const l of lines) {
+      const id = idText(l.BMAHMPOKJEG ?? l.EICGDLLPINH ?? 0) ?? "";
+      if (id && !visited.has(id)) traverse(id);
+    }
+    return result;
+  }
+
   if (codexFile) {
-    const groups = asArray(codexText(codexFile.value, "EBNBLBEIFFJ"));
+    const groups = asArray(
+      codexFile.value.JIJKODHIEED ??
+        codexFile.value.EBNBLBEIFFJ ??
+        codexText(codexFile.value, "EBNBLBEIFFJ"),
+    );
     groups.forEach((group, groupIndex) => {
-      const groupTitleHash = hashValue(codexText(group, "OGEGCCLHIHP"));
-      const subquestKey =
-        (groupTitleHash ? subquestKeyByTitleHash.get(groupTitleHash) : undefined) ??
-        `quest/${mainId}/subquest/${groupIndex + 1}`;
-      const lines = asArray(codexText(group, "PEAKPGNONFA"));
+      const subquestKey = `quest/${mainId}/subquest/${groupIndex + 1}`;
+      const rawLines = asArray(
+        group.DCBDMJAPBOK ?? group.PEAKPGNONFA ?? codexText(group, "PEAKPGNONFA"),
+      );
+      const lines = linearizeCodexLines(rawLines);
       lines.forEach((line, lineIndex) => {
-        const lineId = idText(line.EICGDLLPINH ?? lineIndex) ?? String(lineIndex);
+        const lineId =
+          idText(line.BMAHMPOKJEG ?? line.EICGDLLPINH ?? lineIndex) ?? String(lineIndex);
         const lineKey = `${groupIndex}:${lineId}`;
-        const lineKind = text(line.NDANANGPLHB);
-        const speakerName = tryResolveText(textMap, line.IILBCFJNPGA);
-        const narrationRefs = asArray(line.JOLOODLBEGO);
+        const lineKind = text(line.itemType ?? line.NDANANGPLHB);
+        const speakerRaw = line.FKJAFLOBDEI?.textId ?? line.FKJAFLOBDEI ?? line.IILBCFJNPGA;
+        const speakerName = tryResolveText(textMap, speakerRaw);
+        const narrationRefs = asArray(line.JKPKLAJFBMM ?? line.JOLOODLBEGO);
         narrationRefs.forEach((ref, refIndex) => {
-          const body = tryResolveText(textMap, ref);
+          const textRef = asObject(ref).textId ?? ref;
+          const body = tryResolveText(textMap, textRef);
           if (!body) return;
           appendNode({
             nodeId: `codex-${groupIndex}-${lineIndex}-narration-${refIndex}`,
@@ -1457,37 +2350,80 @@ function buildDialogueGraph(
             lineKey,
             sourceFile: codexFile.relativePath,
             metadata: {
-              textMapHash: hashValue(ref),
+              textMapHash: hashValue(textRef),
               codexLineKind: lineKind,
             },
           });
         });
-        const dialogueRefs = asArray(line.OFKGPGLHIDJ);
+        const dialogueRefs = asArray(line.EDJPJDLLBOJ ?? line.OFKGPGLHIDJ);
         dialogueRefs.forEach((ref, refIndex) => {
-          const dialogId = idText(ref.AAICCGABILO);
+          const dialogId = idText(ref.POMAEJICHLK ?? ref.AAICCGABILO);
           const dialogRow = dialogId
             ? (resolvedDialogById.get(dialogId) ?? dialogById.get(dialogId))
             : undefined;
+          const refText = ref.text?.textId ?? ref.text ?? ref.JGPDCLOJKLC;
           const body =
-            tryResolveText(textMap, ref.JGPDCLOJKLC) ??
+            tryResolveText(textMap, refText) ??
             (dialogRow ? tryResolveText(textMap, dialogRow.talkContentTextMapHash) : undefined);
           if (!body) return;
+          const role = dialogRow ? asObject(dialogRow.talkRole) : {};
+          const isPlayer =
+            line.FKJAFLOBDEI?.DFKLAEHPOBE === "SpeakerPlayer" ||
+            line.itemType === "SelectDialog" ||
+            isPlayerRole(role);
           const npcId = dialogRow ? talkRoleNpcId(dialogRow) : undefined;
-          const dialogSpeaker = dialogRow
-            ? resolveDialogSpeakerName(inputs, dialogRow, textMap)
-            : { method: "unresolved" as const };
-          if (npcId) participantIds.add(npcId);
+          const isNarratage =
+            line.FKJAFLOBDEI?.DFKLAEHPOBE === "Narratage" ||
+            lineKind === "TextLeft" ||
+            text(asObject(line.IILBCFJNPGA)?.JOBGILDNLEL) === "Narratage" ||
+            text(asObject(ref.JGPDCLOJKLC)?.JOBGILDNLEL) === "Narratage";
+          const dialogSpeaker = isNarratage
+            ? { value: undefined, method: "intentionally_nameless" as const }
+            : isPlayer
+              ? { value: speakerName ?? "旅行者", method: "player_identity" as const }
+              : dialogRow
+                ? resolveDialogSpeakerName(inputs, dialogRow, textMap, locale)
+                : speakerName
+                  ? { value: speakerName, method: "codex_line_textmap" as const }
+                  : { method: "unresolved" as const };
+          if (
+            npcId &&
+            dialogSpeaker.method !== "player_identity" &&
+            dialogSpeaker.method !== "intentionally_nameless"
+          ) {
+            participantIds.add(npcId);
+          }
+          const isChoice =
+            isPlayer ||
+            dialogSpeaker.method === "player_identity" ||
+            line.FKJAFLOBDEI?.DFKLAEHPOBE === "SpeakerPlayer" ||
+            line.itemType === "SelectDialog";
           appendNode({
             nodeId: dialogId ?? `codex-${groupIndex}-${lineIndex}-dialog-${refIndex}`,
-            type: lineKind === "MultiDialog" ? "player_choice" : "dialogue",
+            type:
+              isChoice
+                ? "player_choice"
+                : dialogSpeaker.method === "intentionally_nameless"
+                  ? "narration"
+                  : "dialogue",
             subquestKey,
-            speakerKey: npcId ? `npc/${npcId}` : undefined,
-            speakerName: speakerName ?? dialogSpeaker.value,
+            speakerKey:
+              isPlayer || dialogSpeaker.method === "player_identity"
+                ? "player"
+                : dialogSpeaker.method === "intentionally_nameless"
+                  ? undefined
+                  : npcId
+                    ? `npc/${npcId}`
+                    : undefined,
+            speakerName:
+              dialogSpeaker.method === "intentionally_nameless"
+                ? undefined
+                : speakerName ?? dialogSpeaker.value,
             body,
             lineKey,
             sourceFile: codexFile.relativePath,
             metadata: {
-              textMapHash: hashValue(ref.JGPDCLOJKLC ?? dialogRow?.talkContentTextMapHash),
+              textMapHash: hashValue(refText ?? dialogRow?.talkContentTextMapHash),
               dialogId,
               codexLineKind: lineKind,
               speakerNameResolution: speakerName ? "codex_line_textmap" : dialogSpeaker.method,
@@ -1495,7 +2431,12 @@ function buildDialogueGraph(
           });
         });
         const fromNodeKeys = nodeKeyByLine.get(lineKey) ?? [];
-        for (const target of Array.isArray(line.MOMDAPFBMBM) ? line.MOMDAPFBMBM : []) {
+        const nextTargets = Array.isArray(line.IKBPMKLHLGD)
+          ? line.IKBPMKLHLGD
+          : Array.isArray(line.MOMDAPFBMBM)
+            ? line.MOMDAPFBMBM
+            : [];
+        for (const target of nextTargets) {
           const targetId = idText(target);
           if (!targetId || !fromNodeKeys.length) continue;
           pendingEdges.push({
@@ -1509,11 +2450,25 @@ function buildDialogueGraph(
             sourceFile: codexFile.relativePath,
           });
         }
+        dialogueRefs.forEach((ref) => {
+          const optTarget = idText(ref.AAFIOOJDGFN);
+          const dialogId = idText(ref.POMAEJICHLK ?? ref.AAICCGABILO);
+          if (optTarget && dialogId) {
+            const optNodeKey = `quest/${mainId}/dialog/${dialogId}`;
+            pendingEdges.push({
+              fromNodeKeys: [optNodeKey],
+              targetLineKey: `${groupIndex}:${optTarget}`,
+              type: "choice",
+              optionText: nodes.find((node) => node.nodeKey === optNodeKey)?.body,
+              sourceFile: codexFile.relativePath,
+            });
+          }
+        });
       });
     });
   }
 
-  {
+  if (nodes.length === 0) {
     const resolvedTalkRows = inputs.resolvedTalkRowsByMainId.get(mainId) ?? [];
     const resolvedTalkDialogRowsByKey = new Map<string, Json[]>();
     for (const row of resolvedTalkDialogRows) {
@@ -1545,9 +2500,52 @@ function buildDialogueGraph(
         return id ? [[id, row] as const] : [];
       }),
     );
-    const talkRows = [...talkRowsById.values()].sort(
-      (left, right) => Number(left.id ?? 0) - Number(right.id ?? 0),
-    );
+    const binQuestRecord = inputs.binQuestByMainId.get(mainId);
+    const subQuestIdByTalkId = new Map<string, string>();
+    if (binQuestRecord) {
+      for (const edge of binQuestRecord.relationEdges ?? []) {
+        if (edge.relationType === "complete_talk" && edge.talkId && edge.fromQuestId) {
+          subQuestIdByTalkId.set(edge.talkId, edge.fromQuestId);
+        }
+      }
+    }
+    for (const talk of explicitTalkRows) {
+      const talkId = idText(talk.__talkId ?? talk.id);
+      if (!talkId) continue;
+      if (!subQuestIdByTalkId.has(talkId)) {
+        if (talk.__subQuestId) {
+          subQuestIdByTalkId.set(talkId, idText(talk.__subQuestId)!);
+        } else {
+          for (const cond of asArray(talk.beginCond)) {
+            const c = asObject(cond);
+            if (text(c.type) === "QUEST_COND_STATE_EQUAL") {
+              const subId = idText(asArray(c.param)[0]);
+              if (subId) {
+                subQuestIdByTalkId.set(talkId, subId);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    const questRows = inputs.questByMainId.get(mainId) ?? [];
+    const subquestOrderById = new Map<string, number>();
+    const effectiveSubquests = questRows.length ? questRows : (binQuestRecord?.subQuests ?? []);
+    effectiveSubquests.forEach((sq, idx) => {
+      const id = idText(sq.subId ?? sq.id ?? sq.subQuestId);
+      if (id) subquestOrderById.set(id, typeof sq.order === "number" ? sq.order : idx);
+    });
+    const talkRows = [...talkRowsById.values()].sort((left, right) => {
+      const leftTalkId = idText(left.__talkId ?? left.id) ?? "";
+      const rightTalkId = idText(right.__talkId ?? right.id) ?? "";
+      const leftSubId = subQuestIdByTalkId.get(leftTalkId);
+      const rightSubId = subQuestIdByTalkId.get(rightTalkId);
+      const leftOrder = leftSubId !== undefined ? (subquestOrderById.get(leftSubId) ?? 99999) : 99999;
+      const rightOrder = rightSubId !== undefined ? (subquestOrderById.get(rightSubId) ?? 99999) : 99999;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      return Number(left.id ?? 0) - Number(right.id ?? 0);
+    });
     const traverseTalkRows = (followEmptyNodes: boolean) => {
       for (const talk of talkRows) {
         const talkId = idText(talk.__talkId ?? talk.id);
@@ -1578,40 +2576,83 @@ function buildDialogueGraph(
           const value = idText(id);
           if (value) unreachableDialogueIds.add(value);
         }
-        const visited = new Set<string>();
-        const queue = [initDialog];
-        while (queue.length) {
-          const current = queue.shift()!;
-          if (visited.has(current)) continue;
-          visited.add(current);
-          const scopedResolvedDialogRow = mergeDialogRows(
-            resolvedTalkDialogRowsByKey.get(`${talkId}:${current}`) ?? [],
+        const getDlgRow = (dlgId: string): Json | undefined => {
+          const scoped = mergeDialogRows(
+            resolvedTalkDialogRowsByKey.get(`${talkId}:${dlgId}`) ?? [],
           );
-          const legacyDialogRow = dialogById.get(current);
-          const legacyBody = legacyDialogRow
-            ? tryResolveText(textMap, legacyDialogRow.talkContentTextMapHash)
+          const legacy = dialogById.get(dlgId);
+          const legacyBody = legacy
+            ? tryResolveText(textMap, legacy.talkContentTextMapHash)
             : undefined;
-          const dialogRow =
-            scopedResolvedDialogRow ??
-            (!legacyBody ? (resolvedDialogById.get(current) ?? legacyDialogRow) : legacyDialogRow);
+          return scoped ?? (!legacyBody ? (resolvedDialogById.get(dlgId) ?? legacy) : legacy);
+        };
+        const getNextList = (dlgRow: Json | undefined): string[] => {
+          if (!dlgRow || !Array.isArray(dlgRow.nextDialogs)) return [];
+          return dlgRow.nextDialogs.map((n) => idText(n)).filter((n): n is string => Boolean(n));
+        };
+        const findTalkReachable = (startId: string, stopId?: string): Set<string> => {
+          const reach = new Set<string>();
+          const q = [startId];
+          while (q.length) {
+            const curr = q.shift()!;
+            if (!curr || reach.has(curr) || curr === stopId) continue;
+            reach.add(curr);
+            const r = getDlgRow(curr);
+            for (const n of getNextList(r)) q.push(n);
+          }
+          return reach;
+        };
+
+        const visited = new Set<string>();
+        const matchedSubId = subQuestIdByTalkId.get(talkId) ?? idText(talk.__subQuestId);
+
+        const processCurrentNode = (current: string): boolean => {
+          const dialogRow = getDlgRow(current);
           if (!dialogRow) {
             danglingEdges.add(`${talkId}:${current}`);
-            continue;
+            return false;
           }
           const body = tryResolveText(textMap, dialogRow.talkContentTextMapHash);
           if (!body) missingTextNodes.add(`${talkId}:${current}`);
           const sourceFile = text(dialogRow.__sourceFile) ?? inputPaths.dialog;
           if (body) {
+            const role = asObject(dialogRow.talkRole);
+            const isPlayer = isPlayerRole(role);
             const npcId = talkRoleNpcId(dialogRow);
-            const speaker = resolveDialogSpeakerName(inputs, dialogRow, textMap);
-            if (npcId && !speaker.value) missingSpeakerNodes.add(`${talkId}:${current}`);
-            if (npcId) participantIds.add(npcId);
+            const speaker = resolveDialogSpeakerName(inputs, dialogRow, textMap, locale);
+            if (
+              npcId &&
+              !speaker.value &&
+              speaker.method !== "intentionally_nameless" &&
+              speaker.method !== "player_identity"
+            ) {
+              missingSpeakerNodes.add(`${talkId}:${current}`);
+            }
+            if (
+              npcId &&
+              speaker.method !== "player_identity" &&
+              speaker.method !== "intentionally_nameless"
+            ) {
+              participantIds.add(npcId);
+            }
             appendNode({
               nodeId: current,
-              type: "dialogue",
-              subquestKey: `quest/${mainId}/subquest/${idText(dialogRow.__subQuestId ?? talk.__subQuestId) ?? talkId}`,
-              speakerKey: npcId ? `npc/${npcId}` : undefined,
-              speakerName: speaker.value,
+              type:
+                isPlayer || speaker.method === "player_identity"
+                  ? "player_choice"
+                  : speaker.method === "intentionally_nameless"
+                    ? "narration"
+                    : "dialogue",
+              subquestKey: `quest/${mainId}/subquest/${matchedSubId ?? idText(dialogRow.__subQuestId) ?? talkId}`,
+              speakerKey:
+                isPlayer || speaker.method === "player_identity"
+                  ? "player"
+                  : speaker.method === "intentionally_nameless"
+                    ? undefined
+                    : npcId
+                      ? `npc/${npcId}`
+                      : undefined,
+              speakerName: speaker.method === "intentionally_nameless" ? undefined : speaker.value,
               body,
               lineKey: `talk:${talkId}:${current}`,
               sourceFile,
@@ -1620,7 +2661,7 @@ function buildDialogueGraph(
               metadata: {
                 textMapHash: hashValue(dialogRow.talkContentTextMapHash),
                 talkId,
-                subQuestId: dialogRow.__subQuestId ?? talk.__subQuestId,
+                subQuestId: matchedSubId ?? dialogRow.__subQuestId ?? talk.__subQuestId,
                 sourceKind: dialogRow.__sourceKind ?? talk.__sourceKind,
                 relationEvidence: dialogRow.__relationEvidence ?? talk.__relationEvidence,
                 relationEdgeId: dialogRow.__relationEdgeId ?? talk.__relationEdgeId,
@@ -1628,10 +2669,8 @@ function buildDialogueGraph(
               },
             });
           }
-          if (!body && !followEmptyNodes) continue;
-          for (const next of Array.isArray(dialogRow.nextDialogs) ? dialogRow.nextDialogs : []) {
-            const nextId = idText(next);
-            if (!nextId) continue;
+          const nextList = getNextList(dialogRow);
+          for (const nextId of nextList) {
             const nextExists =
               resolvedTalkDialogRowsByKey.has(`${talkId}:${nextId}`) ||
               resolvedDialogById.has(nextId) ||
@@ -1651,9 +2690,45 @@ function buildDialogueGraph(
                 },
               });
             }
-            queue.push(nextId);
           }
-        }
+          return Boolean(body || followEmptyNodes);
+        };
+
+        const traverseLinear = (current: string) => {
+          if (!current || visited.has(current)) return;
+          visited.add(current);
+          const shouldContinue = processCurrentNode(current);
+          if (!shouldContinue) return;
+          const nextList = getNextList(getDlgRow(current));
+          if (nextList.length === 0) return;
+          if (nextList.length === 1) {
+            traverseLinear(nextList[0]);
+            return;
+          }
+          const branchReachables = nextList.map((n) => findTalkReachable(n));
+          let common: string[] = [];
+          if (branchReachables.length > 0) {
+            common = [...branchReachables[0]].filter((x) =>
+              branchReachables.every((set) => set.has(x)),
+            );
+          }
+          const joinNode = common[0];
+          for (const n of nextList) {
+            const traverseBranch = (bid: string) => {
+              if (!bid || visited.has(bid) || bid === joinNode) return;
+              visited.add(bid);
+              const branchContinue = processCurrentNode(bid);
+              if (!branchContinue) return;
+              for (const next of getNextList(getDlgRow(bid))) {
+                traverseBranch(next);
+              }
+            };
+            traverseBranch(n);
+          }
+          if (joinNode) traverseLinear(joinNode);
+        };
+
+        traverseLinear(initDialog);
       }
     };
 
@@ -1784,8 +2859,8 @@ export function buildRecord(
       codexFile?.value.PBIOMJGIMAK ??
       inputs.chapterByMainId.get(mainId)?.id,
   );
-  const chapterRow = inputs.chapter.find((row) => idText(row.id ?? row.chapterId) === chapterId);
-  const chapterStyle = text(chapterRow?.LINLPCFFGFC);
+  const chapterRow = chapterId ? inputs.chapterById.get(chapterId) : undefined;
+  const chapterStyle = text(chapterRow?.IMFDDPKLIDD ?? chapterRow?.LINLPCFFGFC);
   const codexType = text(codexFile?.value.DCNPPIOLEOK);
 
   const explicitType = text(main.type ?? main.questType);
@@ -1818,6 +2893,7 @@ export function buildRecord(
     chapterRow?.chapterTitleTextMapHash ??
     chapterRow?.titleTextMapHash ??
     chapterRow?.titleHash ??
+    codexFile?.value.FBAFFJDIIFG ??
     codexFile?.value.ALOHJMPDFKI;
   const chapterTitleResolution =
     resolveLocalizedText(inputs.textMaps, locale, chapterTitleHash) ??
@@ -1826,7 +2902,10 @@ export function buildRecord(
       : undefined);
 
   const chapterNumHash =
-    chapterRow?.chapterNumTextMapHash ?? chapterRow?.numTextMapHash ?? codexFile?.value.NNPJABOAJPL;
+    chapterRow?.chapterNumTextMapHash ??
+    chapterRow?.numTextMapHash ??
+    codexFile?.value.LFEGFBHFCBH ??
+    codexFile?.value.NNPJABOAJPL;
   const chapterNumResolution = resolveLocalizedText(inputs.textMaps, locale, chapterNumHash);
 
   const chapterNum = chapterNumResolution?.value;
@@ -1838,31 +2917,67 @@ export function buildRecord(
         : `${chapterNum}: ${rawChapterTitle}`
       : (rawChapterTitle ?? chapterNum);
 
-  const cityRegions: Record<number, { id: string; zh: string; en: string }> = {
-    1: { id: "mondstadt", zh: "蒙德", en: "Mondstadt" },
-    2: { id: "liyue", zh: "璃月", en: "Liyue" },
-    3: { id: "inazuma", zh: "稻妻", en: "Inazuma" },
-    4: { id: "sumeru", zh: "须弥", en: "Sumeru" },
-    5: { id: "fontaine", zh: "枫丹", en: "Fontaine" },
-    6: { id: "natlan", zh: "纳塔", en: "Natlan" },
-    7: { id: "nod_krai", zh: "诺德卡莱", en: "Nod-Krai" },
-    8: { id: "snezhnaya", zh: "至冬", en: "Snezhnaya" },
-    100: { id: "golden_apple", zh: "金苹果群岛", en: "Golden Apple Archipelago" },
-    101: { id: "three_realms", zh: "三界路飨祭", en: "Three Realms Gateway Offering" },
-    102: { id: "golden_apple", zh: "金苹果群岛", en: "Golden Apple Archipelago" },
-    103: { id: "veluriyam_mirage", zh: "琉形蜃境", en: "Veluriyam Mirage" },
-    104: { id: "simulanka", zh: "希穆兰卡", en: "Simulanka" },
-    105: { id: "temple_of_space", zh: "空之神殿", en: "Temple of Space" },
-  };
+  const binQuestRecord = inputs.binQuestByMainId.get(mainId);
+  const topology = inputs.questTopologies.get(mainId);
 
   const rawCityId = typeof chapterRow?.cityId === "number" ? chapterRow.cityId : undefined;
   let regionInfo = rawCityId ? cityRegions[rawCityId] : undefined;
+  const talkRegionEvidence = inputs.questRegionByMainId.get(mainId);
+  let taskRegionSource: NonNullable<QuestRecordPayload["storyProjection"]>["taskRegionSource"] =
+    regionInfo ? "chapter_city" : "unresolved";
+  let taskRegionReason: string | undefined;
+  const taskRegionEvidence = [
+    chapterId ? `${inputPaths.mainQuest}:MainQuest[${mainId}].chapterId=${chapterId}` : undefined,
+    chapterRow
+      ? `${inputPaths.chapter}:Chapter[${chapterId ?? "anchor"}].cityId=${rawCityId ?? "missing"}`
+      : undefined,
+    ...(talkRegionEvidence?.talkPathEvidence ?? []),
+  ].filter((item): item is string => Boolean(item));
+  const taskRegionConflicts: string[] = [];
+  if (rawCityId !== undefined && !cityRegions[rawCityId])
+    taskRegionConflicts.push(`unmapped_chapter_city_id:${rawCityId}`);
+  if (talkRegionEvidence && talkRegionEvidence.candidateRegionIds.length > 1)
+    taskRegionConflicts.push(
+      `talk_path_region_conflict:${talkRegionEvidence.candidateRegionIds.join(",")}`,
+    );
+  if (regionInfo && talkRegionEvidence?.regionId && regionInfo.id !== talkRegionEvidence.regionId)
+    taskRegionConflicts.push(
+      `chapter_city_${regionInfo.id}_conflicts_with_talk_path_${talkRegionEvidence.regionId}`,
+    );
+
   if (!regionInfo) {
-    const inferredRegionId = inputs.questRegionByMainId.get(mainId);
-    regionInfo = inferredRegionId
-      ? Object.values(cityRegions).find((candidate) => candidate.id === inferredRegionId)
-      : undefined;
+    const rep = inputs.reputationRegionByMainId.get(mainId);
+    if (rep) {
+      regionInfo = regionById.get(rep.regionId);
+      if (regionInfo) {
+        taskRegionSource = "reputation";
+        taskRegionReason = "reputation_quest_city_config";
+        taskRegionEvidence.push(rep.evidence);
+      }
+    }
   }
+
+  if (!regionInfo) {
+    const inferredRegionId = talkRegionEvidence?.regionId;
+    regionInfo = inferredRegionId ? regionById.get(inferredRegionId) : undefined;
+    if (regionInfo) {
+      taskRegionSource = "talk_perform_cfg";
+      taskRegionReason = "chapter_city_unavailable; unique_exact_quest_talk_path_used";
+    }
+  }
+
+  if (!regionInfo) {
+    const override = inputs.questRegionOverrides.get(mainId);
+    if (override) {
+      regionInfo = regionById.get(override.regionId);
+      if (regionInfo) {
+        taskRegionSource = "curated_override";
+        taskRegionReason = override.reason ?? "curated_quest_region_override";
+        if (override.evidence) taskRegionEvidence.push(...override.evidence);
+      }
+    }
+  }
+
   if (!regionInfo && resolvedQuestType === "archon_quest") {
     const chapterName = fullChapterTitle ?? "";
     if (chapterName.includes("序章") || chapterName.includes("Prologue")) {
@@ -1887,6 +3002,59 @@ export function buildRecord(
     } else if (chapterName.includes("第七章") || chapterName.includes("Chapter VII")) {
       regionInfo = cityRegions[8];
     }
+    if (regionInfo && taskRegionSource === "unresolved") {
+      taskRegionSource = "chapter_title";
+      taskRegionReason = "region_inferred_from_archon_chapter_title_pattern";
+      taskRegionEvidence.push(
+        `${inputPaths.chapter}:Chapter[${chapterId ?? "anchor"}].title=${fullChapterTitle ?? "unresolved"}`,
+      );
+    }
+  }
+
+  if (!regionInfo) {
+    const candidateIds = [
+      ...(topology
+        ? [
+            topology.aggregateParentQuestId,
+            ...topology.parentQuestIds,
+            ...topology.prerequisiteQuestIds,
+            ...(topology.childQuestIds ?? []),
+          ]
+        : []),
+      ...(inputs.mainQuestRelations.get(mainId) ?? []),
+    ].filter((id): id is string => Boolean(id));
+    for (const candidateId of candidateIds) {
+      const parentRep = inputs.reputationRegionByMainId.get(candidateId);
+      const parentTalk = inputs.questRegionByMainId.get(candidateId);
+      const parentOverride = inputs.questRegionOverrides.get(candidateId);
+      const parentMain = inputs.mainQuestById.get(candidateId);
+      const parentChap = parentMain ? inputs.chapterByMainId.get(candidateId) : undefined;
+      const parentCity =
+        parentChap && parentChap.cityId ? cityRegions[Number(parentChap.cityId)] : undefined;
+      const inheritedId =
+        parentCity?.id ?? parentRep?.regionId ?? parentTalk?.regionId ?? parentOverride?.regionId;
+      if (inheritedId) {
+        regionInfo = regionById.get(inheritedId);
+        if (regionInfo) {
+          taskRegionSource = "inherited";
+          taskRegionReason = `inherited_from_related_quest:${candidateId}`;
+          taskRegionEvidence.push(`relation:quest/${candidateId}->quest/${mainId}`);
+          break;
+        }
+      }
+    }
+  }
+
+  if (!regionInfo) {
+    taskRegionReason = talkRegionEvidence?.candidateRegionIds.length
+      ? "no_mapped_chapter_city_and_talk_path_region_is_ambiguous_or_unsupported"
+      : chapterRow
+        ? "chapter_city_unmapped_and_no_unique_talk_perform_cfg_region"
+        : "no_effective_chapter_city_or_unique_talk_perform_cfg_region";
+  } else if (taskRegionSource === "talk_perform_cfg") {
+    taskRegionReason = "chapter_city_unavailable; unique_exact_quest_talk_path_used";
+  } else if (taskRegionSource === "chapter_title") {
+    taskRegionReason = "region_inferred_from_archon_chapter_title_pattern";
   }
 
   const resolvedRegionId = regionInfo?.id;
@@ -1928,7 +3096,9 @@ export function buildRecord(
             : undefined);
 
   const resolvedSeriesTitle =
-    seriesTitleResolution?.value && !/^\d+$/.test(seriesTitleResolution.value.trim())
+    seriesTitleResolution?.value &&
+    !/^\d+$/.test(seriesTitleResolution.value.trim()) &&
+    !isForbiddenStoryTitle(seriesTitleResolution.value.trim())
       ? seriesTitleResolution.value
       : resolvedQuestType === "archon_quest"
         ? locale === "en"
@@ -1939,14 +3109,24 @@ export function buildRecord(
   const storyFamily = resolveStoryFamily(
     inputs,
     mainId,
-    main,
     locale,
     chapterId,
     fullChapterTitle,
     resolvedSeriesTitle,
     seriesId,
-    resolvedRegionId,
+    chapterStyle,
+    resolvedQuestType,
+    chapterRow,
+    rawCityId,
+    chapterNum,
   );
+  const catalogRegionId = storyFamily.catalogRegionId ?? resolvedRegionId ?? "other";
+  const catalogRegionInfo = catalogRegionId ? regionById.get(catalogRegionId) : undefined;
+  const catalogRegionName = catalogRegionInfo
+    ? locale === "en"
+      ? catalogRegionInfo.en
+      : catalogRegionInfo.zh
+    : (resolvedRegionName ?? (locale === "en" ? "Other Region" : "其他地区"));
 
   const titleResolution = resolveTitle(
     inputs,
@@ -2008,10 +3188,16 @@ export function buildRecord(
       };
     });
   } else if (codexFile) {
-    const groups = asArray(codexText(codexFile.value, "EBNBLBEIFFJ"));
+    const groups = asArray(
+      codexFile.value.JIJKODHIEED ??
+        codexFile.value.EBNBLBEIFFJ ??
+        codexText(codexFile.value, "EBNBLBEIFFJ"),
+    );
     subquests = groups.map((group, groupIndex) => {
       const subquestId = String(groupIndex + 1);
-      const titleHash = hashValue(codexText(group, "OGEGCCLHIHP"));
+      const titleHash = hashValue(
+        group.GKAGCMIHDDB?.textId ?? group.GKAGCMIHDDB ?? codexText(group, "OGEGCCLHIHP"),
+      );
       const subquestKey = `quest/${mainId}/subquest/${subquestId}`;
       if (titleHash) subquestKeyByTitleHash.set(titleHash, subquestKey);
       return {
@@ -2028,13 +3214,33 @@ export function buildRecord(
         },
       };
     });
+  } else if (binQuestRecord?.subQuests?.length) {
+    subquests = binQuestRecord.subQuests.map((sq, index) => {
+      const subquestId = sq.subId;
+      const subquestKey = `quest/${mainId}/subquest/${subquestId}`;
+      const title =
+        (sq.stepDescTextMapHash ? tryResolveText(textMap, sq.stepDescTextMapHash) : undefined) ??
+        `Subquest ${subquestId}`;
+      return {
+        subquestKey,
+        subquestId,
+        title,
+        objective: undefined,
+        order: sq.order ?? index,
+        completeness: "complete" as const,
+        metadata: {
+          sourceFile: binQuestRecord.sourceFile,
+          stepDescTextMapHash: sq.stepDescTextMapHash,
+        },
+      };
+    });
   }
 
   const codexSortOrder =
     typeof codexIndexRows[0]?.sortOrder === "number" ? codexIndexRows[0].sortOrder : undefined;
   const questOrder = codexSortOrder ?? Number(main.order ?? mainId);
 
-  const graph = buildDialogueGraph(inputs, mainId, locale, textMap, subquestKeyByTitleHash);
+  const graph = buildDialogueGraph(inputs, mainId, locale, textMap);
   const subquestKeys = new Set(subquests.map((subquest) => subquest.subquestKey));
   const dialogueNodes = graph.nodes.map((node) => ({
     ...node,
@@ -2061,9 +3267,7 @@ export function buildRecord(
           : visibilityReason === "test_or_placeholder"
             ? "test"
             : "unresolved";
-  const binQuestRecord = inputs.binQuestByMainId.get(mainId);
   const resolvedTalks = inputs.resolvedTalksByMainId.get(mainId);
-  const topology = inputs.questTopologies.get(mainId);
   const relationEdges = topology?.relationEdges ?? binQuestRecord?.relationEdges ?? [];
   const talkIds = resolvedTalks?.talkIds ?? [];
   const resolvedTalkIds = resolvedTalks?.resolvedTalkIds ?? [];
@@ -2071,29 +3275,32 @@ export function buildRecord(
   const talkSourceKinds = [
     ...new Set((resolvedTalks?.candidates ?? []).map((candidate) => candidate.sourceKind)),
   ];
-  const contentRole: QuestContentRole = classifyQuestContentRole({
-    bin: binQuestRecord,
-    hasExplicitStoryTalk: Boolean(binQuestRecord?.hasCompleteTalk),
-    resolvedTalkCount: resolvedTalkIds.length,
-    dialogueNodeCount: dialogueNodes.length,
-    hasSiblingQuestRelations: relationEdges.some(
-      (edge) => edge.relationType === "requires" || edge.relationType === "starts_after",
-    ),
-    hasProgressOrReward: Boolean(
-      binQuestRecord?.contentCounts.QUEST_CONTENT_ADD_QUEST_PROGRESS ||
-      main.rewardIdList ||
-      main.rewardId,
-    ),
-    aggregateEvidenceClasses: [
-      ...(topology?.aggregateChildQuestIds.length ? ["aggregate_children"] : []),
-      ...(binQuestRecord?.contentCounts.QUEST_CONTENT_ADD_QUEST_PROGRESS
-        ? ["content_progress"]
-        : []),
-      ...(binQuestRecord?.execCounts?.QUEST_EXEC_ADD_QUEST_PROGRESS ? ["exec_progress"] : []),
-      ...(main.rewardIdList || main.rewardId ? ["reward"] : []),
-      ...(!binQuestRecord?.hasCompleteTalk ? ["no_explicit_story_talk"] : []),
-    ],
-  });
+  const isSpecialControl310 = mainId === "310";
+  const contentRole: QuestContentRole = isSpecialControl310
+    ? "trigger"
+    : classifyQuestContentRole({
+        bin: binQuestRecord,
+        hasExplicitStoryTalk: Boolean(binQuestRecord?.hasCompleteTalk),
+        resolvedTalkCount: resolvedTalkIds.length,
+        dialogueNodeCount: dialogueNodes.length,
+        hasSiblingQuestRelations: relationEdges.some(
+          (edge) => edge.relationType === "requires" || edge.relationType === "starts_after",
+        ),
+        hasProgressOrReward: Boolean(
+          binQuestRecord?.contentCounts.QUEST_CONTENT_ADD_QUEST_PROGRESS ||
+          main.rewardIdList ||
+          main.rewardId,
+        ),
+        aggregateEvidenceClasses: [
+          ...(topology?.aggregateChildQuestIds.length ? ["aggregate_children"] : []),
+          ...(binQuestRecord?.contentCounts.QUEST_CONTENT_ADD_QUEST_PROGRESS
+            ? ["content_progress"]
+            : []),
+          ...(binQuestRecord?.execCounts?.QUEST_EXEC_ADD_QUEST_PROGRESS ? ["exec_progress"] : []),
+          ...(main.rewardIdList || main.rewardId ? ["reward"] : []),
+          ...(!binQuestRecord?.hasCompleteTalk ? ["no_explicit_story_talk"] : []),
+        ],
+      });
   const expectedTalkIds = talkIds;
   const ambiguousTalkIds = resolvedTalks?.ambiguousTalkIds ?? [];
   const dialogueResolutionStatus: DialogueResolutionStatus = classifyDialogueResolution({
@@ -2134,7 +3341,10 @@ export function buildRecord(
     titleResolution.method === "unresolved" ? "title_unresolved" : undefined,
   ].filter((warning): warning is string => Boolean(warning));
   const unresolvedSpeakerCount = dialogueNodes.filter(
-    (node) => Boolean(node.speakerKey) && !node.speakerName,
+    (node) =>
+      Boolean(node.speakerKey) &&
+      !node.speakerName &&
+      node.metadata?.speakerNameResolution !== "intentionally_nameless",
   ).length;
   const qualityCode: NonNullable<QuestRecordPayload["qualityCode"]> =
     contentRole === "control" || contentRole === "trigger" || contentRole === "reward"
@@ -2175,9 +3385,14 @@ export function buildRecord(
     ]),
   ];
   const storyProjection: NonNullable<QuestRecordPayload["storyProjection"]> = {
-    schemaVersion: 2,
-    regionId: resolvedRegionId,
-    regionTitle: resolvedRegionName,
+    schemaVersion: 3,
+    regionId: catalogRegionId,
+    regionTitle: catalogRegionName,
+    taskRegionId: resolvedRegionId ?? "other",
+    taskRegionSource,
+    taskRegionReason,
+    taskRegionEvidence,
+    taskRegionConflicts: taskRegionConflicts.length ? taskRegionConflicts : undefined,
     familyId: storyFamily.id,
     familyTitle: storyFamily.title,
     familyOrder: storyFamily.familyOrder,
@@ -2196,9 +3411,9 @@ export function buildRecord(
     mainQuestId: mainId,
     questType: resolvedQuestType,
     locale,
-    regionId: resolvedRegionId,
-    region: resolvedRegionName,
-    regionName: resolvedRegionName,
+    regionId: resolvedRegionId ?? "other",
+    region: resolvedRegionName ?? (locale === "en" ? "Other Region" : "其他地区"),
+    regionName: resolvedRegionName ?? (locale === "en" ? "Other Region" : "其他地区"),
     chapterId,
     chapterTitle: fullChapterTitle,
     chapterNum,
@@ -2513,42 +3728,41 @@ function buildStoryProjection(
   records: NormalizedRecord[],
   locale: Locale = "zh-CN",
 ): StoryProjectionRegion[] {
-  const regionNames: Record<string, string> = {
-    mondstadt: "蒙德",
-    liyue: "璃月",
-    inazuma: "稻妻",
-    sumeru: "须弥",
-    fontaine: "枫丹",
-    natlan: "纳塔",
-    nod_krai: "诺德卡莱",
-    snezhnaya: "至冬",
-    golden_apple: "金苹果群岛",
-    three_realms: "三界路飨祭",
-    veluriyam_mirage: "琉形蜃境",
-    simulanka: "希穆兰卡",
-    temple_of_space: "空之神殿",
-    other: "其他地区",
-  };
-  const regionOrder: Record<string, number> = {
-    mondstadt: 1,
-    liyue: 2,
-    inazuma: 3,
-    sumeru: 4,
-    fontaine: 5,
-    natlan: 6,
-    nod_krai: 7,
-    snezhnaya: 8,
-    other: 99,
-  };
+  const regionNames: Record<string, string> = Object.fromEntries(
+    allRegions.map((r) => [r.id, r.zh]),
+  );
+  const regionNamesEn: Record<string, string> = Object.fromEntries(
+    allRegions.map((r) => [r.id, r.en]),
+  );
+  const regionOrder: Record<string, number> = Object.fromEntries(
+    allRegions.map((r) => [r.id, r.order]),
+  );
   const rows = records
-    .filter((record) => record.locale === locale && record.quest)
+    .filter((record) => {
+      if (record.locale !== locale || !record.quest) return false;
+      const payload = record.quest;
+      if (payload.visibility !== "public") return false;
+      if (payload.mainQuestId === "5003" || String(payload.mainQuestId) === "5003") return false;
+      const title = record.title ?? payload.displayTitle ?? payload.questKey;
+      if (
+        isForbiddenStoryTitle(title) ||
+        isForbiddenStoryTitle(payload.displayTitle) ||
+        isForbiddenStoryTitle(payload.chapterTitle) ||
+        isForbiddenStoryTitle(payload.storyFamilyTitle) ||
+        isForbiddenStoryTitle(payload.seriesTitle) ||
+        isForbiddenStoryTitle(payload.storyProjection?.chapterTitle) ||
+        isForbiddenStoryTitle(payload.storyProjection?.familyTitle)
+      ) {
+        return false;
+      }
+      return true;
+    })
     .map((record) => {
       const payload = record.quest!;
       const projection = payload.storyProjection;
       const regionId = projection?.regionId ?? String(payload.regionId ?? "other");
-      const familyId =
-        projection?.familyId ?? payload.storyFamilyId ?? `genshin:standalone:${regionId}`;
-      const familyTitle = projection?.familyTitle ?? payload.storyFamilyTitle ?? "其他独立任务";
+      const familyId = projection?.familyId ?? payload.storyFamilyId;
+      const familyTitle = projection?.familyTitle ?? payload.storyFamilyTitle;
       const title = record.title ?? payload.displayTitle ?? payload.questKey;
       const entryType =
         projection?.entryType ?? (payload.contentRole === "aggregate" ? "collection" : "quest");
@@ -2556,6 +3770,8 @@ function buildStoryProjection(
         questId: payload.mainQuestId.toString(),
         title,
         order: payload.topology?.storyOrder ?? payload.order ?? 0,
+        orderConfidence: payload.topology?.orderConfidence ?? "medium",
+        taskRegionId: projection?.taskRegionId ?? String(payload.regionId ?? "other"),
         questType: payload.questType,
         completeness: payload.completeness,
         entryType,
@@ -2571,7 +3787,10 @@ function buildStoryProjection(
         subseriesOrder: projection?.subseriesOrder,
         regionId,
         regionTitle:
-          projection?.regionTitle ?? payload.regionName ?? regionNames[regionId] ?? regionId,
+          projection?.regionTitle ??
+          payload.regionName ??
+          (locale === "en" ? regionNamesEn[regionId] : regionNames[regionId]) ??
+          regionId,
         regionOrder: regionOrder[regionId] ?? 99,
         contentRole: payload.contentRole ?? "unknown",
         dialogueResolutionStatus: payload.dialogueResolutionStatus ?? "not_applicable",
@@ -2586,35 +3805,206 @@ function buildStoryProjection(
         aggregateChildQuestIds: projection?.aggregateChildQuestIds,
       };
     });
+  const regionInfo = new Map(
+    allRegions.map((region) => [
+      region.id,
+      { title: locale === "en" ? region.en : region.zh, order: region.order },
+    ]),
+  );
+  const membersByFamily = new Map<string, typeof rows>();
+  for (const row of rows) {
+    if (!row.familyId) continue;
+    const members = membersByFamily.get(row.familyId) ?? [];
+    members.push(row);
+    membersByFamily.set(row.familyId, members);
+  }
+  // A source series ID can span physical task regions. When its localized
+  // family name is stable, anchor the catalog entry to the earliest supported
+  // task region while preserving each task's actual region separately.
+  for (const members of membersByFamily.values()) {
+    const taskRegions = new Set(members.map((row) => row.taskRegionId).filter(Boolean));
+    if (taskRegions.size < 2) continue;
+    const titles = new Set(members.map((row) => row.familyTitle).filter(Boolean));
+    const isCurated = members.every((row) => row.familyProvenance === "curated");
+    if (!isCurated && titles.size !== 1) continue;
+    const firstSupported = [...members]
+      .filter((row) => row.orderConfidence !== "low")
+      .sort(
+        (left, right) => left.order - right.order || left.questId.localeCompare(right.questId),
+      )[0];
+    if (!firstSupported) continue;
+    const primaryRegionId = firstSupported.taskRegionId;
+    const primaryRegion = regionInfo.get(primaryRegionId);
+    if (!primaryRegion) continue;
+    for (const row of members) {
+      row.regionId = primaryRegionId;
+      row.regionTitle = primaryRegion.title;
+      row.regionOrder = primaryRegion.order;
+    }
+  }
+
+  // Unify family IDs for same-title families in the same region
+  const canonicalFamilyIdByRegionAndTitle = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.familyId || !row.familyTitle) continue;
+    const key = `${row.regionId}\u0000${row.familyTitle}`;
+    if (!canonicalFamilyIdByRegionAndTitle.has(key)) {
+      canonicalFamilyIdByRegionAndTitle.set(key, row.familyId);
+    } else {
+      row.familyId = canonicalFamilyIdByRegionAndTitle.get(key)!;
+    }
+  }
   const duplicateCounts = new Map<string, number>();
   for (const row of rows) {
-    const key = `${row.familyId}|${row.subseriesId ?? ""}|${row.chapterId ?? ""}|${row.title}`;
+    const key = `${row.regionId}|${row.familyId ?? "direct"}|${row.subseriesId ?? ""}|${row.chapterId ?? ""}|${row.title}`;
     duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
   }
-  return projectStoryCatalog(
-    rows.map((row) => ({
+  const familyGroups = new Map<
+    string,
+    { regionId: string; familyId: string; explicitOrders: number[]; firstStoryOrder: number }
+  >();
+  for (const row of rows) {
+    if (!row.familyId) continue;
+    const key = `${row.regionId}\u0000${row.familyId}`;
+    const group = familyGroups.get(key) ?? {
+      regionId: row.regionId,
+      familyId: row.familyId,
+      explicitOrders: [],
+      firstStoryOrder: Number.POSITIVE_INFINITY,
+    };
+    if (typeof row.familyOrder === "number") group.explicitOrders.push(row.familyOrder);
+    group.firstStoryOrder = Math.min(group.firstStoryOrder, row.order);
+    familyGroups.set(key, group);
+  }
+  const familyOrderByKey = new Map<string, number>();
+  const familyRegions = new Map<
+    string,
+    typeof familyGroups extends Map<string, infer V> ? V[] : never
+  >();
+  for (const group of familyGroups.values()) {
+    const groups = familyRegions.get(group.regionId) ?? [];
+    groups.push(group);
+    familyRegions.set(group.regionId, groups);
+  }
+  for (const groups of familyRegions.values()) {
+    const sorted = [...groups].sort((left, right) => {
+      const leftExplicit = left.explicitOrders.length
+        ? Math.min(...left.explicitOrders)
+        : undefined;
+      const rightExplicit = right.explicitOrders.length
+        ? Math.min(...right.explicitOrders)
+        : undefined;
+      if (leftExplicit !== undefined && rightExplicit !== undefined) {
+        if (leftExplicit !== rightExplicit) return leftExplicit - rightExplicit;
+      } else if (leftExplicit !== undefined) {
+        return -1;
+      } else if (rightExplicit !== undefined) {
+        return 1;
+      }
+      return (
+        left.firstStoryOrder - right.firstStoryOrder || left.familyId.localeCompare(right.familyId)
+      );
+    });
+    sorted.forEach((group, index) => {
+      const explicit = group.explicitOrders.length ? Math.min(...group.explicitOrders) : undefined;
+      familyOrderByKey.set(
+        `${group.regionId}\u0000${group.familyId}`,
+        explicit ?? (index + 1) * 100,
+      );
+    });
+  }
+
+  const chapterGroups = new Map<
+    string,
+    { explicitOrders: number[]; firstStoryOrder: number; chapterId: string }
+  >();
+  for (const row of rows) {
+    if (!row.familyId || !row.chapterId) continue;
+    const key = `${row.regionId}\u0000${row.familyId}\u0000${row.subseriesId ?? ""}\u0000${row.chapterId}`;
+    const group = chapterGroups.get(key) ?? {
+      explicitOrders: [],
+      firstStoryOrder: Number.POSITIVE_INFINITY,
+      chapterId: row.chapterId,
+    };
+    if (typeof row.chapterOrder === "number") group.explicitOrders.push(row.chapterOrder);
+    group.firstStoryOrder = Math.min(group.firstStoryOrder, row.order);
+    chapterGroups.set(key, group);
+  }
+  const chapterOrderByKey = new Map<string, number>();
+  const chapterContainers = new Map<
+    string,
+    Array<[string, typeof chapterGroups extends Map<string, infer V> ? V : never]>
+  >();
+  for (const [key, group] of chapterGroups) {
+    const parentKey = key.split("\u0000").slice(0, 3).join("\u0000");
+    const groups = chapterContainers.get(parentKey) ?? [];
+    groups.push([key, group]);
+    chapterContainers.set(parentKey, groups);
+  }
+  for (const groups of chapterContainers.values()) {
+    const sorted = [...groups].sort(([, left], [, right]) => {
+      const leftExplicit = left.explicitOrders.length
+        ? Math.min(...left.explicitOrders)
+        : undefined;
+      const rightExplicit = right.explicitOrders.length
+        ? Math.min(...right.explicitOrders)
+        : undefined;
+      if (leftExplicit !== undefined && rightExplicit !== undefined) {
+        if (leftExplicit !== rightExplicit) return leftExplicit - rightExplicit;
+      } else if (leftExplicit !== undefined) {
+        return -1;
+      } else if (rightExplicit !== undefined) {
+        return 1;
+      }
+      return (
+        left.firstStoryOrder - right.firstStoryOrder ||
+        left.chapterId.localeCompare(right.chapterId)
+      );
+    });
+    sorted.forEach(([key, group], index) => {
+      const explicit = group.explicitOrders.length ? Math.min(...group.explicitOrders) : undefined;
+      chapterOrderByKey.set(key, explicit ?? (index + 1) * 100);
+    });
+  }
+
+  const projectionRows = rows.map((row) => {
+    const familyKey = row.familyId ? `${row.regionId}\u0000${row.familyId}` : undefined;
+    const chapterKey =
+      row.familyId && row.chapterId
+        ? `${row.regionId}\u0000${row.familyId}\u0000${row.subseriesId ?? ""}\u0000${row.chapterId}`
+        : undefined;
+    return {
       ...row,
+      familyOrder: row.familyOrder ?? (familyKey ? familyOrderByKey.get(familyKey) : undefined),
+      chapterOrder:
+        row.chapterOrder ?? (chapterKey ? chapterOrderByKey.get(chapterKey) : undefined),
       displayTitle:
         (duplicateCounts.get(
-          `${row.familyId}|${row.subseriesId ?? ""}|${row.chapterId ?? ""}|${row.title}`,
+          `${row.regionId}|${row.familyId ?? "direct"}|${row.subseriesId ?? ""}|${row.chapterId ?? ""}|${row.title}`,
         ) ?? 0) > 1
           ? `${row.title}（${row.questId}）`
           : undefined,
-    })),
-  );
+    };
+  });
+  return projectStoryCatalog(projectionRows);
 }
 
 function applyStoryProjectionDisplayTitles(
   records: NormalizedRecord[],
   projection: StoryProjectionRegion[],
 ): void {
-  const displayTitles = new Map<string, string>();
+  const projectedEntries = new Map<
+    string,
+    StoryProjectionRegion["families"][number]["quests"][number]
+  >();
   const visitEntries = (entries: StoryProjectionRegion["families"][number]["quests"]): void => {
     for (const entry of entries ?? []) {
-      if (entry.displayTitle) displayTitles.set(entry.questId, entry.displayTitle);
+      projectedEntries.set(entry.questId, entry);
     }
   };
   for (const region of projection) {
+    visitEntries(region.quests);
+    visitEntries(region.collections);
     for (const family of region.families) {
       visitEntries(family.quests);
       visitEntries(family.collections);
@@ -2635,14 +4025,32 @@ function applyStoryProjectionDisplayTitles(
   for (const record of records) {
     const payload = record.quest;
     if (!payload) continue;
-    const displayTitle = displayTitles.get(String(payload.mainQuestId));
-    if (!displayTitle) continue;
-    payload.displayTitle = displayTitle;
-    if (payload.storyProjection) payload.storyProjection.displayTitle = displayTitle;
+    const projected = projectedEntries.get(String(payload.mainQuestId));
+    if (!projected) continue;
+    const displayTitle = projected.displayTitle;
+    if (displayTitle) payload.displayTitle = displayTitle;
+    if (payload.storyProjection) {
+      payload.storyProjection.displayTitle = displayTitle;
+      payload.storyProjection.familyOrder = projected.familyOrder;
+      payload.storyProjection.chapterOrder = projected.chapterOrder;
+      payload.storyProjection.regionId = projected.regionId;
+      payload.storyProjection.regionTitle = projected.regionTitle;
+      payload.storyProjection.taskRegionId = projected.taskRegionId;
+    }
+    payload.storyFamilyOrder = projected.familyOrder;
+    payload.chapterOrder = projected.chapterOrder;
     const metadata = record.metadata as Record<string, unknown>;
     const storedProjection = metadata.storyProjection;
-    if (storedProjection && typeof storedProjection === "object")
-      (storedProjection as Record<string, unknown>).displayTitle = displayTitle;
+    if (storedProjection && typeof storedProjection === "object") {
+      Object.assign(storedProjection as Record<string, unknown>, {
+        displayTitle,
+        familyOrder: projected.familyOrder,
+        chapterOrder: projected.chapterOrder,
+        regionId: projected.regionId,
+        regionTitle: projected.regionTitle,
+        taskRegionId: projected.taskRegionId,
+      });
+    }
   }
 }
 
@@ -2739,7 +4147,7 @@ export async function convertQuestSnapshot(
     const anchor = records.find((record) => record.locale === locale && record.quest);
     if (!anchor) continue;
     (anchor.metadata as Record<string, unknown>).storyCatalogProjection = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       regions: buildStoryProjection(records, locale),
     };
   }
@@ -2791,7 +4199,10 @@ export async function convertQuestSnapshot(
           sum +
           (record.locale === locale
             ? (record.quest?.dialogueNodes ?? []).filter(
-                (node) => node.speakerKey && !node.speakerName,
+                (node) =>
+                  node.speakerKey &&
+                  !node.speakerName &&
+                  node.metadata?.speakerNameResolution !== "intentionally_nameless",
               ).length
             : 0),
         0,
@@ -2833,7 +4244,7 @@ export async function convertQuestSnapshot(
     auditInputs: inputs,
     manifest: {
       schemaVersion: 3,
-      storyProjectionSchemaVersion: 2,
+      storyProjectionSchemaVersion: 3,
       upstream: {
         source: QUEST_UPSTREAM_SOURCE,
         commit: context.upstreamCommit,

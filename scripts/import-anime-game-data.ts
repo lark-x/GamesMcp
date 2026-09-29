@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -43,7 +43,9 @@ type Category = keyof typeof categoryFiles;
 const execFileAsync = promisify(execFile);
 
 function parseCategory(value: string | undefined): Category {
-  if (value && value in categoryFiles) return value as Category;
+  const flag = process.argv.find((arg) => arg.startsWith("--category="))?.slice("--category=".length);
+  const resolved = flag ?? value;
+  if (resolved && resolved in categoryFiles) return resolved as Category;
   throw new Error(`ANIME_GAME_CATEGORY must be one of: ${Object.keys(categoryFiles).join(", ")}`);
 }
 
@@ -164,7 +166,10 @@ const configuredDataRoot =
   process.env.DATA_DIR?.trim() ||
   "data";
 const upstreamDir = resolve(
-  process.env.ANIME_GAME_DATA_DIR ?? join(configuredDataRoot, "upstream", "AnimeGameData"),
+  process.env.ANIME_GAME_DATA_DIR ??
+    (existsSync(join(configuredDataRoot, "upstream", "AnimeGameData-current"))
+      ? join(configuredDataRoot, "upstream", "AnimeGameData-current")
+      : join(configuredDataRoot, "upstream", "AnimeGameData")),
 );
 const preflight = await runStoragePreflight();
 if (!preflight.ok) throw new Error(preflight.errors.join("; "));

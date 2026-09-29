@@ -81,18 +81,33 @@ export function parseNpcGroupRelations(
   sourceFile: string,
   sourceHash: string,
 ): QuestRelationEdge[] {
-  const rows = Array.isArray(value.OJACLOOEAMG) ? value.OJACLOOEAMG : [];
-  const groupId = ids(value.BMFEMALEAIO)[0] ?? idText(value.groupId);
+  const rows = Array.isArray(value.NFFIGDHFAJG)
+    ? value.NFFIGDHFAJG
+    : Array.isArray(value.DLLABGGCEBM)
+      ? value.DLLABGGCEBM
+      : Array.isArray(value.talks)
+        ? value.talks
+        : Array.isArray(value.OJACLOOEAMG)
+          ? value.OJACLOOEAMG
+          : [];
+  const groupId =
+    ids(value.GFFJADIFFGO)[0] ??
+    ids(value.BMFEMALEAIO)[0] ??
+    idText(value.GCNCAGHDDOJ) ??
+    idText(value.groupId) ??
+    idText(value.npcId);
   const edges: QuestRelationEdge[] = [];
   for (const [index, raw] of rows.entries()) {
     const row = asObject(raw);
-    const talkId = idText(row.OIFGMOHKPOI ?? row.talkId ?? row.talk ?? row.id);
+    const talkId = idText(
+      row.NFIEHACCECI ?? row.OIFGMOHKPOI ?? row.talkId ?? row.talk ?? row.id,
+    );
     if (!talkId) continue;
     const explicitQuestIds = ids(
       row.CNFDMCLNLGI ?? row.questIds ?? row.mainQuestIds ?? row.questId,
     );
     const conditionEvidence = collectConditionEvidence(
-      row.FCBOEAHDNOL ?? row.conditions ?? row.condition,
+      row.MPFAEHLBPJE ?? row.JEDNDGCOMGC ?? row.FCBOEAHDNOL ?? row.conditions ?? row.condition,
     );
     const questIds = [
       ...new Set([...explicitQuestIds, ...conditionEvidence.map((item) => item.questId)]),
@@ -106,7 +121,7 @@ export function parseNpcGroupRelations(
           relationType: "npc_group_condition",
           rawRelationType: condition.conditionType,
           sourceFile,
-          sourcePath: `OJACLOOEAMG[${index}].FCBOEAHDNOL`,
+          sourcePath: `rows[${index}].condition`,
           sourceHash,
           derived: false,
           confidence: 1,

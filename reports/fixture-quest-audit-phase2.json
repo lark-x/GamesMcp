@@ -1,0 +1,644 @@
+{
+  "schemaVersion": 3,
+  "generatedAt": "2026-09-22T13:36:32.536Z",
+  "upstream": {
+    "directory": "F:\\Project\\GamesMcp\\data\\fixtures\\anime-game-data-quests",
+    "commit": "222bb0be1115e7a07c2878a2c80fbb6c2d5cd4b3",
+    "commitDate": "2026-09-22T14:51:28+08:00",
+    "subject": "feat: rebuild quest topology and story catalog"
+  },
+  "summary": {
+    "mainQuests": 1,
+    "auditLocaleRecords": 2,
+    "publicLocaleRecords": 2,
+    "excludedLocaleRecords": 0,
+    "parserFailures": 0,
+    "metadataOnlyZh": 0,
+    "partialZh": 0,
+    "completeZh": 1,
+    "unresolvedSpeakerZh": 0,
+    "resolvedQuestCount": 1,
+    "familyCount": 1,
+    "fallbackFamilyCount": 0,
+    "standaloneQuestCount": 0,
+    "duplicateTitleGroups": 0,
+    "duplicateFamilyTitles": [],
+    "duplicateChapterTitles": [],
+    "familiesWithOneQuest": [
+      "genshin:series:Prologue"
+    ],
+    "familiesWithOnlyAggregate": [],
+    "orphanAggregate": [],
+    "crossRegionFamily": [],
+    "contentRoleZh": {
+      "story": 1
+    },
+    "dialogueResolutionStatusZh": {
+      "resolved": 1
+    },
+    "talkResolvedQuestCount": 1,
+    "talkProblemQuestCount": 0,
+    "topologyAudit": {
+      "rawRelationEdges": 0,
+      "derivedRelationEdges": 0,
+      "requiresEdges": 0,
+      "aggregateEdges": 0,
+      "startsAfterEdges": 0,
+      "cycles": [],
+      "orphanNodes": [
+        "1001"
+      ],
+      "connectedComponents": [
+        [
+          "1001"
+        ]
+      ],
+      "danglingEdges": 0
+    },
+    "talkAudit": {
+      "expectedTalkIds": 0,
+      "resolvedTalkIds": 0,
+      "unresolvedTalkIds": 0,
+      "ambiguousTalkIds": 0,
+      "duplicateTalkAssets": 0,
+      "talkAssetsByKind": {},
+      "lazyLoadedByKind": {},
+      "metadataScannedFiles": 0
+    },
+    "dialogueAudit": {
+      "dialogueNodes": 2,
+      "dialogueEdges": 1,
+      "danglingEdges": 0,
+      "rootlessGraphs": [],
+      "cyclicGraphs": [],
+      "missingTextNodes": 0,
+      "missingSpeakerNodes": 0,
+      "duplicateBodyNodes": 0,
+      "duplicateSpeakerBodyNodes": 0,
+      "duplicateExactIdentityNodes": 0,
+      "duplicateDialogIdsAcrossTalks": [],
+      "duplicateBodyGroups": [],
+      "duplicateSpeakerBodyGroups": [],
+      "duplicateExactIdentityGroups": [],
+      "disconnectedComponents": 0,
+      "rootlessComponents": 0,
+      "stronglyConnectedComponents": 0,
+      "unreachableDialogueIds": 0
+    },
+    "publicStoryAudit": {
+      "duplicateQuestPlacements": [],
+      "orphanAggregates": [],
+      "crossRegionFamilies": [],
+      "emptyNarrativeTasks": []
+    },
+    "allNarrative": {
+      "questCount": 1,
+      "resolvedCount": 1,
+      "dialogueNodes": 2,
+      "emptyWithSource": 0
+    },
+    "publicNarrative": {
+      "questCount": 1,
+      "resolvedCount": 1,
+      "dialogueNodes": 2,
+      "emptyWithSource": 0
+    },
+    "beforeAfter": {
+      "before": null,
+      "after": {
+        "resolvedQuestCount": 1,
+        "dialogueNodeCount": 2,
+        "fallbackFamilyCount": 0,
+        "standaloneQuestCount": 0,
+        "aggregateCount": null,
+        "controlCount": 0,
+        "talkUnresolvedCount": 0,
+        "danglingEdgeCount": 0,
+        "publicNarrativeQuestCount": 1,
+        "publicNarrativeResolvedCount": 1,
+        "publicNarrativeDialogueNodes": 2,
+        "allNarrativeQuestCount": 1,
+        "allNarrativeResolvedCount": 1,
+        "allNarrativeDialogueNodes": 2
+      },
+      "delta": {
+        "resolvedQuestCount": null,
+        "dialogueNodeCount": null,
+        "fallbackFamilyCount": null,
+        "standaloneQuestCount": null,
+        "aggregateCount": null,
+        "controlCount": null,
+        "talkUnresolvedCount": null,
+        "danglingEdgeCount": null,
+        "publicNarrativeQuestCount": null,
+        "publicNarrativeResolvedCount": null,
+        "publicNarrativeDialogueNodes": null,
+        "allNarrativeQuestCount": null,
+        "allNarrativeResolvedCount": null,
+        "allNarrativeDialogueNodes": null
+      }
+    }
+  },
+  "conversionManifest": {
+    "schemaVersion": 3,
+    "storyProjectionSchemaVersion": 2,
+    "upstream": {
+      "source": "DimbreathBot/AnimeGameData",
+      "commit": "222bb0be1115e7a07c2878a2c80fbb6c2d5cd4b3",
+      "commitDate": "2026-09-22T14:51:28+08:00",
+      "versionLabel": "feat: rebuild quest topology and story catalog"
+    },
+    "gameVersion": "audit",
+    "locales": [
+      "zh-CN",
+      "en"
+    ],
+    "converterVersion": "anime-game-data-quests-v2",
+    "inputHashes": {
+      "ExcelBinOutput/MainQuestExcelConfigData.json": "d9ea85d6e5e08f4156314b19d7719093fc4a49fcdcbcfa636323be4d0aec12d8",
+      "ExcelBinOutput/QuestExcelConfigData.json": "22adfa9cec0babc2c2ef144077f1d9f17ca075f8406bb1611f03f1b441aa17a7",
+      "ExcelBinOutput/ChapterExcelConfigData.json": "b001774f5fd482884ff23376f5cd09aa7042948e66bd6637b72270f80f5d2804",
+      "ExcelBinOutput/QuestCodexExcelConfigData.json": "f4cec4b4d78a5817577d8ac772076c1b52ba200ebaa1ff419300125b5c2394eb",
+      "ExcelBinOutput/TalkExcelConfigData_0.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "ExcelBinOutput/TalkExcelConfigData_1.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "ExcelBinOutput/DialogExcelConfigData.json": "402ddc8cd83f176126eda20833e922dbf1c834e2c0171533015591717e5ca22d",
+      "ExcelBinOutput/NpcExcelConfigData.json": "2fb5c4b99571bfec5ca4f920a58c285449dadec29337802eeb38c9c1678daa8c",
+      "ExcelBinOutput/AvatarExcelConfigData.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "TextMap/TextMapCHS.json": "7168c2dad172f8adb79cbe050cecbc4781ce7e038b9ee00bb7e84b1297519e90",
+      "TextMap/TextMap_MediumCHS.json": "7168c2dad172f8adb79cbe050cecbc4781ce7e038b9ee00bb7e84b1297519e90",
+      "TextMap/TextMapEN.json": "fbc91193726e1526ce92cd567cadc8bf8825739004876a238867ed2044a27dfd",
+      "TextMap/TextMap_MediumEN.json": "fbc91193726e1526ce92cd567cadc8bf8825739004876a238867ed2044a27dfd",
+      "BinOutput/CodexQuest/1001.json": "fcf13645a6c08fc91dae2d3341c78833235735e9ce5ede55cec9798c76a121be"
+    },
+    "counts": {
+      "mainQuests": 1,
+      "discoveredByType": {
+        "archon_quest": 1
+      },
+      "documents": {
+        "zh-CN": 1,
+        "en": 1
+      },
+      "eligibleDocuments": {
+        "zh-CN": 1,
+        "en": 1
+      },
+      "publicDocuments": {
+        "zh-CN": 1,
+        "en": 1
+      },
+      "completeness": {
+        "zh-CN": {
+          "complete": 1,
+          "partial": 0,
+          "metadata_only": 0
+        },
+        "en": {
+          "complete": 1,
+          "partial": 0,
+          "metadata_only": 0
+        }
+      },
+      "subquests": 2,
+      "dialogueNodes": 4,
+      "dialogueEdges": 2
+    },
+    "accounting": {
+      "discoveredMainQuests": 1,
+      "discoveredDocuments": 2,
+      "convertedDocuments": 2,
+      "excludedDocuments": 0,
+      "failedDocuments": 0,
+      "accountedCoverage": 1,
+      "unexplainedMissing": 0
+    },
+    "sourceCoverage": {
+      "codexQuestFiles": 1,
+      "codexQuestMatchedMainQuests": 1,
+      "talkFallbackMainQuests": 0,
+      "binQuestFiles": 0,
+      "binQuestParsedMainQuests": 0,
+      "binQuestRelationEdges": 0,
+      "binQuestFailures": 0,
+      "talkRegistryFiles": 0,
+      "talkRegistryParsedFiles": 0,
+      "talkRegistryDuplicateTalkIds": 0,
+      "npcGroupRelationEdges": 0
+    },
+    "quality": {
+      "metadataOnlyDocuments": {
+        "zh-CN": 0,
+        "en": 0
+      },
+      "titleUnresolvedDocuments": 0,
+      "speakerUnresolvedNodes": {
+        "zh-CN": 0,
+        "en": 0
+      },
+      "speakerNpcFallbackNodes": {
+        "zh-CN": 0,
+        "en": 0
+      }
+    },
+    "excluded": [],
+    "failures": [],
+    "warnings": [],
+    "completenessReasons": [
+      {
+        "sourceKey": "quest/1001/locale/zh-CN",
+        "reasons": []
+      },
+      {
+        "sourceKey": "quest/1001/locale/en",
+        "reasons": []
+      }
+    ],
+    "unexplainedMissing": [],
+    "storyProjection": [
+      {
+        "id": "mondstadt",
+        "title": "蒙德",
+        "order": 1,
+        "families": [
+          {
+            "id": "genshin:series:Prologue",
+            "title": "Prologue",
+            "order": 0,
+            "subseries": [],
+            "chapters": [
+              {
+                "id": "1",
+                "title": "序章",
+                "order": 10,
+                "quests": [
+                  {
+                    "questId": "1001",
+                    "title": "捕风的异乡人",
+                    "order": 0,
+                    "entryType": "quest",
+                    "contentRole": "story",
+                    "dialogueResolutionStatus": "resolved",
+                    "qualityCode": "complete",
+                    "bodyAvailability": "dialogue",
+                    "aggregateChildQuestIds": []
+                  }
+                ],
+                "collections": []
+              }
+            ],
+            "quests": [],
+            "collections": []
+          }
+        ]
+      }
+    ]
+  },
+  "sourceAudit": {
+    "binQuestFiles": 0,
+    "binQuestParsedMainQuests": 0,
+    "binQuestFailures": [],
+    "binQuestContentCounts": {},
+    "binQuestExecCounts": {},
+    "talkRegistry": {
+      "coverage": {
+        "totalFiles": 0,
+        "parsedFiles": 0,
+        "metadataScannedFiles": 0,
+        "metadataCacheHits": 0,
+        "eagerParsedByKind": {},
+        "lazyLoadedByKind": {},
+        "parsedByKind": {},
+        "fileCountsByKind": {},
+        "unknownDirectories": []
+      },
+      "duplicateTalkIds": [],
+      "npcGroupRelationEdges": 0
+    },
+    "talkResolutionProblems": [],
+    "registeredTalkFilesNotReferenced": [],
+    "orphanDialogueAssets": [],
+    "metadataScanFailures": [],
+    "codexFiles": 1,
+    "codexFilesWithoutMainQuest": [],
+    "duplicateFamilyTitles": [],
+    "duplicateChapterTitles": [],
+    "publicStoryAudit": {
+      "duplicateQuestPlacements": [],
+      "orphanAggregates": [],
+      "crossRegionFamilies": [],
+      "emptyNarrativeTasks": []
+    },
+    "curatedOverrides": [
+      {
+        "id": "genshin:water-nymph-cross",
+        "questIds": [
+          "74001",
+          "74002",
+          "74003",
+          "74004",
+          "74072",
+          "74073",
+          "74074",
+          "74075",
+          "74076",
+          "74077",
+          "74165",
+          "74078"
+        ],
+        "reason": "公开任务系列边界用于校验水仙十字相关主任务的跨章节归并。",
+        "evidence": [
+          "https://wiki.biligame.com/ys/水仙的追迹"
+        ],
+        "reviewedAt": "2026-09-22",
+        "temporary": true,
+        "obsolete": false
+      },
+      {
+        "id": "genshin:ode-to-harmony",
+        "questIds": [
+          "74184",
+          "74194",
+          "74183",
+          "74195",
+          "74196"
+        ],
+        "reason": "公开剧情章节顺序用于核对序曲、第一至三章及终章的源数据顺序。",
+        "evidence": [
+          "https://www.gamersky.com/handbook/202405/1739882.shtml"
+        ],
+        "reviewedAt": "2026-09-22",
+        "temporary": true,
+        "obsolete": false
+      },
+      {
+        "id": "genshin:long-day-in-the-mountains",
+        "questIds": [
+          "70065",
+          "76095",
+          "76148",
+          "76152",
+          "76096"
+        ],
+        "reason": "源数据的主任务关系与章节信息共同指向同一大型任务系列。",
+        "evidence": [
+          "https://wiki.biligame.com/ys/枫丹探索专题"
+        ],
+        "reviewedAt": "2026-09-22",
+        "temporary": true,
+        "obsolete": false
+      }
+    ]
+  },
+  "focus": [],
+  "tasks": [
+    {
+      "mainQuestId": "1001",
+      "rawType": "archon",
+      "directSeries": "Prologue",
+      "relationIds": [],
+      "contentRole": "story",
+      "dialogueResolutionStatus": "resolved",
+      "talkIds": [],
+      "resolvedTalkIds": [],
+      "unresolvedTalkIds": [],
+      "relationEdgeCount": 0,
+      "codexSourceFile": "BinOutput/CodexQuest/1001.json",
+      "explicitQuestRows": 1,
+      "locales": {
+        "zh-CN": {
+          "status": "public",
+          "title": "捕风的异乡人",
+          "questType": "archon_quest",
+          "regionId": "mondstadt",
+          "region": "蒙德",
+          "chapterId": "1",
+          "chapter": "序章",
+          "chapterOrder": 10,
+          "series": "Prologue",
+          "familyId": "genshin:series:Prologue",
+          "family": "Prologue",
+          "familyProvenance": "derived",
+          "storyPosition": 1,
+          "contentRole": "story",
+          "dialogueResolutionStatus": "resolved",
+          "talkIds": [],
+          "resolvedTalkIds": [],
+          "unresolvedTalkIds": [],
+          "talkSourceKinds": [],
+          "relationEdgeCount": 0,
+          "relationEdges": [],
+          "topology": {
+            "prerequisiteQuestIds": [],
+            "successorQuestIds": [],
+            "relatedQuestIds": [],
+            "aggregateChildQuestIds": [],
+            "parentQuestIds": [],
+            "storyOrder": 0,
+            "orderSource": "upstream",
+            "orderConfidence": "medium",
+            "rawRelationEdges": [],
+            "derivedRelationEdges": [],
+            "subQuestIds": [],
+            "subQuestOrder": [],
+            "subQuestRelationEdges": [],
+            "cycle": false,
+            "cycleNodeIds": [],
+            "danglingEdges": []
+          },
+          "dialogueDiagnostics": {
+            "expectedTalkIds": [],
+            "resolvedTalkIds": [],
+            "missingTalkIds": [],
+            "ambiguousTalkIds": [],
+            "graphHasNoRoot": false,
+            "cycle": false,
+            "cycleNodeIds": [],
+            "danglingEdges": [],
+            "missingTextNodes": [],
+            "missingSpeakerNodes": [],
+            "disconnectedComponentCount": 0,
+            "rootlessComponentCount": 0,
+            "stronglyConnectedComponents": [],
+            "unreachableDialogueIds": []
+          },
+          "storyProjection": {
+            "schemaVersion": 2,
+            "regionId": "mondstadt",
+            "regionTitle": "蒙德",
+            "familyId": "genshin:series:Prologue",
+            "familyTitle": "Prologue",
+            "chapterId": "1",
+            "chapterTitle": "序章",
+            "chapterOrder": 10,
+            "entryType": "quest",
+            "aggregateChildQuestIds": []
+          },
+          "talkResolution": {
+            "talkIds": [],
+            "resolvedTalkIds": [],
+            "unresolvedTalkIds": [],
+            "ambiguousTalkIds": [],
+            "candidates": []
+          },
+          "subquestCount": 1,
+          "dialogueNodeCount": 2,
+          "dialogueEdgeCount": 1,
+          "speakerUnresolvedCount": 0,
+          "qualityCode": "complete",
+          "completeness": "complete",
+          "completenessReasons": [],
+          "bodyAvailability": "dialogue",
+          "sourceFiles": [
+            "BinOutput/CodexQuest/1001.json",
+            "ExcelBinOutput/AvatarExcelConfigData.json",
+            "ExcelBinOutput/ChapterExcelConfigData.json",
+            "ExcelBinOutput/DialogExcelConfigData.json",
+            "ExcelBinOutput/MainQuestExcelConfigData.json",
+            "ExcelBinOutput/NpcExcelConfigData.json",
+            "ExcelBinOutput/QuestCodexExcelConfigData.json",
+            "ExcelBinOutput/QuestExcelConfigData.json",
+            "ExcelBinOutput/TalkExcelConfigData_0.json",
+            "ExcelBinOutput/TalkExcelConfigData_1.json",
+            "TextMap/TextMapCHS.json",
+            "TextMap/TextMapEN.json",
+            "TextMap/TextMap_MediumCHS.json",
+            "TextMap/TextMap_MediumEN.json"
+          ],
+          "dialogueLineage": {
+            "relativeFile": "BinOutput/CodexQuest/1001.json",
+            "hash": "fcf13645a6c08fc91dae2d3341c78833235735e9ce5ede55cec9798c76a121be",
+            "valueHash": "5a08f66868a060c31e4a2185d9f6b038b9e422e768d29358c3d4d4ba9f9b44fb"
+          },
+          "reasons": []
+        },
+        "en": {
+          "status": "public",
+          "title": "The Outlander Who Caught the Wind",
+          "questType": "archon_quest",
+          "regionId": "mondstadt",
+          "region": "Mondstadt",
+          "chapterId": "1",
+          "chapter": "Prologue",
+          "chapterOrder": 10,
+          "series": "Prologue",
+          "familyId": "genshin:series:Prologue",
+          "family": "Prologue",
+          "familyProvenance": "derived",
+          "storyPosition": 1,
+          "contentRole": "story",
+          "dialogueResolutionStatus": "resolved",
+          "talkIds": [],
+          "resolvedTalkIds": [],
+          "unresolvedTalkIds": [],
+          "talkSourceKinds": [],
+          "relationEdgeCount": 0,
+          "relationEdges": [],
+          "topology": {
+            "prerequisiteQuestIds": [],
+            "successorQuestIds": [],
+            "relatedQuestIds": [],
+            "aggregateChildQuestIds": [],
+            "parentQuestIds": [],
+            "storyOrder": 0,
+            "orderSource": "upstream",
+            "orderConfidence": "medium",
+            "rawRelationEdges": [],
+            "derivedRelationEdges": [],
+            "subQuestIds": [],
+            "subQuestOrder": [],
+            "subQuestRelationEdges": [],
+            "cycle": false,
+            "cycleNodeIds": [],
+            "danglingEdges": []
+          },
+          "dialogueDiagnostics": {
+            "expectedTalkIds": [],
+            "resolvedTalkIds": [],
+            "missingTalkIds": [],
+            "ambiguousTalkIds": [],
+            "graphHasNoRoot": false,
+            "cycle": false,
+            "cycleNodeIds": [],
+            "danglingEdges": [],
+            "missingTextNodes": [],
+            "missingSpeakerNodes": [],
+            "disconnectedComponentCount": 0,
+            "rootlessComponentCount": 0,
+            "stronglyConnectedComponents": [],
+            "unreachableDialogueIds": []
+          },
+          "storyProjection": {
+            "schemaVersion": 2,
+            "regionId": "mondstadt",
+            "regionTitle": "Mondstadt",
+            "familyId": "genshin:series:Prologue",
+            "familyTitle": "Prologue",
+            "chapterId": "1",
+            "chapterTitle": "Prologue",
+            "chapterOrder": 10,
+            "entryType": "quest",
+            "aggregateChildQuestIds": []
+          },
+          "talkResolution": {
+            "talkIds": [],
+            "resolvedTalkIds": [],
+            "unresolvedTalkIds": [],
+            "ambiguousTalkIds": [],
+            "candidates": []
+          },
+          "subquestCount": 1,
+          "dialogueNodeCount": 2,
+          "dialogueEdgeCount": 1,
+          "speakerUnresolvedCount": 0,
+          "qualityCode": "complete",
+          "completeness": "complete",
+          "completenessReasons": [],
+          "bodyAvailability": "dialogue",
+          "sourceFiles": [
+            "BinOutput/CodexQuest/1001.json",
+            "ExcelBinOutput/AvatarExcelConfigData.json",
+            "ExcelBinOutput/ChapterExcelConfigData.json",
+            "ExcelBinOutput/DialogExcelConfigData.json",
+            "ExcelBinOutput/MainQuestExcelConfigData.json",
+            "ExcelBinOutput/NpcExcelConfigData.json",
+            "ExcelBinOutput/QuestCodexExcelConfigData.json",
+            "ExcelBinOutput/QuestExcelConfigData.json",
+            "ExcelBinOutput/TalkExcelConfigData_0.json",
+            "ExcelBinOutput/TalkExcelConfigData_1.json",
+            "TextMap/TextMapCHS.json",
+            "TextMap/TextMapEN.json",
+            "TextMap/TextMap_MediumCHS.json",
+            "TextMap/TextMap_MediumEN.json"
+          ],
+          "dialogueLineage": {
+            "relativeFile": "BinOutput/CodexQuest/1001.json",
+            "hash": "fcf13645a6c08fc91dae2d3341c78833235735e9ce5ede55cec9798c76a121be",
+            "valueHash": "bc4ec7689c89b1ae40f7c96ffcfc36c59348cad12afafda16467f573416da2d1"
+          },
+          "reasons": []
+        }
+      },
+      "qualityCode": "complete",
+      "familyId": "genshin:series:Prologue",
+      "family": "Prologue",
+      "chapter": "序章",
+      "dialogueNodeCount": 2,
+      "sourceFiles": [
+        "BinOutput/CodexQuest/1001.json",
+        "ExcelBinOutput/AvatarExcelConfigData.json",
+        "ExcelBinOutput/ChapterExcelConfigData.json",
+        "ExcelBinOutput/DialogExcelConfigData.json",
+        "ExcelBinOutput/MainQuestExcelConfigData.json",
+        "ExcelBinOutput/NpcExcelConfigData.json",
+        "ExcelBinOutput/QuestCodexExcelConfigData.json",
+        "ExcelBinOutput/QuestExcelConfigData.json",
+        "ExcelBinOutput/TalkExcelConfigData_0.json",
+        "ExcelBinOutput/TalkExcelConfigData_1.json",
+        "TextMap/TextMapCHS.json",
+        "TextMap/TextMapEN.json",
+        "TextMap/TextMap_MediumCHS.json",
+        "TextMap/TextMap_MediumEN.json"
+      ]
+    }
+  ]
+}

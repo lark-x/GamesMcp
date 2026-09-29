@@ -338,12 +338,17 @@ export async function buildReleaseCandidate(
         addIssue("suspected_duplicate", key, `Multiple records share canonical key ${key}`, {
           sourceKeys,
         });
-    if (issueValues.length)
-      await tx
-        .insert(reviewIssues)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .values(issueValues as any)
-        .onConflictDoNothing({ target: [reviewIssues.candidateId, reviewIssues.fingerprint] });
+    if (issueValues.length) {
+      const chunkSize = 200;
+      for (let i = 0; i < issueValues.length; i += chunkSize) {
+        const chunk = issueValues.slice(i, i + chunkSize);
+        await tx
+          .insert(reviewIssues)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .values(chunk as any)
+          .onConflictDoNothing({ target: [reviewIssues.candidateId, reviewIssues.fingerprint] });
+      }
+    }
     await tx
       .update(releaseCandidates)
       .set({ currentBuildId: build.id, status: "preview_ready", updatedAt: new Date() })

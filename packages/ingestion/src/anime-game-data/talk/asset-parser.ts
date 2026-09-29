@@ -41,6 +41,7 @@ function rowId(row: Json): string | undefined {
       row.GFLDJMJKIKE ??
       row.OIFGMOHKPOI ??
       row.NFIEHACCECI ??
+      row.ANKFNLMKOII ??
       row.dialogueId ??
       row.id,
   );
@@ -55,9 +56,21 @@ function normalizeRow(
   const dialogId = rowId(row);
   if (!dialogId) return undefined;
   const nextDialogIds = arrayOfIds(
-    row.nextDialogIds ?? row.nextDialogs ?? row.KMLAFCBMFEI ?? row.GBLICFDCPCK,
+    row.nextDialogIds ??
+      row.nextDialogs ??
+      row.GLJCECCOEDP ??
+      row.KMLAFCBMFEI ??
+      row.GBLICFDCPCK ??
+      row.LJBALDDMEAF,
   );
-  const role = firstObject(row, ["talkRole", "role", "LFGCLNLPAPB", "PIBKEGJOJHN"]);
+  const role = firstObject(row, [
+    "talkRole",
+    "role",
+    "KBPOBGFGLKN",
+    "LFGCLNLPAPB",
+    "PIBKEGJOJHN",
+    "EENIFNIGHCH",
+  ]);
   const roleType =
     typeof role?._type === "string"
       ? role?._type
@@ -66,14 +79,20 @@ function normalizeRow(
         : undefined;
   const roleId = idText(role?._id ?? role?.id ?? role?.roleId);
   const bodyHash = hashText(
-    row.talkContentTextMapHash ??
+    row.LKECPJIFFEE ??
+      row.talkContentTextMapHash ??
       row.bodyTextMapHash ??
       row.OACNIBLFFDI ??
       row.AIGJBMCHCJG ??
+      row.DMIFDJDEFAL ??
       row.contentTextMapHash,
   );
   const speakerNameHash = hashText(
-    row.talkRoleNameTextMapHash ?? row.speakerNameTextMapHash ?? row.BKABCBAFIKD ?? row.BMFGJJJPBBC,
+    row.talkRoleNameTextMapHash ??
+      row.speakerNameTextMapHash ??
+      row.BKABCBAFIKD ??
+      row.BMFGJJJPBBC ??
+      row.ACCOJJPKFCN,
   );
   return {
     dialogId,
@@ -106,6 +125,7 @@ function assetId(value: Json, relativePath: string): string | undefined {
   const metadataId = idText(
     value.talkId ??
       value.mainTalkId ??
+      value.LDLMECNIJFC ??
       value.IOKNFDJFGDH ??
       value.AADKDKPMGNO ??
       value.GDDPNNHLGBL ??

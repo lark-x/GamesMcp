@@ -19,25 +19,25 @@ function ids(value: unknown): string[] {
 }
 
 function contentRows(row: Json): Json[] {
-  return Array.isArray(row.ANBEKNMDKCH)
-    ? row.ANBEKNMDKCH.map(asObject)
-    : Array.isArray(row.contents)
-      ? row.contents.map(asObject)
-      : [];
+  const result: Json[] = [];
+  if (Array.isArray(row.ANBEKNMDKCH)) result.push(...row.ANBEKNMDKCH.map(asObject));
+  if (Array.isArray(row.finishCond)) result.push(...row.finishCond.map(asObject));
+  if (Array.isArray(row.contents)) result.push(...row.contents.map(asObject));
+  return result;
 }
 
 function execRows(row: Json): Json[] {
-  return Array.isArray(row.HNBPDOIIEKL)
-    ? row.HNBPDOIIEKL.map(asObject)
-    : Array.isArray(row.execs)
-      ? row.execs.map(asObject)
-      : Array.isArray(row.exec)
-        ? row.exec.map(asObject)
-        : [];
+  const result: Json[] = [];
+  if (Array.isArray(row.HNBPDOIIEKL)) result.push(...row.HNBPDOIIEKL.map(asObject));
+  if (Array.isArray(row.FAPCNCGCEBJ)) result.push(...row.FAPCNCGCEBJ.map(asObject));
+  if (Array.isArray(row.CNPOFCKIBDL)) result.push(...row.CNPOFCKIBDL.map(asObject));
+  if (Array.isArray(row.execs)) result.push(...row.execs.map(asObject));
+  if (Array.isArray(row.exec)) result.push(...row.exec.map(asObject));
+  return result;
 }
 
 function parseMainId(value: Json, relativePath: string): string | undefined {
-  const direct = idText(value.mainQuestId ?? value.mainId ?? value.BJAAAKHKKKL);
+  const direct = idText(value.id ?? value.mainQuestId ?? value.mainId ?? value.BJAAAKHKKKL ?? value.PCOMHEOJPOO);
   if (direct) return direct;
   const stem = relativePath
     .split(/[\\/]/u)
@@ -70,19 +70,38 @@ export function parseBinQuestFile(
   sourceHash = createHash("sha256").update(JSON.stringify(value)).digest("hex"),
 ): QuestBinRecord | undefined {
   const fallbackMainId = parseMainId(value, relativePath);
-  const rows = Array.isArray(value.EBNBLBEIFFJ)
-    ? value.EBNBLBEIFFJ.map(asObject)
-    : Array.isArray(value.subquests)
-      ? value.subquests.map(asObject)
-      : [];
+  const rows = Array.isArray(value.JIJKODHIEED)
+    ? value.JIJKODHIEED.map(asObject)
+    : Array.isArray(value.EBNBLBEIFFJ)
+      ? value.EBNBLBEIFFJ.map(asObject)
+      : Array.isArray(value.subquests)
+        ? value.subquests.map(asObject)
+        : [];
   const mainQuestId =
     rows
-      .map((row) => idText(row.BJAAAKHKKKL ?? row.mainQuestId ?? row.mainId))
+      .map((row) => idText(row.PCOMHEOJPOO ?? row.BJAAAKHKKKL ?? row.mainQuestId ?? row.mainId))
       .find((id): id is string => Boolean(id)) ?? fallbackMainId;
   if (!mainQuestId) return undefined;
   const subQuestIds = rows
-    .map((row) => idText(row.KCGAKLCHDCC ?? row.subQuestId ?? row.subId ?? row.id))
+    .map((row) => idText(row.NFGFDHPPBIF ?? row.KCGAKLCHDCC ?? row.subQuestId ?? row.subId ?? row.id))
     .filter((id): id is string => Boolean(id));
+  type SubQuestItem = NonNullable<QuestBinRecord["subQuests"]>[number];
+  const subQuests: SubQuestItem[] = [];
+  for (const r of rows) {
+    const subId = idText(r.NFGFDHPPBIF ?? r.KCGAKLCHDCC ?? r.subQuestId ?? r.subId ?? r.id);
+    if (!subId) continue;
+    const item: SubQuestItem = { subId };
+    const stepDescTextMapHash = idText(r.NBOJMAHCCGM ?? r.stepDescTextMapHash);
+    if (stepDescTextMapHash) item.stepDescTextMapHash = stepDescTextMapHash;
+    const order =
+      typeof r.GBFIFKGFKHD === "number"
+        ? r.GBFIFKGFKHD
+        : typeof r.order === "number"
+          ? r.order
+          : undefined;
+    if (order !== undefined) item.order = order;
+    subQuests.push(item);
+  }
   const contents: QuestBinContent[] = [];
   const execs: QuestBinContent[] = [];
   const contentEdges: QuestRelationEdge[] = [];
@@ -93,7 +112,7 @@ export function parseBinQuestFile(
   const execCounts: Record<string, number> = {};
   for (const [rowIndex, row] of rows.entries()) {
     const subQuestId: string =
-      idText(row.KCGAKLCHDCC ?? row.subQuestId ?? row.subId ?? row.id) ?? mainQuestId;
+      idText(row.NFGFDHPPBIF ?? row.KCGAKLCHDCC ?? row.subQuestId ?? row.subId ?? row.id) ?? mainQuestId;
     if (subQuestId !== mainQuestId) {
       const containsEdge = makeEdge({
         fromQuestId: mainQuestId,
@@ -125,7 +144,7 @@ export function parseBinQuestFile(
       };
       contents.push(item);
       contentCounts[type] = (contentCounts[type] ?? 0) + 1;
-      if (type === "QUEST_CONTENT_COMPLETE_TALK" && params[0]) {
+      if (type === "QUEST_CONTENT_COMPLETE_TALK" && params[0] && params[0] !== "0") {
         const edge = makeEdge({
           fromQuestId: subQuestId,
           talkId: params[0],
@@ -218,7 +237,9 @@ export function parseBinQuestFile(
   const completeTalkIds = [
     ...new Set(
       relationEdges
-        .filter((edge) => edge.relationType === "complete_talk" && edge.talkId)
+        .filter(
+          (edge) => edge.relationType === "complete_talk" && edge.talkId && edge.talkId !== "0",
+        )
         .map((edge) => edge.talkId!),
     ),
   ];
@@ -237,5 +258,6 @@ export function parseBinQuestFile(
     execCounts,
     hasCompleteTalk: completeTalkIds.length > 0,
     completeTalkIds,
+    subQuests,
   };
 }

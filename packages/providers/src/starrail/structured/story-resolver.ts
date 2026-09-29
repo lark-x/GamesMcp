@@ -131,6 +131,27 @@ export class StarRailStoryResolver {
     const mainMissionSourceFile = mainItem?.path ?? "ExcelOutput/MainMission.json";
     const mainMissionSourceHash = sourceHashByPath.get(mainMissionSourceFile) ?? "";
 
+    // 2b. Load DailyMissionData for daily quest region anchoring
+    const dailyUnlockMap = new Map<number, number>();
+    const dailyItem = this.inventory.items.find(
+      (i) => i.path === "ExcelOutput/DailyMissionData.json",
+    );
+    if (dailyItem) {
+      const rawDailies = await readSafeJsonFile<Array<Record<string, unknown>>>(
+        resolve(this.dataDir, dailyItem.path),
+      );
+      if (Array.isArray(rawDailies)) {
+        for (const d of rawDailies) {
+          const dId = Number(d.ID);
+          const unlockMain = Number(d.UnlockMainMission);
+          if (Number.isInteger(dId) && Number.isInteger(unlockMain)) {
+            dailyUnlockMap.set(dId, unlockMain);
+            dailyUnlockMap.set(Math.floor(dId / 100), unlockMain);
+          }
+        }
+      }
+    }
+
     // 3. Load SubMissions
     const subMissionMap = new Map<number, StarRailSubMission[]>();
     const subMissionToMain = new Map<number, number>();
@@ -593,8 +614,88 @@ export class StarRailStoryResolver {
       const chapter = chapterId ? this.worldChapterResolver.getChapter(chapterId) : undefined;
       if (chapter && !worldId) worldId = chapter.worldId;
 
+      if (!worldId && type === "daily_mission") {
+        const unlockMain = dailyUnlockMap.get(id) ?? dailyUnlockMap.get(Math.floor(id / 100));
+        if (unlockMain) {
+          const unlockMm = missionRowsById.get(unlockMain);
+          if (unlockMm?.WorldID && Number(unlockMm.WorldID) > 0) {
+            worldId = Number(unlockMm.WorldID);
+          } else if (unlockMain >= 1000000 && unlockMain < 2000000) {
+            worldId = 101;
+          } else if (unlockMain >= 2000000 && unlockMain < 3000000) {
+            worldId = 201;
+          } else if (unlockMain >= 3000000 && unlockMain < 4000000) {
+            worldId = 301;
+          } else if (unlockMain >= 4000000 && unlockMain < 5000000) {
+            worldId = 401;
+          } else if (unlockMain >= 5000000 && unlockMain < 6000000) {
+            worldId = 501;
+          }
+        }
+      }
+
+      if (!worldId) {
+        if (id >= 3050000 && id < 3060000) {
+          worldId = 301;
+        } else if (id >= 4010000 && id < 4020000) {
+          worldId = 401;
+        } else if (id >= 8016000 && id < 8017000) {
+          worldId = 101;
+        } else if (id >= 8025000 && id < 8026000) {
+          worldId = 301;
+        } else if (id >= 8027000 && id < 8028000) {
+          worldId = 401;
+        } else if (id >= 8035000 && id < 8036000) {
+          worldId = 501;
+        } else if (id >= 8042000 && id < 8043000) {
+          worldId = 401;
+        }
+      }
+
+      let worldTitle: string | undefined;
+      if (!worldId) {
+        const t = title;
+        if (
+          t.includes("模拟宇宙") ||
+          t.includes("寰宇蝗灾") ||
+          t.includes("黄金与机械") ||
+          t.includes("差分宇宙") ||
+          t.includes("空间站特派") ||
+          t.includes("概率、美学与回路") ||
+          t.includes("二律背反的圆舞曲") ||
+          t.includes("虚境味探")
+        ) {
+          worldId = 101;
+        } else if (
+          t.includes("帕姆") ||
+          t.includes("列车") ||
+          t.includes("流光忆彩") ||
+          t.includes("出门靠朋友") ||
+          t.includes("反光地板") ||
+          t.includes("寻找碟片") ||
+          t.includes("掉毛危机") ||
+          t.includes("常回家看看") ||
+          t.includes("身高测量") ||
+          t.includes("遗失的纽扣") ||
+          t.includes("跟我聊会儿吧") ||
+          t.includes("健康大作战") ||
+          t.includes("落枕的帕姆") ||
+          t.includes("车厢")
+        ) {
+          worldId = 100;
+        } else if (t.includes("摄影展览") || t.includes("仙舟手信")) {
+          worldId = 301;
+        } else if (t.includes("旧瓶新友") || t.includes("果汁配方")) {
+          worldId = 401;
+        } else if (t.includes("凡人的赞美诗")) {
+          worldId = 201;
+        } else {
+          worldTitle = "系统玩法引导";
+        }
+      }
+
       const world = worldId ? this.worldChapterResolver.getWorld(worldId) : undefined;
-      const worldTitle = world?.name ?? (worldId ? `世界 ${worldId}` : undefined);
+      worldTitle ??= world?.name ?? (worldId ? `世界 ${worldId}` : "系统玩法引导");
       const chapterTitle = chapter?.name ?? (chapterId ? `章节 ${chapterId}` : undefined);
       const sequence = Number(m.Sequence ?? m.MissionSequence ?? m.Order ?? 0) || undefined;
       const componentRoot = componentFor(id);

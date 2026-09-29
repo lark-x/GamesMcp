@@ -87,6 +87,8 @@ export class StarRailMaterialExtractor {
       "ComposeMaterial",
       "Material",
       "Virtual",
+      "MuseumStuff",
+      "MuseumExhibit",
     ]);
 
     for (const item of rawItems) {
@@ -99,9 +101,16 @@ export class StarRailMaterialExtractor {
         mainType === "Material" ||
         mainType === "Virtual" ||
         mainType === "Mission" ||
-        (mainType === "Usable" && subType === "Food");
+        (mainType === "Usable" && (subType === "Food" || subType === "Formula"));
       if (!isMaterial) continue;
-      if (!MATERIAL_SUBTYPES.has(subType) && subType !== "Food" && subType !== "Mission") continue;
+      if (
+        !MATERIAL_SUBTYPES.has(subType) &&
+        subType !== "Food" &&
+        subType !== "Formula" &&
+        subType !== "Mission"
+      ) {
+        continue;
+      }
 
       const name = this.resolveHash(item.ItemName) ?? `物品 ${id}`;
       const lowerName = name.toLowerCase();
@@ -129,31 +138,93 @@ export class StarRailMaterialExtractor {
       const story = normalizeStarRailText(this.resolveHash(item.ItemBGDesc) ?? "") || undefined;
       const cleanName = normalizeStarRailText(name);
 
-      // 按游戏内分类体系映射（子类型枚举精确匹配，而非 includes 猜测）
+      // 按游戏官方背包大类与二级精准子类映射
       let category: MaterialCategory = "material";
+      let primaryCategory = "character_development";
+      let subcategory = "general";
+      let subcategoryLabel = "通用突破素材";
 
-      if (subType === "Virtual") {
-        category = "currency";
-      } else if (subType === "AvatarExp") {
-        category = "exp_material";
-      } else if (subType === "EquipmentExp") {
-        category = "lightcone_exp";
-      } else if (subType === "RelicExp") {
-        category = "relic_exp";
-      } else if (subType === "AvatarRank") {
-        category = "character_ascension";
-      } else if (subType === "TracePath") {
-        category = "trace";
-      } else if (subType === "CommonMonsterDrop") {
-        category = "enemy_drop";
-      } else if (subType === "WeeklyMonsterDrop") {
-        category = "weekly_boss";
-      } else if (subType === "ComposeMaterial") {
-        category = "synthesis";
-      } else if (subType === "Food") {
-        category = "consumable";
-      } else if (subType === "Mission") {
+      if (mainType === "Material") {
+        if (subType === "AvatarRank") {
+          category = "character_ascension";
+          primaryCategory = "character_development";
+          subcategory = "character_ascension";
+          subcategoryLabel = "角色晋阶材料";
+        } else if (subType === "TracePath") {
+          category = "trace";
+          primaryCategory = "character_development";
+          subcategory = "trace";
+          subcategoryLabel = "行迹升级素材";
+        } else if (subType === "WeeklyMonsterDrop") {
+          category = "weekly_boss";
+          primaryCategory = "character_development";
+          subcategory = "weekly_boss";
+          subcategoryLabel = "周本首领素材";
+        } else if (subType === "CommonMonsterDrop") {
+          category = "enemy_drop";
+          primaryCategory = "character_development";
+          subcategory = "enemy_drop";
+          subcategoryLabel = "敌方掉落素材";
+        } else if (subType === "AvatarExp") {
+          category = "exp_material";
+          primaryCategory = "character_development";
+          subcategory = "exp_material";
+          subcategoryLabel = "角色经验道具";
+        } else if (subType === "EquipmentExp") {
+          category = "lightcone_exp";
+          primaryCategory = "character_development";
+          subcategory = "lightcone_exp";
+          subcategoryLabel = "光锥升级材料";
+        } else if (subType === "RelicExp") {
+          category = "relic_exp";
+          primaryCategory = "character_development";
+          subcategory = "relic_exp";
+          subcategoryLabel = "遗器强化材料";
+        } else if (subType === "ComposeMaterial") {
+          category = "synthesis";
+          primaryCategory = "character_development";
+          subcategory = "synthesis";
+          subcategoryLabel = "万能合成素材";
+        } else if (subType === "MuseumStuff" || subType === "MuseumExhibit") {
+          category = "mission";
+          primaryCategory = "mission";
+          subcategory = "souvenir";
+          subcategoryLabel = "活动与纪念品";
+        } else if (subType === "Material") {
+          if (cleanName.includes("之影") || cleanName.includes("星魂")) {
+            category = "currency";
+            primaryCategory = "precious";
+            subcategory = "eidolon";
+            subcategoryLabel = "星魂激活道具";
+          } else {
+            category = "material";
+            primaryCategory = "character_development";
+            subcategory = "general";
+            subcategoryLabel = "通用突破素材";
+          }
+        }
+      } else if (mainType === "Usable") {
+        if (subType === "Food") {
+          category = "consumable";
+          primaryCategory = "consumable";
+          subcategory = "food";
+          subcategoryLabel = "食物与药剂";
+        } else if (subType === "Formula") {
+          category = "consumable";
+          primaryCategory = "consumable";
+          subcategory = "recipe";
+          subcategoryLabel = "合成配方";
+        }
+      } else if (mainType === "Mission" || subType === "Mission") {
         category = "mission";
+        primaryCategory = "mission";
+        subcategory = "main_quest";
+        subcategoryLabel = "任务专属物品";
+      } else if (mainType === "Virtual" || subType === "Virtual") {
+        category = "currency";
+        primaryCategory = "precious";
+        subcategory = "currency";
+        subcategoryLabel = "核心货币与代币";
       }
 
       // Generate sources
@@ -227,6 +298,9 @@ export class StarRailMaterialExtractor {
           sourceCommit: this.sourceRef,
           itemMainType: mainType,
           itemSubType: subType,
+          primaryCategory,
+          subcategory,
+          subcategoryLabel,
         },
       });
     }

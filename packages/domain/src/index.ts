@@ -296,11 +296,24 @@ export type QuestRecordPayload = {
   };
   storyProjection?: {
     schemaVersion: number;
+    /** Region containing the directory entry; may differ from taskRegionId for a cross-region family. */
     regionId?: string;
     regionTitle?: string;
     regionOrder?: number;
-    familyId: string;
-    familyTitle: string;
+    taskRegionId?: string;
+    taskRegionSource?:
+      | "chapter_city"
+      | "reputation"
+      | "talk_perform_cfg"
+      | "curated_override"
+      | "chapter_title"
+      | "inherited"
+      | "unresolved";
+    taskRegionReason?: string;
+    taskRegionEvidence?: string[];
+    taskRegionConflicts?: string[];
+    familyId?: string;
+    familyTitle?: string;
     displayTitle?: string;
     familyOrder?: number;
     subseriesId?: string;
@@ -779,6 +792,7 @@ export type GenshinStructuredListOptions = {
   revisionId: Id;
   query?: string;
   category?: string;
+  subcategory?: string;
   limit: number;
   offset?: number;
 };
@@ -1067,6 +1081,21 @@ export type QuestDialoguePage = {
   regionId?: string | null;
   chapter?: string | null;
   series?: string | null;
+  storyPlacement?: {
+    catalogRegionId?: string;
+    catalogRegionTitle?: string;
+    taskRegionId?: string;
+    familyId?: string;
+    familyTitle?: string;
+    familyProvenance?: "upstream" | "derived" | "curated" | "fallback";
+    subseriesId?: string;
+    subseriesTitle?: string;
+    chapterId?: string;
+    chapterTitle?: string;
+    storyOrder?: number;
+    qualityCode?: string;
+    bodyAvailability?: "dialogue" | "document" | "objective_only" | "none";
+  };
   narrative?: {
     mode: NarrativeMode;
     dialogueNodes: Array<QuestDialogueNodePayload & { segmentId?: Id | null }>;
@@ -2036,7 +2065,7 @@ export class GameDomainService {
   async listMaterials(
     gameId: Id,
     revisionId?: Id,
-    options: { query?: string; category?: string; limit?: number; offset?: number } = {},
+    options: { query?: string; category?: string; subcategory?: string; limit?: number; offset?: number } = {},
   ): Promise<import("@gip/contracts").CodexMaterial[]> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
@@ -2044,7 +2073,8 @@ export class GameDomainService {
     return adapter.listMaterials(revision, {
       query: options.query,
       category: options.category,
-      limit: Math.min(Math.max(options.limit ?? 20, 1), 200),
+      subcategory: options.subcategory,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 2000),
       offset: options.offset ?? 0,
     });
   }
@@ -2052,14 +2082,24 @@ export class GameDomainService {
   async countMaterials(
     gameId: Id,
     revisionId?: Id,
-    options: { query?: string; category?: string } = {},
+    options: { query?: string; category?: string; subcategory?: string } = {},
   ): Promise<number> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    if (this.repository.genshin.countMaterials) {
+      return this.repository.genshin.countMaterials({
+        revisionId: revision,
+        query: options.query,
+        category: options.category,
+        subcategory: options.subcategory,
+        limit: 1,
+      });
+    }
     const adapter = await this.getArchiveAdapter(gameId);
     const materials = await adapter.listMaterials(revision, {
       query: options.query,
       category: options.category,
+      subcategory: options.subcategory,
       limit: 5000,
     });
     return materials.length;
@@ -2072,6 +2112,9 @@ export class GameDomainService {
   ): Promise<import("@gip/contracts").CodexMaterialCategoryAggregation[]> {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
+    if (this.repository.genshin.aggregateMaterialCategories) {
+      return this.repository.genshin.aggregateMaterialCategories(revision, query);
+    }
     const adapter = await this.getArchiveAdapter(gameId);
     const materials = await adapter.listMaterials(revision, { query, limit: 5000 });
     const counts = new Map<string, { label: string; count: number }>();
@@ -2154,14 +2197,15 @@ export class GameDomainService {
   async listArtifactSets(
     gameId: Id,
     revisionId?: Id,
-    options: { query?: string; limit?: number; offset?: number } = {},
+    options: { query?: string; category?: string; limit?: number; offset?: number } = {},
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     const adapter = await this.getArchiveAdapter(gameId);
     return adapter.listArtifactSets(revision, {
       query: options.query,
-      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      category: options.category,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 2000),
       offset: options.offset ?? 0,
     });
   }
@@ -2179,14 +2223,15 @@ export class GameDomainService {
   async listAchievements(
     gameId: Id,
     revisionId?: Id,
-    options: { query?: string; limit?: number; offset?: number } = {},
+    options: { query?: string; category?: string; limit?: number; offset?: number } = {},
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     const adapter = await this.getArchiveAdapter(gameId);
     return adapter.listAchievements(revision, {
       query: options.query,
-      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      category: options.category,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 2000),
       offset: options.offset ?? 0,
     });
   }
@@ -2204,14 +2249,15 @@ export class GameDomainService {
   async listEnemies(
     gameId: Id,
     revisionId?: Id,
-    options: { query?: string; limit?: number; offset?: number } = {},
+    options: { query?: string; category?: string; limit?: number; offset?: number } = {},
   ) {
     await this.requireCapability(gameId, "entity_search");
     const revision = revisionId ?? (await this.requirePublicRevision(gameId));
     const adapter = await this.getArchiveAdapter(gameId);
     return adapter.listEnemies(revision, {
       query: options.query,
-      limit: Math.min(Math.max(options.limit ?? 20, 1), 100),
+      category: options.category,
+      limit: Math.min(Math.max(options.limit ?? 20, 1), 2000),
       offset: options.offset ?? 0,
     });
   }

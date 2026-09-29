@@ -153,7 +153,7 @@ async function main(): Promise<void> {
   for (const name of codexFiles) {
     const value = JSON.parse(await readFile(join(codexDirectory, name), "utf8")) as JsonValue;
     if (!isObject(value)) continue;
-    const id = idKey(value.IMJHJGBNMMD ?? value.mainQuestId ?? value.mainId ?? value.id);
+    const id = idKey(value.MFANMBMKKLC ?? value.IMJHJGBNMMD ?? value.mainQuestId ?? value.mainId ?? value.id);
     if (id) codexMainIds.add(id);
   }
 

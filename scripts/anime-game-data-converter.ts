@@ -763,10 +763,18 @@ function inputHashes(
 function readablePathFromLocalization(
   localization: JsonObject,
 ): { path: string; field: string } | undefined {
-  // These are the exact CHS fields emitted by AnimeGameData.  Do not scan all
-  // values or infer a book from a filename: that would turn a provenance edge
-  // into a fuzzy match.
-  const fields = ["chsPath", "DHHBMABKMMN", "HKLGNINJMGG", "DEFNEHAFMMA", "JDNBKKPEFAI"];
+  // These are the exact CHS fields emitted by AnimeGameData across game versions.
+  // Do not scan all values or infer a book from a filename: that would turn a
+  // provenance edge into a fuzzy match.
+  const fields = [
+    "chsPath",
+    "MBOPLLJEHCJ",
+    "FCNGPFLCLFA",
+    "DHHBMABKMMN",
+    "HKLGNINJMGG",
+    "DEFNEHAFMMA",
+    "JDNBKKPEFAI",
+  ];
   for (const field of fields) {
     const candidate = stringValue(localization[field]);
     if (!candidate) continue;

@@ -724,6 +724,62 @@ export const documentSegments = knowledge.table(
   ],
 );
 
+export const questContentObjects = knowledge.table("quest_content_objects", {
+  contentHash: text("content_hash").primaryKey(),
+  semanticsVersion: integer("semantics_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const questContentSegments = knowledge.table(
+  "quest_content_segments",
+  {
+    id: uuid("id").notNull(),
+    contentHash: text("content_hash")
+      .notNull()
+      .references(() => questContentObjects.contentHash, { onDelete: "cascade" }),
+    segmentKey: text("segment_key").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    headingPath: jsonb("heading_path").$type<string[]>().notNull().default([]),
+    headingKey: text("heading_key"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    body: text("body").notNull(),
+    startOffset: integer("start_offset").notNull(),
+    endOffset: integer("end_offset").notNull(),
+    tokenEstimate: integer("token_estimate").notNull().default(0),
+    bodyContentHash: text("body_content_hash").notNull(),
+    searchText: text("search_text").notNull(),
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('simple'::regconfig, coalesce(search_text, '') || ' ' || coalesce(body, ''))`,
+    ),
+  },
+  (table) => [
+    primaryKey({ columns: [table.contentHash, table.segmentKey] }),
+    uniqueIndex("quest_content_segments_id_unique").on(table.id),
+    uniqueIndex("quest_content_segments_ordinal_unique").on(table.contentHash, table.ordinal),
+    index("quest_content_segments_search_text_index").on(table.searchText),
+    index("quest_content_segments_body_trgm_index").using("gin", table.body.op("gin_trgm_ops")),
+  ],
+);
+
+export const revisionQuestContentBindings = knowledge.table(
+  "revision_quest_content_bindings",
+  {
+    revisionId: uuid("revision_id")
+      .notNull()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    contentHash: text("content_hash")
+      .notNull()
+      .references(() => questContentObjects.contentHash),
+  },
+  (table) => [
+    primaryKey({ columns: [table.revisionId, table.documentId] }),
+    index("revision_quest_content_bindings_content_index").on(table.revisionId, table.contentHash),
+  ],
+);
+
 export const textBindings = knowledge.table(
   "text_bindings",
   {
@@ -740,6 +796,9 @@ export const textBindings = knowledge.table(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     segmentId: uuid("segment_id").references(() => documentSegments.id, { onDelete: "cascade" }),
+    contentSegmentId: uuid("content_segment_id").references(() => questContentSegments.id, {
+      onDelete: "cascade",
+    }),
     bindingType: text("binding_type").$type<TextBindingType>().notNull(),
     confidence: numeric("confidence", { mode: "number" }),
     bindingSource: text("binding_source").$type<TextBindingSource>().notNull(),
@@ -900,6 +959,125 @@ export const questDialogueEdges = knowledge.table(
       table.fromNodeKey,
     ),
   ],
+);
+
+export const questContentSubquests = knowledge.table(
+  "quest_content_subquests",
+  {
+    contentHash: text("content_hash")
+      .notNull()
+      .references(() => questContentObjects.contentHash, { onDelete: "cascade" }),
+    subquestKey: text("subquest_key").notNull(),
+    subquestId: text("subquest_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    title: text("title").notNull(),
+    objective: text("objective"),
+    completeness: text("completeness").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    primaryKey({ columns: [table.contentHash, table.subquestKey] }),
+    index("quest_content_subquests_order_index").on(table.contentHash, table.ordinal),
+  ],
+);
+
+export const questContentDialogueNodes = knowledge.table(
+  "quest_content_dialogue_nodes",
+  {
+    contentHash: text("content_hash")
+      .notNull()
+      .references(() => questContentObjects.contentHash, { onDelete: "cascade" }),
+    questKey: text("quest_key").notNull(),
+    subquestKey: text("subquest_key"),
+    nodeKey: text("node_key").notNull(),
+    nodeId: text("node_id").notNull(),
+    nodeType: text("node_type").notNull(),
+    speakerKey: text("speaker_key"),
+    speakerName: text("speaker_name"),
+    body: text("body").notNull(),
+    segmentId: uuid("segment_id").references(() => questContentSegments.id, {
+      onDelete: "set null",
+    }),
+    ordinal: integer("ordinal").notNull(),
+    variants: jsonb("variants").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('simple'::regconfig, coalesce(quest_key, '') || ' ' || coalesce(subquest_key, '') || ' ' || coalesce(speaker_name, '') || ' ' || coalesce(body, ''))`,
+    ),
+  },
+  (table) => [
+    primaryKey({ columns: [table.contentHash, table.nodeKey] }),
+    index("quest_content_dialogue_nodes_order_index").on(table.contentHash, table.ordinal),
+    index("quest_content_dialogue_nodes_subquest_order_index").on(
+      table.contentHash,
+      table.subquestKey,
+      table.ordinal,
+    ),
+    index("quest_content_dialogue_nodes_speaker_index").on(table.contentHash, table.speakerKey),
+    index("quest_content_dialogue_nodes_body_trgm_index").using(
+      "gin",
+      table.body.op("gin_trgm_ops"),
+    ),
+  ],
+);
+
+export const questContentDialogueEdges = knowledge.table(
+  "quest_content_dialogue_edges",
+  {
+    contentHash: text("content_hash")
+      .notNull()
+      .references(() => questContentObjects.contentHash, { onDelete: "cascade" }),
+    edgeKey: text("edge_key").notNull(),
+    fromNodeKey: text("from_node_key").notNull(),
+    toNodeKey: text("to_node_key").notNull(),
+    edgeType: text("edge_type").notNull(),
+    optionText: text("option_text"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    primaryKey({ columns: [table.contentHash, table.edgeKey] }),
+    index("quest_content_dialogue_edges_from_index").on(table.contentHash, table.fromNodeKey),
+  ],
+);
+
+export const questContentMentions = knowledge.table(
+  "quest_content_mentions",
+  {
+    contentSegmentId: uuid("content_segment_id")
+      .notNull()
+      .references(() => questContentSegments.id, { onDelete: "cascade" }),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    rawText: text("raw_text").notNull(),
+    startOffset: integer("start_offset").notNull(),
+    endOffset: integer("end_offset").notNull(),
+    matchMethod: text("match_method").notNull(),
+    confidence: real("confidence").notNull().default(1),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.contentSegmentId, table.entityId, table.startOffset, table.endOffset],
+    }),
+    index("quest_content_mentions_entity_index").on(table.entityId),
+  ],
+);
+
+export const questContentBackfillCheckpoints = knowledge.table(
+  "quest_content_backfill_checkpoints",
+  {
+    revisionId: uuid("revision_id")
+      .primaryKey()
+      .references(() => datasetRevisions.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"),
+    lastDocumentId: uuid("last_document_id"),
+    documentsProcessed: integer("documents_processed").notNull().default(0),
+    documentsBound: integer("documents_bound").notNull().default(0),
+    contentObjectsCreated: integer("content_objects_created").notNull().default(0),
+    updatedTextBindings: integer("updated_text_bindings").notNull().default(0),
+    counts: jsonb("counts").$type<Record<string, number>>().notNull().default({}),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
 );
 
 export const entityMentions = knowledge.table(

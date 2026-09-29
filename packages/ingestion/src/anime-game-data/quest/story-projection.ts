@@ -10,8 +10,8 @@ export type StoryProjectionInput = StoryProjectionQuest & {
   regionId: string;
   regionTitle: string;
   regionOrder?: number;
-  familyId: string;
-  familyTitle: string;
+  familyId?: string;
+  familyTitle?: string;
   familyOrder?: number;
   familyProvenance?: "upstream" | "derived" | "curated" | "fallback";
   subseriesId?: string;
@@ -35,20 +35,37 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
       title: row.regionTitle,
       order: row.regionOrder ?? 0,
       families: [],
+      quests: [],
+      collections: [],
     };
-    let family = region.families.find((item) => item.id === row.familyId);
-    if (!family) {
-      family = {
-        id: row.familyId,
-        title: row.familyTitle,
-        order: row.familyOrder ?? 0,
-        provenance: row.familyProvenance ?? "derived",
-        subseries: [],
-        chapters: [],
-        quests: [],
-        collections: [],
-      } satisfies StoryProjectionFamily;
-      region.families.push(family);
+    let family: StoryProjectionFamily | undefined;
+    if (row.familyId || row.familyTitle) {
+      family = region.families.find(
+        (item) =>
+          (row.familyId && item.id === row.familyId) ||
+          (Boolean(row.familyTitle) && item.title === row.familyTitle),
+      );
+      if (!family && (row.familyId || row.familyTitle)) {
+        const familyId = row.familyId ?? row.familyTitle!;
+        family = {
+          id: familyId,
+          title: row.familyTitle ?? familyId,
+          order: row.familyOrder ?? 0,
+          provenance: row.familyProvenance ?? "derived",
+          subseries: [],
+          chapters: [],
+          quests: [],
+          collections: [],
+        } satisfies StoryProjectionFamily;
+        region.families.push(family);
+      } else if (family) {
+        if (typeof row.familyOrder === "number") {
+          family.order = Math.min(family.order, row.familyOrder);
+        }
+        if (row.familyProvenance === "curated" || family.provenance === "fallback") {
+          family.provenance = row.familyProvenance ?? family.provenance;
+        }
+      }
     }
     const { subseriesId, subseriesTitle, subseriesOrder, chapterId, chapterTitle, chapterOrder } =
       row;
@@ -71,50 +88,85 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
       delete entryObject[key];
     const entry = entryObject as StoryProjectionQuest;
     const entryType = row.entryType ?? "quest";
+
+    const appendUnique = (list: StoryProjectionQuest[], item: StoryProjectionQuest): void => {
+      const existingIndex = list.findIndex((q) => q.questId === item.questId);
+      if (existingIndex >= 0) {
+        list[existingIndex] = { ...list[existingIndex], ...item };
+      } else {
+        list.push(item);
+      }
+    };
+
+    if (!family) {
+      if (entryType === "collection" || entryType === "aggregate") {
+        region.collections ??= [];
+        appendUnique(region.collections, entry);
+      } else {
+        region.quests ??= [];
+        appendUnique(region.quests, entry);
+      }
+      regions.set(region.id, region);
+      continue;
+    }
     let container: StoryProjectionFamily | StoryProjectionSubSeries = family;
-    if (subseriesId) {
+    if (subseriesId || subseriesTitle) {
       family.subseries ??= [];
-      let subseries = family.subseries.find((item) => item.id === subseriesId);
-      if (!subseries) {
+      let subseries = family.subseries.find(
+        (item) =>
+          (subseriesId && item.id === subseriesId) ||
+          (Boolean(subseriesTitle) && item.title === subseriesTitle),
+      );
+      if (!subseries && (subseriesId || subseriesTitle)) {
+        const sid = subseriesId ?? subseriesTitle!;
         subseries = {
-          id: subseriesId,
-          title: subseriesTitle ?? subseriesId,
+          id: sid,
+          title: subseriesTitle ?? sid,
           order: subseriesOrder ?? 0,
           chapters: [],
           quests: [],
           collections: [],
         };
         family.subseries.push(subseries);
+      } else if (subseries && typeof subseriesOrder === "number") {
+        subseries.order = Math.min(subseries.order, subseriesOrder);
       }
-      container = subseries;
+      if (subseries) container = subseries;
     }
     let chapter: StoryProjectionChapter | undefined;
-    if (chapterId) {
-      chapter = container.chapters.find((item) => item.id === chapterId);
-      if (!chapter) {
+    if (chapterId || chapterTitle) {
+      chapter = container.chapters.find(
+        (item) =>
+          (chapterId && item.id === chapterId) ||
+          (Boolean(chapterTitle) && item.title === chapterTitle),
+      );
+      if (!chapter && (chapterId || chapterTitle)) {
+        const cid = chapterId ?? chapterTitle!;
         chapter = {
-          id: chapterId,
-          title: chapterTitle ?? chapterId,
+          id: cid,
+          title: chapterTitle ?? cid,
           order: chapterOrder ?? 0,
           quests: [],
           collections: [],
         };
         container.chapters.push(chapter);
+      } else if (chapter && typeof chapterOrder === "number") {
+        chapter.order = Math.min(chapter.order, chapterOrder);
       }
     }
     if (entryType === "collection" || entryType === "aggregate") {
       if (chapter) {
         chapter.collections ??= [];
-        chapter.collections.push(entry);
+        appendUnique(chapter.collections, entry);
       } else {
         container.collections ??= [];
-        container.collections.push(entry);
+        appendUnique(container.collections, entry);
       }
     } else if (chapter) {
-      chapter.quests.push(entry);
+      appendUnique(chapter.quests, entry);
     } else {
       container.quests ??= [];
-      container.quests.push(entry);
+      appendUnique(container.quests, entry);
     }
     regions.set(row.regionId, region);
   }
@@ -124,6 +176,8 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
         left.order - right.order || JSON.stringify(left).localeCompare(JSON.stringify(right)),
     );
   for (const region of regions.values()) {
+    byOrder(region.quests ?? []);
+    byOrder(region.collections ?? []);
     for (const family of region.families) {
       for (const chapter of family.chapters) {
         byOrder(chapter.quests);

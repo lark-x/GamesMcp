@@ -14,6 +14,7 @@ import {
 } from "@gip/contracts";
 import {
   convertStructuredAnimeGameData,
+  resolveMaterialClassification,
   writeStructuredConversionResult,
 } from "./anime-game-data-structured-converter.js";
 
@@ -308,5 +309,133 @@ describe("AnimeGameData structured converter", () => {
     await expect(readFile(join(outputRoot, "records", "voices.json"), "utf8")).resolves.toContain(
       "genshin:voice:10001/1501",
     );
+  });
+
+  it("classifies materials into authoritative categories and subcategories", () => {
+    // 1. GCG
+    expect(
+      resolveMaterialClassification({ materialType: "MATERIAL_GCG_CARD_FACE" }, {}),
+    ).toEqual({
+      category: "gcg",
+      categoryLabel: "七圣召唤",
+      subcategory: "card_face",
+      subcategoryLabel: "影幻牌面",
+    });
+
+    expect(
+      resolveMaterialClassification(
+        { materialType: "MATERIAL_GCG_CARD", typeDescTextMapHash: "1" },
+        { "1": "角色牌" },
+      ),
+    ).toEqual({
+      category: "gcg",
+      categoryLabel: "七圣召唤",
+      subcategory: "card_char",
+      subcategoryLabel: "角色牌",
+    });
+
+    expect(
+      resolveMaterialClassification(
+        { materialType: "MATERIAL_GCG_CARD", typeDescTextMapHash: "1" },
+        { "1": "行动牌" },
+      ),
+    ).toEqual({
+      category: "gcg",
+      categoryLabel: "七圣召唤",
+      subcategory: "card_action",
+      subcategoryLabel: "行动牌",
+    });
+
+    // 2. Furnishing
+    expect(
+      resolveMaterialClassification({ materialType: "MATERIAL_FURNITURE_SUITE_FORMULA" }, {}),
+    ).toEqual({
+      category: "furnishing",
+      categoryLabel: "尘歌壶图纸",
+      subcategory: "suite_formula",
+      subcategoryLabel: "套装图纸",
+    });
+
+    expect(
+      resolveMaterialClassification({ materialType: "MATERIAL_HOME_SEED" }, {}),
+    ).toEqual({
+      category: "furnishing",
+      categoryLabel: "尘歌壶图纸",
+      subcategory: "seed",
+      subcategoryLabel: "种植种子",
+    });
+
+    // 3. Specialties via map and fallback
+    const specialtyMap = new Map([
+      [100021, { region: "mondstadt", label: "蒙德特产" }],
+      [100022, { region: "liyue", label: "璃月特产" }],
+    ]);
+    expect(
+      resolveMaterialClassification({ id: 100021 }, {}, specialtyMap),
+    ).toEqual({
+      category: "local_specialty",
+      categoryLabel: "区域特产",
+      subcategory: "mondstadt",
+      subcategoryLabel: "蒙德特产",
+    });
+
+    expect(
+      resolveMaterialClassification(
+        { id: 999999, typeDescTextMapHash: "1" },
+        { "1": "稻妻区域特产" },
+        specialtyMap,
+      ),
+    ).toEqual({
+      category: "local_specialty",
+      categoryLabel: "区域特产",
+      subcategory: "inazuma",
+      subcategoryLabel: "稻妻特产",
+    });
+
+    // 4. Weapon Development
+    expect(
+      resolveMaterialClassification(
+        { typeDescTextMapHash: "1" },
+        { "1": "武器突破素材" },
+      ),
+    ).toEqual({
+      category: "weapon_development",
+      categoryLabel: "武器突破素材",
+      subcategory: "weapon_ascension",
+      subcategoryLabel: "武器突破素材",
+    });
+
+    // 5. Character Development
+    expect(
+      resolveMaterialClassification(
+        { materialType: "MATERIAL_AVATAR_TALENT_MATERIAL", typeDescTextMapHash: "1" },
+        { "1": "角色天赋素材" },
+      ),
+    ).toEqual({
+      category: "character_development",
+      categoryLabel: "角色培养素材",
+      subcategory: "talent",
+      subcategoryLabel: "天赋培养素材",
+    });
+
+    // 6. Food & Cooking
+    expect(
+      resolveMaterialClassification({ materialType: "MATERIAL_FOOD" }, {}),
+    ).toEqual({
+      category: "cooking",
+      categoryLabel: "食物与药剂",
+      subcategory: "food",
+      subcategoryLabel: "料理",
+    });
+
+    // 7. Materials & Gathering
+    expect(
+      resolveMaterialClassification({ materialType: "MATERIAL_WOOD" }, {}),
+    ).toEqual({
+      category: "material",
+      categoryLabel: "自然采集与材料",
+      subcategory: "wood",
+      subcategoryLabel: "木材素材",
+    });
   });
 });

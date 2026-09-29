@@ -69,7 +69,10 @@ export async function runHttp(): Promise<void> {
         onsessioninitialized: (sessionId) => hooks.initialized(sessionId),
       });
       transport.onclose = () => hooks.closed();
-      const server = createMcpServer(runtime.repository, { providers: runtime.providers });
+      const server = createMcpServer(runtime.repository, {
+        providers: runtime.providers,
+        telemetry: runtime.telemetry,
+      });
       await server.connect(transport);
       return { transport, server };
     },
@@ -131,86 +134,132 @@ async function handleRequest(
     await handleReady(res, runtime);
     return;
   }
+  if (url.pathname === "/metrics" || url.pathname === "/diagnostics") {
+    sendJson(res, 200, runtime.telemetry.getMetricsJson());
+    return;
+  }
   if (url.pathname !== mcpConfig.path) {
     sendJson(res, 404, { error: { code: "not_found", message: "Unknown endpoint" } });
     return;
   }
+
+  const clientIp =
+    (typeof req.headers["x-forwarded-for"] === "string"
+      ? req.headers["x-forwarded-for"].split(",")[0]?.trim()
+      : undefined) ||
+    req.socket.remoteAddress ||
+    "unknown";
+
   if (!verifyMcpAuth(req, mcpConfig)) {
     // Never log or echo the Authorization header value.
+    console.error(`[mcp:http:auth] 401 Unauthorized | ip: ${clientIp} | missing or invalid token`);
     sendJson(res, 401, jsonRpcError(null, -32001, "Unauthorized"));
     return;
   }
 
   const sessionId = req.headers[SESSION_HEADER];
   const sessionKey = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+  const shortSession = sessionKey ? `${sessionKey.slice(0, 8)}...` : "none";
 
-  if (req.method === "POST") {
-    let body: unknown;
-    try {
-      body = await readJsonBody(req);
-    } catch {
-      sendJson(res, 400, jsonRpcError(null, -32700, "Invalid JSON body"));
-      return;
-    }
-    const method = isRecord(body) && typeof body.method === "string" ? body.method : undefined;
+  const explicitTaskId =
+    (typeof req.headers["x-task-id"] === "string"
+      ? req.headers["x-task-id"]
+      : typeof req.headers["x-request-id"] === "string"
+      ? req.headers["x-request-id"]
+      : undefined);
 
-    if (!sessionKey) {
-      if (method !== "initialize") {
-        sendJson(res, 400, jsonRpcError(null, -32600, "Missing Mcp-Session-Id header"));
+  return runtime.telemetry.runWithContext(
+    { sessionId: sessionKey, clientIp, explicitTaskId },
+    async () => {
+      const reqStartMs = performance.now();
+      res.once("finish", () => {
+        const httpDuration = (performance.now() - reqStartMs).toFixed(1);
+        console.error(
+          `[mcp:http:res] ${res.statusCode} | ${httpDuration}ms | ip: ${clientIp} | session: ${shortSession}`,
+        );
+      });
+
+      if (req.method === "POST") {
+        let body: unknown;
+        try {
+          body = await readJsonBody(req);
+        } catch {
+          sendJson(res, 400, jsonRpcError(null, -32700, "Invalid JSON body"));
+          return;
+        }
+        const method = isRecord(body) && typeof body.method === "string" ? body.method : undefined;
+        const bodyParams = isRecord(body) && isRecord(body.params) ? body.params : undefined;
+        const toolName =
+          method === "tools/call" && bodyParams && typeof bodyParams.name === "string"
+            ? (bodyParams.name as string)
+            : undefined;
+
+        console.error(
+          `[mcp:http:req] POST ${mcpConfig.path} | ip: ${clientIp} | session: ${shortSession} | method: ${
+            method ?? "unknown"
+          }${toolName ? ` (${toolName})` : ""}`,
+        );
+
+        if (!sessionKey) {
+          if (method !== "initialize") {
+            sendJson(res, 400, jsonRpcError(null, -32600, "Missing Mcp-Session-Id header"));
+            return;
+          }
+          if (!sessions.hasCapacity()) {
+            sendJson(res, 503, jsonRpcError(null, -32002, "mcp_session_limit_reached"));
+            return;
+          }
+          const pair = await sessions.createSessionPair();
+          await pair.transport.handleRequest(req, res, body);
+          return;
+        }
+
+        const session = sessions.get(sessionKey);
+        if (!session) {
+          sendJson(res, 404, jsonRpcError(null, -32001, "Session not found"));
+          return;
+        }
+        await session.transport.handleRequest(req, res, body);
         return;
       }
-      if (!sessions.hasCapacity()) {
-        sendJson(res, 503, jsonRpcError(null, -32002, "mcp_session_limit_reached"));
+
+      if (req.method === "GET") {
+        // GET opens the SSE channel for server-initiated messages and requires an
+        // existing session; without a session id it is a protocol error.
+        if (!sessionKey) {
+          sendJson(res, 400, jsonRpcError(null, -32600, "Missing Mcp-Session-Id header"));
+          return;
+        }
+        const session = sessions.get(sessionKey);
+        if (!session) {
+          sendJson(res, 404, jsonRpcError(null, -32001, "Session not found"));
+          return;
+        }
+        await session.transport.handleRequest(req, res);
         return;
       }
-      const pair = await sessions.createSessionPair();
-      await pair.transport.handleRequest(req, res, body);
-      return;
-    }
 
-    const session = sessions.get(sessionKey);
-    if (!session) {
-      sendJson(res, 404, jsonRpcError(null, -32001, "Session not found"));
-      return;
-    }
-    await session.transport.handleRequest(req, res, body);
-    return;
-  }
+      if (req.method === "DELETE") {
+        if (!sessionKey) {
+          sendJson(res, 400, jsonRpcError(null, -32600, "Missing Mcp-Session-Id header"));
+          return;
+        }
+        const session = sessions.get(sessionKey);
+        if (!session) {
+          sendJson(res, 404, jsonRpcError(null, -32001, "Session not found"));
+          return;
+        }
+        // The SDK transport answers the DELETE and closes itself (onclose fires);
+        // closeSession is idempotent and guarantees server teardown.
+        await session.transport.handleRequest(req, res);
+        await sessions.closeSession(sessionKey);
+        runtime.telemetry.finalizeSessionTask(sessionKey);
+        return;
+      }
 
-  if (req.method === "GET") {
-    // GET opens the SSE channel for server-initiated messages and requires an
-    // existing session; without a session id it is a protocol error.
-    if (!sessionKey) {
-      sendJson(res, 400, jsonRpcError(null, -32600, "Missing Mcp-Session-Id header"));
-      return;
-    }
-    const session = sessions.get(sessionKey);
-    if (!session) {
-      sendJson(res, 404, jsonRpcError(null, -32001, "Session not found"));
-      return;
-    }
-    await session.transport.handleRequest(req, res);
-    return;
-  }
-
-  if (req.method === "DELETE") {
-    if (!sessionKey) {
-      sendJson(res, 400, jsonRpcError(null, -32600, "Missing Mcp-Session-Id header"));
-      return;
-    }
-    const session = sessions.get(sessionKey);
-    if (!session) {
-      sendJson(res, 404, jsonRpcError(null, -32001, "Session not found"));
-      return;
-    }
-    // The SDK transport answers the DELETE and closes itself (onclose fires);
-    // closeSession is idempotent and guarantees server teardown.
-    await session.transport.handleRequest(req, res);
-    await sessions.closeSession(sessionKey);
-    return;
-  }
-
-  sendJson(res, 405, { error: { code: "method_not_allowed", message: "Method not allowed" } });
+      sendJson(res, 405, { error: { code: "method_not_allowed", message: "Method not allowed" } });
+    },
+  );
 }
 
 async function handleReady(res: ServerResponse, runtime: McpRuntime): Promise<void> {

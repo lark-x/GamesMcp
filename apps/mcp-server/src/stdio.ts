@@ -8,7 +8,10 @@ import { createMcpRuntime } from "./runtime.js";
  */
 export async function runStdio(): Promise<void> {
   const runtime = await createMcpRuntime();
-  const server = createMcpServer(runtime.repository, { providers: runtime.providers });
+  const server = createMcpServer(runtime.repository, {
+    providers: runtime.providers,
+    telemetry: runtime.telemetry,
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 

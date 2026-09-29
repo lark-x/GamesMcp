@@ -42,6 +42,11 @@ import {
   stableEntityId,
   stableUuid,
 } from "./repository-utils.js";
+import {
+  buildSharedQuestContentPack,
+  SHARED_QUEST_CONTENT_SEMANTICS_VERSION,
+  type SharedQuestContentPack,
+} from "./quest-content-sharing.js";
 import { materializeStructuredRecords } from "./repository-import-publication.js";
 
 type TextBindingInsert = typeof textBindings.$inferInsert;
@@ -67,8 +72,10 @@ async function insertJsonbRows(
   columns: readonly BulkColumn[],
   rows: unknown[],
   chunkSize: number,
-): Promise<void> {
-  if (!rows.length) return;
+  options: { onConflictDoNothing?: boolean; returning?: string } = {},
+): Promise<Array<Record<string, unknown>>> {
+  if (!rows.length) return [];
+  const returnedRows: Array<Record<string, unknown>> = [];
   const quotedTable = tableName
     .split(".")
     .map((part) => `"${part.replaceAll('"', '""')}"`)
@@ -82,13 +89,18 @@ async function insertJsonbRows(
       const source = row as Record<string, unknown>;
       return Object.fromEntries(columns.map((column) => [column.name, source[column.property]]));
     });
-    await tx.execute(sql`
+    const result = await tx.execute(sql`
       insert into ${sql.raw(quotedTable)} (${sql.raw(columnList)})
       select ${sql.raw(selectList)}
       from jsonb_to_recordset(${JSON.stringify(chunk)}::jsonb)
         as x(${sql.raw(definitions)})
+      ${options.onConflictDoNothing ? sql.raw("on conflict do nothing") : sql``}
+      ${options.returning ? sql.raw(`returning ${options.returning}`) : sql``}
     `);
+    const rowsResult = (result as { rows?: Array<Record<string, unknown>> }).rows;
+    if (rowsResult) returnedRows.push(...rowsResult);
   }
+  return returnedRows;
 }
 
 const DOCUMENT_BULK_COLUMNS: BulkColumn[] = [
@@ -183,10 +195,85 @@ const TEXT_BINDING_BULK_COLUMNS: BulkColumn[] = [
   { property: "entityStableId", name: "entity_stable_id", pgType: "text" },
   { property: "documentId", name: "document_id", pgType: "uuid" },
   { property: "segmentId", name: "segment_id", pgType: "uuid" },
+  { property: "contentSegmentId", name: "content_segment_id", pgType: "uuid" },
   { property: "bindingType", name: "binding_type", pgType: "text" },
   { property: "confidence", name: "confidence", pgType: "numeric" },
   { property: "bindingSource", name: "binding_source", pgType: "text" },
   { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const CONTENT_OBJECT_BULK_COLUMNS: BulkColumn[] = [
+  { property: "contentHash", name: "content_hash", pgType: "text" },
+  { property: "semanticsVersion", name: "semantics_version", pgType: "integer" },
+];
+
+const CONTENT_SEGMENT_BULK_COLUMNS: BulkColumn[] = [
+  { property: "id", name: "id", pgType: "uuid" },
+  { property: "contentHash", name: "content_hash", pgType: "text" },
+  { property: "segmentKey", name: "segment_key", pgType: "text" },
+  { property: "ordinal", name: "ordinal", pgType: "integer" },
+  { property: "headingPath", name: "heading_path", pgType: "jsonb" },
+  { property: "headingKey", name: "heading_key", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+  { property: "body", name: "body", pgType: "text" },
+  { property: "startOffset", name: "start_offset", pgType: "integer" },
+  { property: "endOffset", name: "end_offset", pgType: "integer" },
+  { property: "tokenEstimate", name: "token_estimate", pgType: "integer" },
+  { property: "bodyContentHash", name: "body_content_hash", pgType: "text" },
+  { property: "searchText", name: "search_text", pgType: "text" },
+];
+
+const CONTENT_SUBQUEST_BULK_COLUMNS: BulkColumn[] = [
+  { property: "contentHash", name: "content_hash", pgType: "text" },
+  { property: "subquestKey", name: "subquest_key", pgType: "text" },
+  { property: "subquestId", name: "subquest_id", pgType: "text" },
+  { property: "ordinal", name: "ordinal", pgType: "integer" },
+  { property: "title", name: "title", pgType: "text" },
+  { property: "objective", name: "objective", pgType: "text" },
+  { property: "completeness", name: "completeness", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const CONTENT_NODE_BULK_COLUMNS: BulkColumn[] = [
+  { property: "contentHash", name: "content_hash", pgType: "text" },
+  { property: "questKey", name: "quest_key", pgType: "text" },
+  { property: "subquestKey", name: "subquest_key", pgType: "text" },
+  { property: "nodeKey", name: "node_key", pgType: "text" },
+  { property: "nodeId", name: "node_id", pgType: "text" },
+  { property: "nodeType", name: "node_type", pgType: "text" },
+  { property: "speakerKey", name: "speaker_key", pgType: "text" },
+  { property: "speakerName", name: "speaker_name", pgType: "text" },
+  { property: "body", name: "body", pgType: "text" },
+  { property: "segmentId", name: "segment_id", pgType: "uuid" },
+  { property: "ordinal", name: "ordinal", pgType: "integer" },
+  { property: "variants", name: "variants", pgType: "jsonb" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const CONTENT_EDGE_BULK_COLUMNS: BulkColumn[] = [
+  { property: "contentHash", name: "content_hash", pgType: "text" },
+  { property: "edgeKey", name: "edge_key", pgType: "text" },
+  { property: "fromNodeKey", name: "from_node_key", pgType: "text" },
+  { property: "toNodeKey", name: "to_node_key", pgType: "text" },
+  { property: "edgeType", name: "edge_type", pgType: "text" },
+  { property: "optionText", name: "option_text", pgType: "text" },
+  { property: "metadata", name: "metadata", pgType: "jsonb" },
+];
+
+const CONTENT_MENTION_BULK_COLUMNS: BulkColumn[] = [
+  { property: "contentSegmentId", name: "content_segment_id", pgType: "uuid" },
+  { property: "entityId", name: "entity_id", pgType: "uuid" },
+  { property: "rawText", name: "raw_text", pgType: "text" },
+  { property: "startOffset", name: "start_offset", pgType: "integer" },
+  { property: "endOffset", name: "end_offset", pgType: "integer" },
+  { property: "matchMethod", name: "match_method", pgType: "text" },
+  { property: "confidence", name: "confidence", pgType: "real" },
+];
+
+const CONTENT_BINDING_BULK_COLUMNS: BulkColumn[] = [
+  { property: "revisionId", name: "revision_id", pgType: "uuid" },
+  { property: "documentId", name: "document_id", pgType: "uuid" },
+  { property: "contentHash", name: "content_hash", pgType: "text" },
 ];
 
 function directBindingTypeForDocument(
@@ -413,6 +500,26 @@ export async function materializeRevision(
     const dialogueNodeRows: Array<typeof questDialogueNodes.$inferInsert> = [];
     const dialogueEdgeRows: Array<typeof questDialogueEdges.$inferInsert> = [];
     const textBindingRows: TextBindingInsert[] = [];
+    const sharedContentPacks = new Map<string, SharedQuestContentPack>();
+    const sharedContentBindingRows: Array<{
+      revisionId: string;
+      documentId: string;
+      contentHash: string;
+    }> = [];
+    const expectedSharedQuestContent = {
+      documents: 0,
+      segments: 0,
+      subquests: 0,
+      nodes: 0,
+      edges: 0,
+    };
+    const claimEvidenceSourceKeys = new Set(
+      records.flatMap((record) =>
+        (record.claims ?? []).flatMap((claim) =>
+          (claim.evidence ?? []).map((item) => item.documentSourceKey),
+        ),
+      ),
+    );
     const addTextBinding = (input: Omit<TextBindingInsert, "id" | "gameId" | "revisionId">) => {
       textBindingRows.push({
         id: stableUuid(
@@ -422,6 +529,7 @@ export async function materializeRevision(
             input.entityStableId,
             input.documentId,
             input.segmentId ?? "",
+            input.contentSegmentId ?? "",
             input.bindingType,
             input.bindingSource,
           ].join(":"),
@@ -430,6 +538,106 @@ export async function materializeRevision(
         revisionId,
         ...input,
       });
+    };
+    const flushSharedQuestContent = async (): Promise<void> => {
+      const packs = [...sharedContentPacks.values()];
+      sharedContentPacks.clear();
+      if (packs.length) {
+        const insertedObjects = await insertJsonbRows(
+          tx,
+          "knowledge.quest_content_objects",
+          CONTENT_OBJECT_BULK_COLUMNS,
+          packs.map((pack) => ({
+            contentHash: pack.contentHash,
+            semanticsVersion: SHARED_QUEST_CONTENT_SEMANTICS_VERSION,
+          })),
+          2_000,
+          { onConflictDoNothing: true, returning: '"content_hash"' },
+        );
+        const insertedHashes = new Set(
+          insertedObjects.map((row) => String(row.content_hash ?? "")),
+        );
+        const newPacks = packs.filter((pack) => insertedHashes.has(pack.contentHash));
+        const withContentHash = <T extends Record<string, unknown>>(
+          rows: T[],
+          contentHash: string,
+        ) => rows.map((row) => ({ ...row, contentHash }));
+        const segmentRows = newPacks.flatMap((pack) =>
+          withContentHash(pack.segments, pack.contentHash),
+        );
+        const subquestRows = newPacks.flatMap((pack) =>
+          withContentHash(pack.subquests, pack.contentHash),
+        );
+        const nodeRows = newPacks.flatMap((pack) =>
+          withContentHash(pack.dialogueNodes, pack.contentHash),
+        );
+        const edgeRows = newPacks.flatMap((pack) =>
+          withContentHash(pack.dialogueEdges, pack.contentHash),
+        );
+        const mentionRows = newPacks.flatMap((pack) =>
+          pack.mentions.flatMap((mention) => {
+            const entityId = entityIdBySourceKey.get(mention.entitySourceKey);
+            return entityId
+              ? [
+                  {
+                    contentSegmentId: mention.segmentId,
+                    entityId,
+                    rawText: mention.rawText,
+                    startOffset: mention.startOffset,
+                    endOffset: mention.endOffset,
+                    matchMethod: mention.matchMethod,
+                    confidence: mention.confidence,
+                  },
+                ]
+              : [];
+          }),
+        );
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_content_segments",
+          CONTENT_SEGMENT_BULK_COLUMNS,
+          segmentRows,
+          20_000,
+        );
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_content_subquests",
+          CONTENT_SUBQUEST_BULK_COLUMNS,
+          subquestRows,
+          20_000,
+        );
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_content_dialogue_nodes",
+          CONTENT_NODE_BULK_COLUMNS,
+          nodeRows,
+          20_000,
+        );
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_content_dialogue_edges",
+          CONTENT_EDGE_BULK_COLUMNS,
+          edgeRows,
+          20_000,
+        );
+        await insertJsonbRows(
+          tx,
+          "knowledge.quest_content_mentions",
+          CONTENT_MENTION_BULK_COLUMNS,
+          mentionRows,
+          20_000,
+        );
+      }
+      if (sharedContentBindingRows.length) {
+        const rows = sharedContentBindingRows.splice(0);
+        await insertJsonbRows(
+          tx,
+          "knowledge.revision_quest_content_bindings",
+          CONTENT_BINDING_BULK_COLUMNS,
+          rows,
+          20_000,
+        );
+      }
     };
     const flushDocumentRows = async (): Promise<void> => {
       // Keep the transaction bounded while avoiding the parameter-heavy SQL
@@ -478,6 +686,7 @@ export async function materializeRevision(
           20_000,
         );
       }
+      await flushSharedQuestContent();
     };
     for (const record of records) {
       if (record.recordType === "entity" || record.entityType) continue;
@@ -491,6 +700,10 @@ export async function materializeRevision(
           { sourceKey: record.sourceKey },
         );
       const body = record.body ?? record.title ?? "";
+      const sharedPack =
+        record.quest && !claimEvidenceSourceKeys.has(record.sourceKey)
+          ? buildSharedQuestContentPack(record, revision.gameId)
+          : null;
       const documentId = stableUuid(
         `${revision.gameId}:document:${record.sourceKey}:${revisionId}`,
       );
@@ -527,26 +740,29 @@ export async function materializeRevision(
       const segmentRefs: Array<{ id: string; body: string }> = [];
       const segmentIdByKey = new Map<string, string>();
       for (const [ordinal, segment] of recordSegments(record, body).entries()) {
-        const segmentId = stableUuid(`${documentId}:segment:${ordinal}:${record.contentHash}`);
+        const sharedSegment = sharedPack?.segments[ordinal];
+        const segmentId =
+          sharedSegment?.id ?? stableUuid(`${documentId}:segment:${ordinal}:${record.contentHash}`);
         if (segment.segmentKey) segmentIdByKey.set(segment.segmentKey, segmentId);
-        segmentRows.push({
-          id: segmentId,
-          documentId,
-          revisionId,
-          segmentKey: segment.segmentKey,
-          ordinal,
-          headingPath: segment.headingPath,
-          headingKey: headingKey(segment.headingPath),
-          metadata: segment.metadata,
-          body: segment.body,
-          startOffset: segment.start,
-          endOffset: segment.end,
-          tokenEstimate: Math.ceil(segment.body.length / 4),
-          contentHash: createHash("sha256").update(segment.body).digest("hex"),
-          searchText: segment.body,
-        });
+        if (!sharedPack)
+          segmentRows.push({
+            id: segmentId,
+            documentId,
+            revisionId,
+            segmentKey: segment.segmentKey,
+            ordinal,
+            headingPath: segment.headingPath,
+            headingKey: headingKey(segment.headingPath),
+            metadata: segment.metadata,
+            body: segment.body,
+            startOffset: segment.start,
+            endOffset: segment.end,
+            tokenEstimate: Math.ceil(segment.body.length / 4),
+            contentHash: createHash("sha256").update(segment.body).digest("hex"),
+            searchText: segment.body,
+          });
         segmentRefs.push({ id: segmentId, body: segment.body });
-        for (const candidateValue of recordMentionCandidates) {
+        for (const candidateValue of sharedPack ? [] : recordMentionCandidates) {
           const names = [
             candidateValue.name,
             ...(candidateValue.aliases ?? []).map((alias) => alias.value),
@@ -569,6 +785,7 @@ export async function materializeRevision(
             entityStableId: candidateValue.sourceKey,
             documentId,
             segmentId,
+            contentSegmentId: null,
             bindingType: "mention",
             bindingSource: matched.name === candidateValue.name ? "canonical_exact" : "alias_exact",
             confidence: matched.name === candidateValue.name ? 1 : 0.9,
@@ -580,9 +797,46 @@ export async function materializeRevision(
             },
           });
         }
+        if (sharedPack) {
+          for (const mention of sharedPack.mentions.filter((row) => row.segmentId === segmentId)) {
+            const candidateValue = recordMentionCandidates.find(
+              (row) => row.sourceKey === mention.entitySourceKey,
+            );
+            if (!candidateValue) continue;
+            addTextBinding({
+              entityType: candidateValue.type,
+              entityStableId: candidateValue.sourceKey,
+              documentId,
+              segmentId: null,
+              contentSegmentId: segmentId,
+              bindingType: "mention",
+              bindingSource:
+                mention.matchMethod === "canonical_name" ? "canonical_exact" : "alias_exact",
+              confidence: mention.matchMethod === "canonical_name" ? 1 : 0.9,
+              metadata: {
+                rawText: mention.rawText,
+                startOffset: mention.startOffset,
+                endOffset: mention.endOffset,
+                sourceKey: record.sourceKey,
+              },
+            });
+          }
+        }
       }
       if (record.quest) {
-        if (record.quest.subquests.length)
+        if (sharedPack) {
+          sharedContentPacks.set(sharedPack.contentHash, sharedPack);
+          sharedContentBindingRows.push({
+            revisionId,
+            documentId,
+            contentHash: sharedPack.contentHash,
+          });
+          expectedSharedQuestContent.documents += 1;
+          expectedSharedQuestContent.segments += sharedPack.segments.length;
+          expectedSharedQuestContent.subquests += sharedPack.subquests.length;
+          expectedSharedQuestContent.nodes += sharedPack.dialogueNodes.length;
+          expectedSharedQuestContent.edges += sharedPack.dialogueEdges.length;
+        } else if (record.quest.subquests.length)
           subquestRows.push(
             ...record.quest.subquests.map((subquest) => ({
               documentId,
@@ -597,7 +851,7 @@ export async function materializeRevision(
               metadata: subquest.metadata ?? {},
             })),
           );
-        if (record.quest.dialogueNodes.length)
+        if (!sharedPack && record.quest.dialogueNodes.length)
           dialogueNodeRows.push(
             ...record.quest.dialogueNodes.map((node, index) => ({
               documentId,
@@ -622,7 +876,13 @@ export async function materializeRevision(
             entityType: "npc",
             entityStableId: node.speakerKey,
             documentId,
-            segmentId: node.segmentKey ? (segmentIdByKey.get(node.segmentKey) ?? null) : null,
+            segmentId: sharedPack
+              ? null
+              : node.segmentKey
+                ? (segmentIdByKey.get(node.segmentKey) ?? null)
+                : null,
+            contentSegmentId:
+              sharedPack && node.segmentKey ? (segmentIdByKey.get(node.segmentKey) ?? null) : null,
             bindingType: "speaker",
             bindingSource: "speaker_resolution",
             confidence: node.speakerName ? 1 : 0.5,
@@ -634,7 +894,7 @@ export async function materializeRevision(
             },
           });
         }
-        if (record.quest.dialogueEdges.length)
+        if (!sharedPack && record.quest.dialogueEdges.length)
           dialogueEdgeRows.push(
             ...[
               ...new Map(
@@ -663,7 +923,12 @@ export async function materializeRevision(
         segmentRows.length >= 20_000 ||
         mentionRows.length >= 20_000 ||
         dialogueNodeRows.length >= 20_000 ||
-        dialogueEdgeRows.length >= 20_000
+        dialogueEdgeRows.length >= 20_000 ||
+        sharedContentBindingRows.length >= 2_000 ||
+        [...sharedContentPacks.values()].reduce(
+          (total, pack) => total + pack.dialogueNodes.length + pack.segments.length,
+          0,
+        ) >= 20_000
       )
         await flushDocumentRows();
     }
@@ -770,6 +1035,45 @@ export async function materializeRevision(
         20_000,
       );
 
+    const sharedContentCountResult = await tx.execute(sql`
+      select
+        (select count(*)::int
+           from knowledge.revision_quest_content_bindings
+          where revision_id = ${revisionId}::uuid) as documents,
+        (select count(*)::int
+           from knowledge.revision_quest_content_bindings b
+           inner join knowledge.quest_content_segments s on s.content_hash = b.content_hash
+          where b.revision_id = ${revisionId}::uuid) as segments,
+        (select count(*)::int
+           from knowledge.revision_quest_content_bindings b
+           inner join knowledge.quest_content_subquests s on s.content_hash = b.content_hash
+          where b.revision_id = ${revisionId}::uuid) as subquests,
+        (select count(*)::int
+           from knowledge.revision_quest_content_bindings b
+           inner join knowledge.quest_content_dialogue_nodes n on n.content_hash = b.content_hash
+          where b.revision_id = ${revisionId}::uuid) as nodes,
+        (select count(*)::int
+           from knowledge.revision_quest_content_bindings b
+           inner join knowledge.quest_content_dialogue_edges e on e.content_hash = b.content_hash
+          where b.revision_id = ${revisionId}::uuid) as edges
+    `);
+    const sharedContentCounts = (
+      sharedContentCountResult as { rows?: Array<Record<string, number>> }
+    ).rows?.[0];
+    if (
+      !sharedContentCounts ||
+      Number(sharedContentCounts.documents) !== expectedSharedQuestContent.documents ||
+      Number(sharedContentCounts.segments) !== expectedSharedQuestContent.segments ||
+      Number(sharedContentCounts.subquests) !== expectedSharedQuestContent.subquests ||
+      Number(sharedContentCounts.nodes) !== expectedSharedQuestContent.nodes ||
+      Number(sharedContentCounts.edges) !== expectedSharedQuestContent.edges
+    )
+      throw new DomainError(
+        "revision_shared_quest_content_incomplete",
+        "Shared quest content bindings do not match the immutable Build",
+        { expected: expectedSharedQuestContent, actual: sharedContentCounts },
+      );
+
     const expectedDocuments = records.filter(
       (record) =>
         record.recordType !== "entity" &&
@@ -836,6 +1140,13 @@ async function analyzeRevisionReadModelTables(db: Database): Promise<void> {
     "knowledge.quest_dialogue_nodes",
     "knowledge.quest_dialogue_edges",
     "knowledge.quest_subquests",
+    "knowledge.quest_content_objects",
+    "knowledge.quest_content_segments",
+    "knowledge.quest_content_subquests",
+    "knowledge.quest_content_dialogue_nodes",
+    "knowledge.quest_content_dialogue_edges",
+    "knowledge.quest_content_mentions",
+    "knowledge.revision_quest_content_bindings",
     "knowledge.entity_revision_materializations",
     "knowledge.entity_aliases",
     "knowledge.text_bindings",

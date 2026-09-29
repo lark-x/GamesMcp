@@ -21,13 +21,16 @@
   --archive-card-glow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 10px 20px -5px rgba(0, 0, 0, 0.04);
   --archive-card-glow-hover: 0 4px 12px rgba(0, 0, 0, 0.06), 0 20px 30px -10px rgba(0, 0, 0, 0.08);
 
-  /* Semantic attributes badges */
-  --badge-5star: #d97706;
-  --badge-5star-bg: rgba(217, 119, 6, 0.1);
-  --badge-4star: #9333ea;
-  --badge-4star-bg: rgba(147, 51, 234, 0.1);
-  --badge-3star: #2563eb;
-  --badge-3star-bg: rgba(37, 99, 235, 0.1);
+  /* Semantic attributes badges (Muted Luxury Palette) */
+  --badge-5star: #b8823b;
+  --badge-5star-bg: rgba(184, 130, 59, 0.08);
+  --badge-5star-border: rgba(184, 130, 59, 0.28);
+  --badge-4star: #8262a6;
+  --badge-4star-bg: rgba(130, 98, 166, 0.08);
+  --badge-4star-border: rgba(130, 98, 166, 0.28);
+  --badge-3star: #3d7499;
+  --badge-3star-bg: rgba(61, 116, 153, 0.08);
+  --badge-3star-border: rgba(61, 116, 153, 0.25);
 
   color: var(--archive-text);
   background-color: var(--archive-bg);
@@ -70,13 +73,51 @@
   --archive-card-glow-hover:
     0 0 0 1px rgba(255, 255, 255, 0.15), 0 16px 36px -6px rgba(0, 0, 0, 0.7);
 
-  --badge-5star: #fbbf24;
-  --badge-5star-bg: rgba(251, 191, 36, 0.12);
-  --badge-4star: #c084fc;
-  --badge-4star-bg: rgba(192, 132, 252, 0.12);
-  --badge-3star: #60a5fa;
-  --badge-3star-bg: rgba(96, 165, 250, 0.12);
+  --badge-5star: #c89248;
+  --badge-5star-bg: rgba(200, 146, 72, 0.1);
+  --badge-5star-border: rgba(200, 146, 72, 0.28);
+  --badge-4star: #9a78be;
+  --badge-4star-bg: rgba(154, 120, 190, 0.1);
+  --badge-4star-border: rgba(154, 120, 190, 0.28);
+  --badge-3star: #4d7c9e;
+  --badge-3star-bg: rgba(77, 124, 158, 0.1);
+  --badge-3star-border: rgba(77, 124, 158, 0.25);
 }
+
+/* Game-Specific Theming Tokens */
+[data-game="genshin"] {
+  --game-accent: #e5a840;
+  --game-accent-subtle: rgba(229, 168, 64, 0.12);
+  --game-glow: 0 0 24px rgba(229, 168, 64, 0.16);
+}
+
+[data-game="starrail"] {
+  --game-accent: #60a5fa;
+  --game-accent-subtle: rgba(96, 165, 250, 0.12);
+  --game-glow: 0 0 24px rgba(96, 165, 250, 0.18);
+}
+
+/* Skeleton Shimmer */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.archive-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--archive-surface-alt) 25%,
+    var(--archive-surface-hover) 50%,
+    var(--archive-surface-alt) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s infinite linear;
+}
+
 
 * {
   box-sizing: border-box;

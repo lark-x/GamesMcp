@@ -337,12 +337,15 @@ export const genshinMaterialCategorySchema = z.enum([
   "character_development",
   "weapon_development",
   "local_specialty",
-  "currency",
-  "consumable",
-  "quest_item",
-  "forging",
+  "material",
   "cooking",
+  "quest_item",
+  "precious",
+  "currency",
   "furnishing",
+  "gcg",
+  "consumable",
+  "forging",
   "other",
 ]);
 export type GenshinMaterialCategory = z.infer<typeof genshinMaterialCategorySchema>;
@@ -357,14 +360,7 @@ export const genshinAchievementCategorySchema = z.enum([
 ]);
 export type GenshinAchievementCategory = z.infer<typeof genshinAchievementCategorySchema>;
 
-export const genshinEnemyCategorySchema = z.enum([
-  "common",
-  "elite",
-  "normal_boss",
-  "weekly_boss",
-  "wildlife",
-  "other",
-]);
+export const genshinEnemyCategorySchema = z.string().min(1);
 export type GenshinEnemyCategory = z.infer<typeof genshinEnemyCategorySchema>;
 
 export const structuredBindingSchema = z.object({
@@ -435,6 +431,8 @@ export type GenshinArtifact = z.infer<typeof genshinArtifactSchema>;
 
 export const genshinMaterialSchema = structuredBaseSchema.extend({
   category: genshinMaterialCategorySchema,
+  subcategory: z.string().optional(),
+  subcategoryLabel: z.string().optional(),
   rarity: z.number().int().min(1).max(5).nullable().optional(),
   description: z.string().nullable().optional(),
   sources: z.array(z.string()).default([]),
@@ -451,6 +449,8 @@ export const codexMaterialSchema = z.object({
   name: z.string().min(1),
   category: z.string().min(1),
   categoryLabel: z.string().optional(),
+  subcategory: z.string().optional(),
+  subcategoryLabel: z.string().optional(),
   rarity: z.number().int().min(1).max(5).nullable().optional(),
   description: z.string().nullable().optional(),
   sources: z.array(z.string()).default([]),
@@ -463,10 +463,20 @@ export const codexMaterialSchema = z.object({
 });
 export type CodexMaterial = z.infer<typeof codexMaterialSchema>;
 
+export const codexMaterialSubcategoryAggregationSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  count: z.number().int(),
+});
+export type CodexMaterialSubcategoryAggregation = z.infer<
+  typeof codexMaterialSubcategoryAggregationSchema
+>;
+
 export const codexMaterialCategoryAggregationSchema = z.object({
   key: z.string(),
   label: z.string(),
   count: z.number().int(),
+  subcategories: z.array(codexMaterialSubcategoryAggregationSchema).optional(),
 });
 export type CodexMaterialCategoryAggregation = z.infer<
   typeof codexMaterialCategoryAggregationSchema
@@ -518,6 +528,7 @@ export type NarrativeMode = z.infer<typeof narrativeModeSchema>;
 export const storyQuestEntrySchema = z.object({
   questKey: z.string(),
   title: z.string(),
+  taskRegionId: z.string().optional(),
   questType: z.string().optional(),
   displayTitle: z.string().optional(),
   entryType: z.enum(["quest", "collection", "aggregate"]).optional(),
@@ -604,6 +615,8 @@ export const storyRegionSchema = z.object({
   name: z.string(),
   order: z.number().default(0),
   families: z.array(storyFamilySchema),
+  quests: z.array(storyQuestEntrySchema).optional(),
+  collections: z.array(storyQuestEntrySchema).optional(),
   /** Deprecated flattened projection for consumers that have not migrated. */
   chapters: z.array(storyChapterSchema),
 });
