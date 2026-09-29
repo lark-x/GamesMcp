@@ -64,7 +64,7 @@ export function classifyDialogueResolution(input: {
     // task.
     if (input.dialogueNodeCount > 0) {
       if (input.missingTextCount && input.missingTextCount > 0) return "dialogue_text_missing";
-      if (input.danglingEdgeCount && input.danglingEdgeCount > 0) return "graph_incomplete";
+      if (isGraphIncomplete(input)) return "graph_incomplete";
       return "resolved";
     }
     return "talk_reference_missing";
@@ -82,7 +82,23 @@ export function classifyDialogueResolution(input: {
   )
     return "partial";
   if (input.missingTextCount && input.missingTextCount > 0) return "dialogue_text_missing";
-  if (input.danglingEdgeCount && input.danglingEdgeCount > 0) return "graph_incomplete";
+  if (isGraphIncomplete(input)) return "graph_incomplete";
   if (input.dialogueNodeCount === 0) return "dialogue_text_missing";
   return "resolved";
+}
+
+// A dialogue graph is incomplete when any of its structural invariants breaks:
+// unresolved edge targets, a cycle, or a component without a root. Cycle and
+// rootless components only surface in diagnostics today, but a graph that
+// cannot be traversed from a start node is not a readable body either.
+function isGraphIncomplete(input: {
+  danglingEdgeCount?: number;
+  graphHasNoRoot?: boolean;
+  cycle?: boolean;
+}): boolean {
+  return Boolean(
+    (input.danglingEdgeCount && input.danglingEdgeCount > 0) ||
+      input.graphHasNoRoot ||
+      input.cycle,
+  );
 }

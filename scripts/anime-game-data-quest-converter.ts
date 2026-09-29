@@ -3018,7 +3018,8 @@ export function buildRecord(
             topology.aggregateParentQuestId,
             ...topology.parentQuestIds,
             ...topology.prerequisiteQuestIds,
-            ...(topology.childQuestIds ?? []),
+            ...topology.successorQuestIds,
+            ...topology.aggregateChildQuestIds,
           ]
         : []),
       ...(inputs.mainQuestRelations.get(mainId) ?? []),

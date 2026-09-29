@@ -170,10 +170,11 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
     }
     regions.set(row.regionId, region);
   }
-  const byOrder = <T extends { order: number }>(items: T[]): T[] =>
+  const byOrder = <T extends { order: number; questId?: string; id?: string }>(items: T[]): T[] =>
     items.sort(
       (left, right) =>
-        left.order - right.order || JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        left.order - right.order ||
+        (left.questId ?? left.id ?? "").localeCompare(right.questId ?? right.id ?? ""),
     );
   for (const region of regions.values()) {
     byOrder(region.quests ?? []);

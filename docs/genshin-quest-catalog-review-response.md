@@ -18,7 +18,7 @@
 | # | 缺陷 | 位置 | 后果 |
 |---|------|------|------|
 | D1 | **幽灵字段**：读取 `topology.childQuestIds`，该字段已从 `QuestTopology` 类型删除，恒为 `undefined` | `scripts/anime-game-data-quest-converter.ts:3021`（类型见 `packages/ingestion/src/anime-game-data/quest/types.ts:88-109`） | "从下游任务继承地区"的候选半边天然失效，是 475 条未归区中被掩盖的一部分可恢复量 |
-| D2 | **违反自设约束的改写**：跨地区系列在"标题唯一或全 curated"时把**所有成员的 taskRegionId 改写**为最小 order 成员的地区 | converter:3824-3844 | 直接违反 handoff §2"任务自己的发生地区……不因目录归属而被改写"；跨地区系列（如巡官系列）成员的地区身份被抹掉 |
+| D2 | ~~违反自设约束的改写~~ **评审更正（2026-09-29 复核）：非缺陷**。改写仅作用于目录放置位 `regionId`（converter:3840-3842），任务自身地区 `taskRegionId`（:3391）与 `payload.storyProjection.taskRegionId`（:4038、:4051）原样保留，与 handoff §2"任务自身发生地区另存详情"的约束**一致**；区块注释"preserving each task's actual region separately"所述属实。评审初版把"目录放置位被锚定"误读为"任务地区被改写"。应改为补一条回归测试锁定该语义（跨地区系列成员的 taskRegionId 不得被改写），防止未来重构破坏。 |
 | D3 | **审计 gate 失效**：`duplicateQuestPlacements` 吃 task 级输入，看不到投影树内部跨容器重复 | 审计脚本:450-477 vs `public-story-audit.ts:31-34` | "公共目录重复放置=0"的门禁结论对该类风险实际不成立 |
 | D4 | **classifier 判据缺口**：`cycle`、`graphHasNoRoot` 入参被传入但函数体从未使用 | `quest-classifier.ts:52-53,67,85` | 成环/无根对白图不计入 `graph_incomplete`，42 条的口径偏窄；环只留在 diagnostics |
 | D5 | **不确定的兜底通道**：终排序 tie-break 用 `JSON.stringify` 的 localeCompare | `story-projection.ts:173-177` | 序列化顺序敏感，跨运行/跨语言可能产生不同的同级顺序 |
