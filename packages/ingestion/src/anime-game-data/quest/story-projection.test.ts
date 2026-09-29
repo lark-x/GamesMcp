@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectStoryCatalog } from "./story-projection.js";
+import { collectProjectionTreeDuplicates, projectStoryCatalog } from "./story-projection.js";
 
 describe("story projection", () => {
   it("keeps a quest without reliable family evidence directly under its region", () => {
@@ -46,5 +46,38 @@ describe("story projection", () => {
 
     expect(result[0]?.quests?.map((quest) => quest.questId)).toEqual(["76148", "76152"]);
     expect(result[0]?.families).toEqual([]);
+  });
+});
+
+describe("projection tree duplicate detection", () => {
+  const row = (questId: string, overrides: Record<string, unknown> = {}) => ({
+    questId,
+    title: questId,
+    order: 1,
+    regionId: "mondstadt",
+    regionTitle: "蒙德",
+    ...overrides,
+  });
+
+  it("reports nothing for a clean tree", () => {
+    const tree = projectStoryCatalog([row("1001"), row("1002")]);
+    expect(collectProjectionTreeDuplicates(tree)).toEqual([]);
+  });
+
+  it("reports a quest placed in two different regions", () => {
+    const tree = projectStoryCatalog([row("1001"), row("1001", { regionId: "liyue", regionTitle: "璃月" })]);
+    expect(collectProjectionTreeDuplicates(tree)).toEqual([
+      { questId: "1001", containers: ["liyue", "mondstadt"] },
+    ]);
+  });
+
+  it("reports a quest placed both directly under its region and inside a family", () => {
+    const tree = projectStoryCatalog([
+      row("1001"),
+      row("1001", { familyId: "fam", familyTitle: "系列" }),
+    ]);
+    expect(collectProjectionTreeDuplicates(tree)).toEqual([
+      { questId: "1001", containers: ["mondstadt", "mondstadt/fam"] },
+    ]);
   });
 });

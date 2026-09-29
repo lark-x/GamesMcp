@@ -202,3 +202,49 @@ export function projectStoryCatalog(rows: StoryProjectionInput[]): StoryProjecti
   }
   return byOrder([...regions.values()]);
 }
+
+export type ProjectionTreeDuplicate = { questId: string; containers: string[] };
+
+// The catalog tree must place every quest exactly once. appendUnique merges
+// same-quest rows inside a single list, but nothing guards against the same
+// quest landing in two different containers (e.g. a family chapter and its
+// region bucket), so the audit walks the projected tree instead of task rows.
+export function collectProjectionTreeDuplicates(
+  regions: StoryProjectionRegion[],
+): ProjectionTreeDuplicate[] {
+  const placements = new Map<string, string[]>();
+  const visit = (entries: StoryProjectionQuest[] | undefined, container: string): void => {
+    for (const entry of entries ?? []) {
+      const containers = placements.get(entry.questId) ?? [];
+      if (!containers.includes(container)) containers.push(container);
+      placements.set(entry.questId, containers);
+    }
+  };
+  for (const region of regions) {
+    visit(region.quests, region.id);
+    visit(region.collections, `${region.id}#collections`);
+    for (const family of region.families) {
+      visit(family.quests, `${region.id}/${family.id}`);
+      visit(family.collections, `${region.id}/${family.id}#collections`);
+      for (const chapter of family.chapters) {
+        visit(chapter.quests, `${region.id}/${family.id}/${chapter.id}`);
+        visit(chapter.collections, `${region.id}/${family.id}/${chapter.id}#collections`);
+      }
+      for (const subseries of family.subseries ?? []) {
+        visit(subseries.quests, `${region.id}/${family.id}/${subseries.id}`);
+        visit(subseries.collections, `${region.id}/${family.id}/${subseries.id}#collections`);
+        for (const chapter of subseries.chapters) {
+          visit(chapter.quests, `${region.id}/${family.id}/${subseries.id}/${chapter.id}`);
+          visit(
+            chapter.collections,
+            `${region.id}/${family.id}/${subseries.id}/${chapter.id}#collections`,
+          );
+        }
+      }
+    }
+  }
+  return [...placements.entries()]
+    .filter(([, containers]) => containers.length > 1)
+    .map(([questId, containers]) => ({ questId, containers: [...containers].sort() }))
+    .sort((left, right) => left.questId.localeCompare(right.questId));
+}

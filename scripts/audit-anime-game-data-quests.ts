@@ -8,6 +8,10 @@ import {
   DEFAULT_QUEST_UPSTREAM_DIR,
 } from "./anime-game-data-quest-converter.ts";
 import { auditPublicStory } from "../packages/ingestion/src/anime-game-data/quest/index.ts";
+import {
+  collectProjectionTreeDuplicates,
+  projectStoryCatalog,
+} from "../packages/ingestion/src/anime-game-data/quest/index.ts";
 import { runStoragePreflight } from "./check-data-storage.ts";
 
 const execFileAsync = promisify(execFile);
@@ -475,6 +479,36 @@ async function main() {
       ];
     }),
   );
+  // Rebuild the catalog tree from the per-task projection rows so the
+  // duplicate-placement gate sees what the catalog actually renders, not one
+  // row per task (which can never repeat a questId).
+  const projectionRows = tasks.flatMap((task) => {
+    const zh = task.locales["zh-CN"];
+    if (zh.status !== "public") return [];
+    const projection = zh.storyProjection as ReportObject | undefined;
+    if (!projection) return [];
+    const text = (key: string): string | undefined =>
+      typeof projection[key] === "string" ? (projection[key] as string) : undefined;
+    return [
+      {
+        questId: task.mainQuestId,
+        title: typeof zh.title === "string" ? zh.title : task.mainQuestId,
+        order: numberFrom(zh.storyOrder) ?? numberFrom(zh.order) ?? 0,
+        entryType: projection.entryType === "collection" ? "collection" : "quest",
+        regionId: text("regionId") ?? "other",
+        regionTitle: text("regionTitle") ?? text("regionId") ?? "other",
+        familyId: text("familyId"),
+        familyTitle: text("familyTitle"),
+        subseriesId: text("subseriesId"),
+        subseriesTitle: text("subseriesTitle"),
+        chapterId: text("chapterId"),
+        chapterTitle: text("chapterTitle"),
+      },
+    ];
+  });
+  const projectionTreeDuplicates = collectProjectionTreeDuplicates(
+    projectStoryCatalog(projectionRows),
+  );
   const publicNarrativeRegionTasks = tasks.filter((task) => {
     const zh = task.locales["zh-CN"];
     return (
@@ -787,6 +821,7 @@ async function main() {
     },
     dialogueAudit,
     publicStoryAudit,
+    projectionTreeDuplicates,
     allNarrative: narrativeSummary(allNarrativeTasks),
     publicNarrative: narrativeSummary(publicNarrativeTasks),
   };
@@ -884,6 +919,7 @@ async function main() {
       duplicateFamilyTitles,
       duplicateChapterTitles,
       publicStoryAudit,
+      projectionTreeDuplicates,
       publicNarrativeRegionAudit,
       curatedOverrides: inputs.storyFamilyOverrides.map((override) => ({
         id: override.id,
@@ -1098,6 +1134,9 @@ async function main() {
         : []),
       ...(publicStoryAudit.duplicateQuestPlacements.length
         ? [`duplicate_quest_placements:${publicStoryAudit.duplicateQuestPlacements.length}`]
+        : []),
+      ...(projectionTreeDuplicates.length
+        ? [`projection_tree_duplicates:${projectionTreeDuplicates.length}`]
         : []),
       ...(publicStoryAudit.crossRegionFamilies.length
         ? [`cross_region_families:${publicStoryAudit.crossRegionFamilies.length}`]
